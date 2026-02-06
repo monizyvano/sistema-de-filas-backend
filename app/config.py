@@ -30,12 +30,12 @@ class Config:
     DB_PASSWORD = os.getenv('DB_PASSWORD', '')
     DB_NAME = os.getenv('DB_NAME', 'sistema_filas_imtsb')
     
-    @property
-    def SQLALCHEMY_DATABASE_URI(self):
-        """Constrói URI do banco de dados"""
-        return (f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}"
-                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-                f"?charset=utf8mb4")
+    # Constrói URI do banco de dados como string de classe
+    SQLALCHEMY_DATABASE_URI = (
+        f"mysql+pymysql://{os.getenv('DB_USER', DB_USER)}:{os.getenv('DB_PASSWORD', DB_PASSWORD)}"
+        f"@{os.getenv('DB_HOST', DB_HOST)}:{os.getenv('DB_PORT', DB_PORT)}/{os.getenv('DB_NAME', DB_NAME)}"
+        f"?charset=utf8mb4"
+    )
     
     # Upload de arquivos
     UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'app/static/uploads')

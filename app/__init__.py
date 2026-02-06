@@ -19,7 +19,7 @@ migrate = Migrate()
 jwt = JWTManager()
 bcrypt = Bcrypt()
 ma = Marshmallow()
-socketio = SocketIO(cors_allowed_origins="*")
+socketio = SocketIO(cors_allowed_origins="*", async_mode='threading')
 
 
 def create_app(config_name=None):
@@ -64,20 +64,23 @@ def create_app(config_name=None):
 
 def register_blueprints(app):
     """Registra todos os blueprints (controllers)"""
-    
-    # Importar controllers
-    from app.controllers.auth_controller import auth_bp
-    from app.controllers.fila_controller import fila_bp
-    from app.controllers.atendimento_controller import atendimento_bp
-    from app.controllers.documento_controller import documento_bp
-    from app.controllers.dashboard_controller import dashboard_bp
-    
-    # Registrar com prefixos
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(fila_bp, url_prefix='/api/filas')
-    app.register_blueprint(atendimento_bp, url_prefix='/api/atendimento')
-    app.register_blueprint(documento_bp, url_prefix='/api/documentos')
-    app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+    # Registrar dinamicamente controllers presentes (ignora módulos faltantes)
+    controllers = [
+        ("app.controllers.auth_controller", "auth_bp", "/api/auth"),
+        ("app.controllers.fila_controller", "fila_bp", "/api/filas"),
+        ("app.controllers.atendimento_controller", "atendimento_bp", "/api/atendimento"),
+        ("app.controllers.documento_controller", "documento_bp", "/api/documentos"),
+        ("app.controllers.dashboard_controller", "dashboard_bp", "/api/dashboard"),
+    ]
+
+    for module_path, bp_name, url_prefix in controllers:
+        try:
+            module = __import__(module_path, fromlist=[bp_name])
+            bp = getattr(module, bp_name)
+            app.register_blueprint(bp, url_prefix=url_prefix)
+        except (ImportError, AttributeError):
+            # Se o controller não existir, apenas ignora (útil em fases iniciais)
+            continue
 
 
 def register_error_handlers(app):
