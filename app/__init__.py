@@ -49,6 +49,9 @@ def create_app(config_name=None):
     # Configurar CORS
     CORS(app, origins=app.config['CORS_ORIGINS'])
     
+    # Importar models para que Alembic/Flask-Migrate os detecte
+    from app.models import BaseModel, Servico, Senha, Atendente, LogActividade, Configuracao
+    
     # Registrar Blueprints (rotas)
     register_blueprints(app)
     
