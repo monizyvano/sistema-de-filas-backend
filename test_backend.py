@@ -35,10 +35,13 @@ with app.app_context():
     
     # Teste 4: Criar senha de teste
     print("\n🎫 CRIANDO SENHA DE TESTE...")
+    import time
+    numero_unique = f"N{int(time.time()) % 10000:04d}"  # Gera número único
+    
     servico = Servico.query.first()
     
     senha = Senha(
-        numero="N001",
+        numero=numero_unique,
         servico_id=servico.id,
         tipo='normal'
     )
