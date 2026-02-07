@@ -19,6 +19,7 @@ class Configuracao(BaseModel):
     Examples:
         horario_abertura = "08:00"
         horario_fechamento = "16:00"
+        tempo_maximo_espera = "60"
         permite_senha_prioritaria = "true"
     """
     
