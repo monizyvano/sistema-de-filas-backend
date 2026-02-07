@@ -146,6 +146,7 @@ class Atendente(BaseModel):
             dict: Estatísticas
         """
         from datetime import date
+        from app.models.senha import Senha
         
         hoje = date.today()
         

@@ -97,6 +97,8 @@ class Servico(BaseModel):
         Returns:
             int: Tempo em minutos
         """
+        from app.models.senha import Senha
+        
         # Conta senhas aguardando + em atendimento
         senhas_pendentes = self.senhas.filter(
             Senha.status.in_(['aguardando', 'chamando', 'atendendo'])
@@ -112,6 +114,7 @@ class Servico(BaseModel):
             dict: Estatísticas
         """
         from datetime import datetime, date
+        from app.models.senha import Senha
         
         hoje = date.today()
         
