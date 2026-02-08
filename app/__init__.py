@@ -67,23 +67,19 @@ def create_app(config_name=None):
 
 def register_blueprints(app):
     """Registra todos os blueprints (controllers)"""
-    # Registrar dinamicamente controllers presentes (ignora módulos faltantes)
-    controllers = [
-        ("app.controllers.auth_controller", "auth_bp", "/api/auth"),
-        ("app.controllers.fila_controller", "fila_bp", "/api/filas"),
-        ("app.controllers.atendimento_controller", "atendimento_bp", "/api/atendimento"),
-        ("app.controllers.documento_controller", "documento_bp", "/api/documentos"),
-        ("app.controllers.dashboard_controller", "dashboard_bp", "/api/dashboard"),
-    ]
-
-    for module_path, bp_name, url_prefix in controllers:
-        try:
-            module = __import__(module_path, fromlist=[bp_name])
-            bp = getattr(module, bp_name)
-            app.register_blueprint(bp, url_prefix=url_prefix)
-        except (ImportError, AttributeError):
-            # Se o controller não existir, apenas ignora (útil em fases iniciais)
-            continue
+    # Importar controllers
+    from app.controllers.auth_controller import auth_bp
+    from app.controllers.senha_controller import senha_bp
+    from app.controllers.fila_controller import fila_bp
+    from app.controllers.servico_controller import servico_bp
+    from app.controllers.dashboard_controller import dashboard_bp
+    
+    # Registrar com prefixos
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(senha_bp, url_prefix='/api/senhas')
+    app.register_blueprint(fila_bp, url_prefix='/api/filas')
+    app.register_blueprint(servico_bp, url_prefix='/api/servicos')
+    app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
 
 
 def register_error_handlers(app):
