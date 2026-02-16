@@ -49,7 +49,7 @@ class Senha(BaseModel):
     numero = db.Column(
         db.String(20),
         nullable=False,
-        unique=True,
+        unique=True, 
         index=True,
         comment="Número único da senha (ex: N001, P005)"
     )
