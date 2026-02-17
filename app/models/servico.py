@@ -68,12 +68,7 @@ class Servico(BaseModel):
     )
     
     # Relacionamentos (1:N)
-    senhas = db.relationship(
-        'Senha',
-        backref='servico',
-        lazy='dynamic',
-        cascade='all, delete-orphan'
-    )
+    #senhas = db.relationship('Senha', back_populates='servico', lazy=True)
     
     def __init__(self, nome, **kwargs):
         """

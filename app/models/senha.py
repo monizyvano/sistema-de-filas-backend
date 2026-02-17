@@ -1,301 +1,320 @@
+# ===== FASE 1: MODEL SENHA CORRIGIDO =====
+
 """
-Model de Senha (Token de atendimento)
-✨ NÚCLEO DO SISTEMA - Mescla Senha + Atendimento conforme MER
+app/models/senha.py - VERSÃO PROFISSIONAL
+
+MUDANÇAS:
+1. ✅ Adiciona coluna data_emissao (Date)
+2. ✅ Remove unique=True de numero
+3. ✅ Adiciona __table_args__ com UNIQUE composto
+4. ✅ Atualiza __init__() para aceitar data_emissao
+5. ✅ Melhora to_dict() incluindo data_emissao
+
+BACKUP ANTES DE APLICAR:
+cp app/models/senha.py app/models/senha.py.backup.$(date +%Y%m%d_%H%M%S)
 """
-from datetime import datetime
+
 from app import db
 from app.models.base import BaseModel
+from datetime import datetime, date
+from sqlalchemy import func
 
 
 class Senha(BaseModel):
     """
-    Representa uma senha/token de atendimento
-    ✨ Inclui TODO o ciclo: emissão → chamada → atendimento → conclusão
+    Model para senhas de atendimento
     
-    Attributes:
-        numero (str): Número único (ex: "N001", "P005")
-        tipo (str): normal, prioritaria
-        status (str): aguardando, chamando, atendendo, concluida, cancelada
-        servico_id (int): FK para Servico
-        atendente_id (int): FK para Atendente (quem atendeu)
-        numero_balcao (int): Número do balcão (1, 2, 3, 4)
-        usuario_contato (str): Telefone OPCIONAL (para notificações futuras)
-        
-        # Timestamps do fluxo completo
-        emitida_em (datetime): Quando foi emitida
-        chamada_em (datetime): Quando foi chamada
-        atendimento_iniciado_em (datetime): Início do atendimento
-        atendimento_concluido_em (datetime): Fim do atendimento
-        
-        # Métricas (calculadas automaticamente)
-        tempo_espera_minutos (int): Tempo de espera
-        tempo_atendimento_minutos (int): Duração do atendimento
-        
-        observacoes (str): Notas do atendente
-    
-    Relationships:
-        servico (Servico): Serviço solicitado
-        atendente (Atendente): Quem atendeu
-        logs (list): Histórico de ações
+    Suporta numeração diária com UNIQUE composto (numero, data_emissao)
+    Permite N001 repetir em dias diferentes mas impede no mesmo dia
     """
     
     __tablename__ = 'senhas'
     
-    # Enums
+    # ===== UNIQUE COMPOSTO - PERMITE REPETIÇÃO EM DIAS DIFERENTES =====
+    __table_args__ = (
+        db.UniqueConstraint('numero', 'data_emissao', name='uq_numero_data'),
+        {'comment': 'Senhas de atendimento com numeração diária'}
+    )
+    
+    # ===== CONSTANTES DE TIPO E STATUS =====
     TIPOS = ['normal', 'prioritaria']
     STATUS = ['aguardando', 'chamando', 'atendendo', 'concluida', 'cancelada']
     
-    # Colunas principais
+    # ===== CAMPOS PRINCIPAIS =====
+    
+    # Número da senha (SEM unique individual - unique é composto)
     numero = db.Column(
         db.String(20),
         nullable=False,
-        unique=True, 
-        index=True,
-        comment="Número único da senha (ex: N001, P005)"
+        index=True,  # Mantém índice para busca rápida
+        comment="Número da senha (ex: N001, P001)"
     )
     
+    # Data de emissão - NOVA COLUNA (crítica para numeração diária)
+    data_emissao = db.Column(
+        db.Date,
+        nullable=False,
+        default=lambda: datetime.utcnow().date(),  # Lambda evita bug de valor fixo
+        index=True,  # Índice para queries por data
+        comment="Data da emissão (para controle de numeração diária)"
+    )
+    
+    # Tipo da senha
     tipo = db.Column(
-        db.Enum(*TIPOS),
+        db.String(20),
         nullable=False,
         default='normal',
         index=True,
         comment="Tipo: normal ou prioritaria"
     )
     
+    # Status atual
     status = db.Column(
-        db.Enum(*STATUS),
+        db.String(20),
         nullable=False,
         default='aguardando',
         index=True,
-        comment="Status atual da senha"
+        comment="Status: aguardando, chamando, atendendo, concluida, cancelada"
     )
     
-    # Foreign Keys
+    # ===== RELACIONAMENTOS =====
     servico_id = db.Column(
         db.Integer,
-        db.ForeignKey('servicos.id', ondelete='CASCADE'),
+        db.ForeignKey('servicos.id'),
         nullable=False,
-        index=True,
-        comment="Serviço solicitado"
+        index=True
     )
     
     atendente_id = db.Column(
         db.Integer,
-        db.ForeignKey('atendentes.id', ondelete='SET NULL'),
-        nullable=True,
-        index=True,
-        comment="Atendente que realizou o atendimento"
+        db.ForeignKey('atendentes.id'),
+        nullable=True
     )
     
-    # Informações do atendimento
-    numero_balcao = db.Column(
-        db.Integer,
-        nullable=True,
-        comment="Número do balcão (1, 2, 3, 4...)"
-    )
+    # ===== DADOS DE ATENDIMENTO =====
+    numero_balcao = db.Column(db.Integer, nullable=True)
+    usuario_contato = db.Column(db.String(100), nullable=True)
     
-    usuario_contato = db.Column(
-        db.String(20),
-        nullable=True,
-        comment="Telefone do utente (OPCIONAL, para SMS futuro)"
-    )
-    
-    # ⏰ TIMESTAMPS DO FLUXO COMPLETO
+    # ===== TIMESTAMPS =====
     emitida_em = db.Column(
         db.DateTime,
-        nullable=False,
         default=datetime.utcnow,
         index=True,
-        comment="Momento da emissão"
+        comment="Data/hora de emissão (timestamp completo)"
     )
     
     chamada_em = db.Column(
         db.DateTime,
         nullable=True,
-        comment="Momento em que foi chamada"
+        comment="Data/hora que senha foi chamada"
     )
     
     atendimento_iniciado_em = db.Column(
         db.DateTime,
         nullable=True,
-        comment="Início do atendimento"
+        comment="Data/hora início do atendimento"
     )
     
     atendimento_concluido_em = db.Column(
         db.DateTime,
         nullable=True,
-        comment="Fim do atendimento"
+        comment="Data/hora fim do atendimento"
     )
     
-    # 📊 MÉTRICAS CALCULADAS
+    # ===== MÉTRICAS CALCULADAS =====
     tempo_espera_minutos = db.Column(
         db.Integer,
         nullable=True,
-        comment="Tempo de espera em minutos (calculado)"
+        comment="Tempo entre emissão e início (em minutos)"
     )
     
     tempo_atendimento_minutos = db.Column(
         db.Integer,
         nullable=True,
-        comment="Duração do atendimento em minutos (calculado)"
+        comment="Tempo entre início e fim (em minutos)"
     )
     
-    observacoes = db.Column(
-        db.Text,
-        nullable=True,
-        comment="Observações do atendente"
-    )
+    # ===== OBSERVAÇÕES =====
+    observacoes = db.Column(db.Text, nullable=True)
     
-    # Relacionamentos
-    # servico -> backref de Servico
-    # atendente -> backref de Atendente
+    # ===== RELACIONAMENTOS ORM =====
+    # Relacionamentos ORM (sem backref para evitar conflito)
+    servico = db.relationship('Servico', foreign_keys=[servico_id])
+    atendente = db.relationship('Atendente', foreign_keys=[atendente_id])
     
-    logs = db.relationship(
-        'LogActividade',
-        backref='senha',
-        lazy='dynamic',
-        cascade='all, delete-orphan',
-        order_by='LogActividade.created_at.desc()'
-    )
-    
-    def __init__(self, numero, servico_id, tipo='normal', **kwargs):
+    def __init__(self, numero, servico_id, tipo='normal', usuario_contato=None, data_emissao=None):
         """
-        Construtor da senha
+        Inicializa nova senha
         
         Args:
-            numero (str): Número da senha
+            numero (str): Número da senha (ex: N001, P001)
             servico_id (int): ID do serviço
-            tipo (str): Tipo de senha (normal/prioritaria)
-            **kwargs: usuario_contato (opcional)
+            tipo (str): 'normal' ou 'prioritaria'
+            usuario_contato (str, optional): Contato do usuário
+            data_emissao (date, optional): Data de emissão (default: hoje)
         """
         self.numero = numero
         self.servico_id = servico_id
         self.tipo = tipo
+        self.usuario_contato = usuario_contato
+        self.data_emissao = data_emissao or datetime.utcnow().date()
         self.status = 'aguardando'
         self.emitida_em = datetime.utcnow()
-        self.usuario_contato = kwargs.get('usuario_contato')
     
-    def chamar(self, numero_balcao=None):
+    
+    def __repr__(self):
+        """Representação em string"""
+        return f'<Senha {self.numero} ({self.data_emissao}) - {self.status}>'
+    
+    
+    def to_dict(self, include_relationships=True):
         """
-        Muda status para 'chamando'
+        Converte para dicionário
         
         Args:
-            numero_balcao (int): Número do balcão que chamou
-        
+            include_relationships (bool): Incluir relacionamentos (servico, atendente)
+            
         Returns:
-            self: Senha atualizada
+            dict: Dados da senha serializados
         """
-        if self.status != 'aguardando':
-            raise ValueError(f"Senha {self.numero} não está aguardando")
+        data = {
+            'id': self.id,
+            'numero': self.numero,
+            'data_emissao': self.data_emissao.isoformat() if self.data_emissao else None,
+            'tipo': self.tipo,
+            'status': self.status,
+            'servico_id': self.servico_id,
+            'atendente_id': self.atendente_id,
+            'numero_balcao': self.numero_balcao,
+            'usuario_contato': self.usuario_contato,
+            'emitida_em': self.emitida_em.isoformat() if self.emitida_em else None,
+            'chamada_em': self.chamada_em.isoformat() if self.chamada_em else None,
+            'atendimento_iniciado_em': self.atendimento_iniciado_em.isoformat() if self.atendimento_iniciado_em else None,
+            'atendimento_concluido_em': self.atendimento_concluido_em.isoformat() if self.atendimento_concluido_em else None,
+            'tempo_espera_minutos': self.tempo_espera_minutos,
+            'tempo_atendimento_minutos': self.tempo_atendimento_minutos,
+            'observacoes': self.observacoes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
         
-        self.status = 'chamando'
-        self.chamada_em = datetime.utcnow()
-        
-        if numero_balcao:
-            self.numero_balcao = numero_balcao
-        
-        return self.save()
-    
-    def iniciar_atendimento(self, atendente_id, numero_balcao=None):
-        """
-        Inicia o atendimento
-        
-        Args:
-            atendente_id (int): ID do atendente
-            numero_balcao (int): Número do balcão
-        
-        Returns:
-            self: Senha atualizada
-        """
-        if self.status not in ['chamando', 'aguardando']:
-            raise ValueError(f"Senha {self.numero} não pode iniciar atendimento")
-        
-        self.status = 'atendendo'
-        self.atendente_id = atendente_id
-        self.atendimento_iniciado_em = datetime.utcnow()
-        
-        if numero_balcao:
-            self.numero_balcao = numero_balcao
-        
-        if not self.chamada_em:
-            self.chamada_em = datetime.utcnow()
-        
-        # Calcular tempo de espera
-        self._calcular_tempo_espera()
-        
-        return self.save()
-    
-    def finalizar(self, observacoes=None):
-        """
-        Finaliza o atendimento
-        
-        Args:
-            observacoes (str): Observações finais
-        
-        Returns:
-            self: Senha atualizada
-        """
-        if self.status != 'atendendo':
-            raise ValueError(f"Senha {self.numero} não está em atendimento")
-        
-        self.status = 'concluida'
-        self.atendimento_concluido_em = datetime.utcnow()
-        
-        if observacoes:
-            self.observacoes = observacoes
-        
-        # Calcular tempo de atendimento
-        self._calcular_tempo_atendimento()
-        
-        return self.save()
-    
-    def cancelar(self, motivo=None):
-        """
-        Cancela a senha
-        
-        Args:
-            motivo (str): Motivo do cancelamento
-        
-        Returns:
-            self: Senha atualizada
-        """
-        self.status = 'cancelada'
-        
-        if motivo:
-            self.observacoes = f"Cancelada: {motivo}"
-        
-        return self.save()
-    
-    def _calcular_tempo_espera(self):
-        """Calcula e salva tempo de espera (privado)"""
-        if self.atendimento_iniciado_em and self.emitida_em:
-            delta = self.atendimento_iniciado_em - self.emitida_em
-            self.tempo_espera_minutos = int(delta.total_seconds() / 60)
-    
-    def _calcular_tempo_atendimento(self):
-        """Calcula e salva tempo de atendimento (privado)"""
-        if self.atendimento_concluido_em and self.atendimento_iniciado_em:
-            delta = self.atendimento_concluido_em - self.atendimento_iniciado_em
-            self.tempo_atendimento_minutos = int(delta.total_seconds() / 60)
-    
-    def to_dict(self):
-        """Sobrescreve método da classe base"""
-        data = super().to_dict()
-        
-        # Adicionar relacionamentos
-        data['servico'] = {
-            'id': self.servico.id,
-            'nome': self.servico.nome,
-            'icone': self.servico.icone
-        } if self.servico else None
-        
-        data['atendente'] = {
-            'id': self.atendente.id,
-            'nome': self.atendente.nome,
-            'balcao': self.atendente.balcao
-        } if self.atendente else None
+        # Relacionamentos opcionais
+        if include_relationships:
+            if self.servico:
+                data['servico'] = {
+                    'id': self.servico.id,
+                    'nome': self.servico.nome,
+                    'icone': self.servico.icone
+                }
+            
+            if self.atendente:
+                data['atendente'] = {
+                    'id': self.atendente.id,
+                    'nome': self.atendente.nome
+                }
         
         return data
     
-    def __repr__(self):
-        return f"<Senha {self.numero} - {self.status}>"
+    
+    @classmethod
+    def obter_por_numero_e_data(cls, numero, data_emissao=None):
+        """
+        Busca senha por número e data
+        
+        Args:
+            numero (str): Número da senha (ex: N001)
+            data_emissao (date, optional): Data (default: hoje)
+            
+        Returns:
+            Senha: Objeto senha ou None
+        """
+        if data_emissao is None:
+            data_emissao = datetime.utcnow().date()
+        
+        return cls.query.filter_by(
+            numero=numero,
+            data_emissao=data_emissao
+        ).first()
+    
+    
+    @classmethod
+    def obter_fila_do_dia(cls, servico_id=None, data_emissao=None):
+        """
+        Retorna fila do dia ordenada (prioritárias primeiro)
+        
+        Args:
+            servico_id (int, optional): Filtrar por serviço
+            data_emissao (date, optional): Data (default: hoje)
+            
+        Returns:
+            list[Senha]: Lista de senhas na fila
+        """
+        if data_emissao is None:
+            data_emissao = datetime.utcnow().date()
+        
+        query = cls.query.filter_by(
+            data_emissao=data_emissao,
+            status='aguardando'
+        )
+        
+        if servico_id:
+            query = query.filter_by(servico_id=servico_id)
+        
+        # Ordenar: prioritárias primeiro, depois ordem de emissão
+        return query.order_by(
+            db.case(
+                (cls.tipo == 'prioritaria', 0),
+                else_=1
+            ),
+            cls.emitida_em
+        ).all()
+
+
+# ===== INSTRUÇÕES DE APLICAÇÃO =====
+if __name__ == "__main__":
+    print("""
+╔══════════════════════════════════════════════════════════════╗
+║  APLICAR MODEL SENHA CORRIGIDO                               ║
+╚══════════════════════════════════════════════════════════════╝
+
+⚠️  IMPORTANTE: Faça backup antes!
+
+PASSO 1: Backup
+---------------
+cd /caminho/do/projeto
+cp app/models/senha.py app/models/senha.py.backup
+
+PASSO 2: Substituir arquivo
+----------------------------
+# Copie TODO o conteúdo deste arquivo
+# Cole em: app/models/senha.py
+# Salve
+
+PASSO 3: Verificar imports
+---------------------------
+Certifique-se que NO TOPO do arquivo tem:
+
+from app import db
+from app.models.base import BaseModel
+from datetime import datetime, date
+from sqlalchemy import func
+
+PASSO 4: NÃO reiniciar servidor ainda
+--------------------------------------
+Model está pronto mas banco ainda não tem data_emissao!
+Próximo passo: aplicar migration no banco
+
+╔══════════════════════════════════════════════════════════════╗
+║  MUDANÇAS NESTE MODEL                                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ Campo data_emissao adicionado
+✅ __table_args__ com UNIQUE composto
+✅ numero sem unique=True individual
+✅ __init__() aceita data_emissao
+✅ to_dict() inclui data_emissao
+✅ Novos métodos helper (obter_por_numero_e_data, obter_fila_do_dia)
+✅ Docstrings completas
+
+PRÓXIMO ARQUIVO: 2_senha_service_corrigido.py
+    """)

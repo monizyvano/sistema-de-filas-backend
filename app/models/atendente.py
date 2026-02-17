@@ -80,12 +80,13 @@ class Atendente(BaseModel):
     )
     
     # Relacionamentos
-    senhas_atendidas = db.relationship(
+    #COMENTE ou DELETE a linha:
+    '''senhas_atendidas = db.relationship(
         'Senha',
         backref='atendente',
         lazy='dynamic',
         foreign_keys='Senha.atendente_id'
-    )
+    )'''
     
     logs = db.relationship(
         'LogActividade',
