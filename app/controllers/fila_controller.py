@@ -7,7 +7,7 @@ from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.services import FilaService
-from app.schemas import SenhaSchema
+from app.schemas.senha_schema import SenhaSchema
 
 # Criar Blueprint
 fila_bp = Blueprint('fila', __name__)

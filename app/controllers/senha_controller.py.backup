@@ -3,54 +3,69 @@ Controller de Senhas
 Rotas: /api/senhas/*
 """
 from flask import Blueprint, request, jsonify
-from app.services.senha_service import SenhaService
-from app.schemas.senha_schema import (
+from marshmallow import ValidationError
+from flask_jwt_extended import jwt_required, get_jwt_identity
+
+from app.services import SenhaService
+from app.schemas import (
     EmitirSenhaSchema,
     CancelarSenhaSchema,
     IniciarAtendimentoSchema,
     FinalizarAtendimentoSchema,
-    SenhaSchema 
+    SenhaSchema
 )
-from app.utils.rate_limiter import rate_limit
-from marshmallow import ValidationError
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.utils.decorators import get_current_user
 
 # Criar Blueprint
 senha_bp = Blueprint('senha', __name__)
 
 
-@senha_bp.route('/senhas', methods=['POST'])
-@rate_limit(limit=10, window=60)  # 10 emissões por minuto
-def emitir_senha():
-    """Emite nova senha com validação"""
+@senha_bp.route('/', methods=['POST'])
+def emitir():
+    """
+    POST /api/senhas
     
-    # Validar dados de entrada
-    schema = EmitirSenhaSchema()
-    try:
-        dados = schema.load(request.json or {})
-    except ValidationError as err:
-        return jsonify({
-            'erro': 'Dados inválidos',
-            'detalhes': err.messages
-        }), 400
+    Emitir nova senha (público - não precisa login)
     
-    # Emitir senha (dados já validados)
+    Body:
+        {
+            "servico_id": 1,
+            "tipo": "normal",  // ou "prioritaria"
+            "usuario_contato": "923456789"  // opcional
+        }
+    
+    Response:
+        {
+            "mensagem": "Senha emitida com sucesso",
+            "senha": {
+                "numero": "N001",
+                "servico": {...},
+                ...
+            }
+        }
+    """
     try:
-        senha = SenhaService.emitir(
-            servico_id=dados['servico_id'],
-            tipo=dados['tipo'],
-            usuario_contato=dados.get('usuario_contato')
-        )
+        # Validar dados
+        schema = EmitirSenhaSchema()
+        data = schema.load(request.get_json())
+        
+        # Emitir senha
+        senha = SenhaService.emitir(**data)
+        
+        # Serializar resposta
+        senha_schema = SenhaSchema()
         
         return jsonify({
-            'mensagem': 'Senha emitida com sucesso',
-            'senha': senha.to_dict()
+            "mensagem": "Senha emitida com sucesso",
+            "senha": senha_schema.dump(senha)
         }), 201
-        
+    
+    except ValidationError as e:
+        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
     except ValueError as e:
-        return jsonify({'erro': str(e)}), 400
+        return jsonify({"erro": str(e)}), 400
     except Exception as e:
-        return jsonify({'erro': 'Erro interno ao emitir senha'}), 500
+        return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
 @senha_bp.route('/<int:senha_id>', methods=['GET'])

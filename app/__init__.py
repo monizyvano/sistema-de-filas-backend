@@ -76,7 +76,7 @@ def register_blueprints(app):
     
     # Registrar com prefixos
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(senha_bp, url_prefix='/api/senhas')
+    app.register_blueprint(senha_bp, url_prefix='/api')
     app.register_blueprint(fila_bp, url_prefix='/api/filas')
     app.register_blueprint(servico_bp, url_prefix='/api/servicos')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')

@@ -7,9 +7,6 @@ from app.schemas.senha_schema import (
     CancelarSenhaSchema,
     IniciarAtendimentoSchema,
     FinalizarAtendimentoSchema,
-    SenhaSchema,
-    ServicoSchema,
-    AtendenteSchema,
 )
 
 __all__ = [
@@ -19,7 +16,4 @@ __all__ = [
     'CancelarSenhaSchema',
     'IniciarAtendimentoSchema',
     'FinalizarAtendimentoSchema',
-    'SenhaSchema',
-    'ServicoSchema',
-    'AtendenteSchema'
 ]

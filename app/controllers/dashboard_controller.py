@@ -8,7 +8,7 @@ from datetime import datetime, date
 
 from app.models import Senha, Servico, Atendente, LogActividade
 from app.services import SenhaService, FilaService
-from app.schemas import AtendenteSchema
+from app.schemas.senha_schema import AtendenteSchema
 from sqlalchemy import func
 
 # Criar Blueprint

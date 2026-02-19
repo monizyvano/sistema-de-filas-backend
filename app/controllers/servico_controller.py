@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 
 from app.models import Servico
-from app.schemas import ServicoSchema
+from app.schemas.senha_schema import ServicoSchema
 from app.utils.decorators import admin_required
 
 # Criar Blueprint
