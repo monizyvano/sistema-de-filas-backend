@@ -21,6 +21,7 @@ from datetime import datetime, date
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 import time
+from app.services.cache_service import CacheService
 
 
 class SenhaService:
@@ -143,6 +144,11 @@ class SenhaService:
         # 8. Recarregar senha com relacionamentos
         db.session.refresh(senha)
         
+        # Invalidar cache ao emitir senha
+        data_emissao = datetime.utcnow().date()
+        CacheService.delete(f'stats:{data_emissao.isoformat()}')
+        CacheService.delete(f'fila:{servico_id}:{data_emissao.isoformat()}')
+        
         return senha
     
     
@@ -252,15 +258,21 @@ class SenhaService:
     
     @staticmethod
     def obter_estatisticas_hoje(data=None):
-        """Retorna estatísticas do dia"""
         if data is None:
             data = datetime.utcnow().date()
-        
+    
+    # Tentar cache
+        cache_key = f'stats:{data.isoformat()}'
+        cached = CacheService.get(cache_key)
+        if cached:
+            return cached
+    
+    # Buscar do banco
         senhas_do_dia = Senha.query.filter(
             Senha.data_emissao == data
         )
-        
-        return {
+    
+        stats = {
             'data': data.isoformat(),
             'total_emitidas': senhas_do_dia.count(),
             'aguardando': senhas_do_dia.filter_by(status='aguardando').count(),
@@ -270,14 +282,25 @@ class SenhaService:
             'canceladas': senhas_do_dia.filter_by(status='cancelada').count(),
         }
     
+    # Cache por 30 segundos
+        CacheService.set(cache_key, stats, ttl_seconds=30)
+    
+        return stats
+    
     
     @staticmethod
     def obter_fila(servico_id, data=None):
-        """Retorna fila de espera de um serviço"""
         if data is None:
             data = datetime.utcnow().date()
-        
-        return Senha.query.filter(
+    
+    # Tentar cache
+        cache_key = f'fila:{servico_id}:{data.isoformat()}'
+        cached = CacheService.get(cache_key)
+        if cached:
+            return cached
+    
+    # Buscar do banco
+        fila = Senha.query.filter(
             Senha.data_emissao == data,
             Senha.servico_id == servico_id,
             Senha.status == 'aguardando'
@@ -288,6 +311,11 @@ class SenhaService:
             ),
             Senha.emitida_em
         ).all()
+        
+        # Cache por 10 segundos
+        CacheService.set(cache_key, fila, ttl_seconds=10)
+        
+        return fila
 
 
 # ===== COMPARAÇÃO: ANTES vs DEPOIS =====
