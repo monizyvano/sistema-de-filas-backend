@@ -58,14 +58,39 @@ class SenhaService:
             >>> senha = SenhaService.emitir(servico_id=1, tipo='normal')
             >>> print(senha.numero)  # N001 (sem risco de duplicação)
         """
+        from flask import current_app
+        
+        # Log início
+        current_app.logger.info('Iniciando emissão de senha', extra={
+            'servico_id': servico_id,
+            'tipo': tipo,
+            'usuario_contato': usuario_contato is not None
+        })
+        
         # Tentar até MAX_RETRIES vezes (proteção contra deadlocks)
         for tentativa in range(SenhaService.MAX_RETRIES):
             try:
-                return SenhaService._emitir_com_lock(servico_id, tipo, usuario_contato)
+                senha = SenhaService._emitir_com_lock(servico_id, tipo, usuario_contato)
+                
+                # Log sucesso
+                current_app.logger.info('Senha emitida com sucesso', extra={
+                    'senha_id': senha.id,
+                    'senha_numero': senha.numero,
+                    'servico_id': servico_id,
+                    'tentativa': tentativa + 1
+                })
+                
+                return senha
                 
             except IntegrityError as e:
                 # Violação de UNIQUE - número duplicado
                 db.session.rollback()
+                
+                current_app.logger.warning('IntegrityError ao emitir senha', extra={
+                    'servico_id': servico_id,
+                    'tentativa': tentativa + 1,
+                    'max_retries': SenhaService.MAX_RETRIES
+                })
                 
                 if tentativa < SenhaService.MAX_RETRIES - 1:
                     # Tentar novamente após pequeno delay
@@ -73,23 +98,50 @@ class SenhaService:
                     continue
                 else:
                     # Última tentativa falhou
+                    current_app.logger.error('Falha ao emitir senha após múltiplas tentativas', extra={
+                        'servico_id': servico_id,
+                        'tentativas': SenhaService.MAX_RETRIES,
+                        'error': str(e)
+                    })
                     raise ValueError(f"Erro ao gerar número único após {SenhaService.MAX_RETRIES} tentativas")
             
             except OperationalError as e:
                 # Deadlock ou timeout
                 db.session.rollback()
                 
+                current_app.logger.warning('OperationalError ao emitir senha', extra={
+                    'servico_id': servico_id,
+                    'tentativa': tentativa + 1,
+                    'error': str(e)
+                })
+                
                 if tentativa < SenhaService.MAX_RETRIES - 1:
                     time.sleep(SenhaService.RETRY_DELAY * (tentativa + 1))
                     continue
                 else:
+                    current_app.logger.error('Erro de concorrência após múltiplas tentativas', extra={
+                        'servico_id': servico_id,
+                        'tentativas': SenhaService.MAX_RETRIES,
+                        'error': str(e)
+                    })
                     raise ValueError(f"Erro de concorrência após {SenhaService.MAX_RETRIES} tentativas")
             
             except Exception as e:
                 db.session.rollback()
+                
+                current_app.logger.error('Erro inesperado ao emitir senha', extra={
+                    'servico_id': servico_id,
+                    'tentativa': tentativa + 1,
+                    'error': str(e)
+                }, exc_info=True)
+                
                 raise
         
         # Se chegou aqui, todas as tentativas falharam
+        current_app.logger.error('Todas as tentativas falharam ao emitir senha', extra={
+            'servico_id': servico_id,
+            'tentativas': SenhaService.MAX_RETRIES
+        })
         raise ValueError("Erro inesperado ao emitir senha")
     
     

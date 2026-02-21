@@ -10,6 +10,8 @@ from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from flask_marshmallow import Marshmallow
 from flask_socketio import SocketIO
+from app.utils.logger import setup_logging
+from app.utils.request_logger import log_request
 
 from app.config import get_config
 
@@ -46,6 +48,17 @@ def create_app(config_name=None):
     ma.init_app(app)
     socketio.init_app(app)
     
+     # Configurar logging
+    setup_logging(app)
+    
+    # Middleware de logging
+    log_request(app)
+    
+    # Log de startup(talvez retire no futuro)
+    app.logger.info('Aplicação iniciada', extra={
+        'config': config_name or 'development'
+    })
+
     # Configurar CORS
     CORS(app, origins=app.config['CORS_ORIGINS'])
     
@@ -73,13 +86,16 @@ def register_blueprints(app):
     from app.controllers.fila_controller import fila_bp
     from app.controllers.servico_controller import servico_bp
     from app.controllers.dashboard_controller import dashboard_bp
+   
     
+   
     # Registrar com prefixos
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(senha_bp, url_prefix='/api')
     app.register_blueprint(fila_bp, url_prefix='/api/filas')
     app.register_blueprint(servico_bp, url_prefix='/api/servicos')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+
 
 
 def register_error_handlers(app):

@@ -14,6 +14,7 @@ from app.utils.rate_limiter import rate_limit
 from app import bcrypt
 
 
+
 # Criar Blueprint
 auth_bp = Blueprint('auth', __name__)
 
@@ -166,13 +167,36 @@ def me():
 
 
 @auth_bp.route('/health', methods=['GET'])
-def health():
-    """
-    GET /api/auth/health
+def health_check():
+    """Health check detalhado do sistema"""
+    from app import db
+    import time
     
-    Verifica se API está funcionando
-    """
-    return jsonify({
-        "status": "ok",
-        "mensagem": "API IMTSB está funcionando! 🚀"
-    }), 200
+    health = {
+        'status': 'healthy',
+        'timestamp': time.time(),
+        'service': 'API Sistema de Filas IMTSB',
+        'checks': {}
+    }
+    
+    # Check 1: Database
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        health['checks']['database'] = 'ok'
+    except Exception as e:
+        health['checks']['database'] = 'error'
+        health['status'] = 'unhealthy'
+    
+    # Check 2: Cache (opcional)
+    try:
+        from app.services.cache_service import CacheService
+        stats = CacheService.get_stats()
+        health['checks']['cache'] = 'ok'
+        health['cache_entries'] = stats['total_entries']
+    except Exception:
+        health['checks']['cache'] = 'unavailable'
+    
+    # Retornar status HTTP correto
+    status_code = 200 if health['status'] == 'healthy' else 503
+    
+    return jsonify(health), status_code
