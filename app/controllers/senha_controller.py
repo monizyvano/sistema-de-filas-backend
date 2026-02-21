@@ -55,17 +55,46 @@ def emitir_senha():
 
 @senha_bp.route('/<int:senha_id>', methods=['GET'])
 def buscar(senha_id):
-    """
-    GET /api/senhas/:id
-    
-    Buscar senha por ID
-    
-    Response:
-        {
-            "numero": "N042",
-            "status": "aguardando",
-            ...
-        }
+    """Buscar senha por ID
+    ---
+    tags:
+      - Senhas
+    parameters:
+      - in: path
+        name: senha_id
+        required: true
+        type: integer
+        description: ID da senha
+        example: 1
+    responses:
+      200:
+        description: Senha encontrada
+        schema:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+            numero:
+              type: string
+              example: N001
+            tipo:
+              type: string
+              example: normal
+            status:
+              type: string
+              example: aguardando
+            servico_id:
+              type: integer
+              example: 1
+            data_emissao:
+              type: string
+              format: date
+              example: "2026-02-21"
+      404:
+        description: Senha não encontrada
+      500:
+        description: Erro interno do servidor
     """
     try:
         senha = SenhaService.obter_por_id(senha_id)
@@ -163,24 +192,51 @@ def cancelar(senha_id):
 @senha_bp.route('/<int:senha_id>/iniciar', methods=['PUT'])
 @jwt_required()
 def iniciar_atendimento(senha_id):
-    """
-    PUT /api/senhas/:id/iniciar
-    
-    Iniciar atendimento de uma senha
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Body:
-        {
-            "numero_balcao": 1
-        }
-    
-    Response:
-        {
-            "mensagem": "Atendimento iniciado",
-            "senha": {...}
-        }
+    """Iniciar atendimento de uma senha
+    ---
+    tags:
+      - Senhas
+    security:
+      - Bearer: []
+    parameters:
+      - in: path
+        name: senha_id
+        required: true
+        type: integer
+        description: ID da senha
+        example: 1
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - numero_balcao
+          properties:
+            numero_balcao:
+              type: integer
+              example: 1
+              description: Número do balcão de atendimento
+    responses:
+      200:
+        description: Atendimento iniciado com sucesso
+        schema:
+          type: object
+          properties:
+            mensagem:
+              type: string
+              example: Atendimento iniciado
+            senha:
+              type: object
+              description: Dados da senha atualizada
+      400:
+        description: Dados inválidos
+      401:
+        description: Não autorizado (JWT inválido)
+      404:
+        description: Senha não encontrada
+      500:
+        description: Erro interno do servidor
     """
     try:
         # Validar dados
@@ -270,19 +326,38 @@ def finalizar_atendimento(senha_id):
 
 @senha_bp.route('/estatisticas', methods=['GET'])
 def estatisticas():
-    """
-    GET /api/senhas/estatisticas
-    
-    Estatísticas de senhas do dia
-    
-    Response:
-        {
-            "total_emitidas": 42,
-            "aguardando": 5,
-            "atendendo": 2,
-            "concluidas": 35,
-            "canceladas": 0
-        }
+    """Estatísticas de senhas do dia
+    ---
+    tags:
+      - Senhas
+    responses:
+      200:
+        description: Estatísticas retornadas com sucesso
+        schema:
+          type: object
+          properties:
+            total_emitidas:
+              type: integer
+              example: 42
+              description: Total de senhas emitidas hoje
+            aguardando:
+              type: integer
+              example: 5
+              description: Senhas aguardando atendimento
+            atendendo:
+              type: integer
+              example: 2
+              description: Senhas em atendimento
+            concluidas:
+              type: integer
+              example: 35
+              description: Senhas finalizadas
+            canceladas:
+              type: integer
+              example: 0
+              description: Senhas canceladas
+      500:
+        description: Erro interno do servidor
     """
     try:
         stats = SenhaService.obter_estatisticas_hoje()

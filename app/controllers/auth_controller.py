@@ -22,8 +22,65 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/login', methods=['POST'])
 @rate_limit(limit=5, window=300)  # 5 tentativas por 5 minutos
 def login():
-    """Login com validação e rate limiting"""
-    
+    """Login de atendente
+    ---
+    tags:
+      - Autenticação
+    parameters:
+      - in: body
+        name: credentials
+        required: true
+        schema:
+          type: object
+          required:
+            - email
+            - senha
+          properties:
+            email:
+              type: string
+              format: email
+              example: admin@imtsb.ao
+              description: Email do atendente
+            senha:
+              type: string
+              format: password
+              example: admin123
+              description: Senha do atendente
+    responses:
+      200:
+        description: Login bem-sucedido
+        schema:
+          type: object
+          properties:
+            access_token:
+              type: string
+              description: JWT token para autenticação
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            atendente:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 1
+                nome:
+                  type: string
+                  example: Administrador
+                email:
+                  type: string
+                  example: admin@imtsb.ao
+                tipo:
+                  type: string
+                  example: admin
+                balcao:
+                  type: integer
+                  example: null
+      400:
+        description: Dados inválidos
+      401:
+        description: Email ou senha incorretos
+      429:
+        description: Muitas tentativas de login (rate limit)
+    """
     # Validar dados
     schema = LoginSchema()
     try:
@@ -43,7 +100,7 @@ def login():
     if not atendente:
         return jsonify({'erro': 'Email ou senha incorretos'}), 401
     
-    # Verificar senha com bcrypt (CORRIGIDO!)
+    # Verificar senha com bcrypt
     from app import bcrypt
     if not bcrypt.check_password_hash(atendente.senha_hash, senha):
         return jsonify({'erro': 'Email ou senha incorretos'}), 401
@@ -168,7 +225,37 @@ def me():
 
 @auth_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check detalhado do sistema"""
+    """Health check do sistema
+    ---
+    tags:
+      - Sistema
+    responses:
+      200:
+        description: Sistema saudável
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: healthy
+            timestamp:
+              type: number
+              example: 1771633912.7356348
+            service:
+              type: string
+              example: API Sistema de Filas IMTSB
+            checks:
+              type: object
+              properties:
+                database:
+                  type: string
+                  example: ok
+                cache:
+                  type: string
+                  example: ok
+      503:
+        description: Sistema com problemas
+    """
     from app import db
     import time
     
@@ -179,7 +266,7 @@ def health_check():
         'checks': {}
     }
     
-    # Check 1: Database
+    # Check database
     try:
         db.session.execute(db.text('SELECT 1'))
         health['checks']['database'] = 'ok'
@@ -187,7 +274,7 @@ def health_check():
         health['checks']['database'] = 'error'
         health['status'] = 'unhealthy'
     
-    # Check 2: Cache (opcional)
+    # Check cache
     try:
         from app.services.cache_service import CacheService
         stats = CacheService.get_stats()
@@ -196,7 +283,6 @@ def health_check():
     except Exception:
         health['checks']['cache'] = 'unavailable'
     
-    # Retornar status HTTP correto
     status_code = 200 if health['status'] == 'healthy' else 503
     
     return jsonify(health), status_code

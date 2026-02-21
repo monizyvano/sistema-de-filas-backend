@@ -35,39 +35,63 @@ def listar_todas():
 	except Exception as e:
 		return jsonify({"erro": "Erro interno do servidor"}), 500
 
-
+#OBTER FILA
 @fila_bp.route('/<int:servico_id>', methods=['GET'])
-def obter_fila(servico_id):
-	"""
-	GET /api/filas/:servico_id
-    
-	Ver fila de um serviço específico
-    
-	Response:
-		{
-			"servico_id": 1,
-			"fila": [
-				{"numero": "P001", "tipo": "prioritaria", ...},
-				{"numero": "P002", "tipo": "prioritaria", ...},
-				{"numero": "N001", "tipo": "normal", ...}
-			],
-			"total": 3
-		}
-	"""
-	try:
-		fila = FilaService.obter_fila(servico_id, status='aguardando')
+def buscar_fila(servico_id):
+    """Buscar fila de um serviço
+    ---
+    tags:
+      - Filas
+    parameters:
+      - in: path
+        name: servico_id
+        required: true
+        type: integer
+        description: ID do serviço
+        example: 1
+    responses:
+      200:
+        description: Fila retornada com sucesso
+        schema:
+          type: object
+          properties:
+            servico_id:
+              type: integer
+              example: 1
+            total:
+              type: integer
+              example: 5
+              description: Total de senhas na fila
+            fila:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  numero:
+                    type: string
+                    example: N001
+                  tipo:
+                    type: string
+                    example: normal
+                  status:
+                    type: string
+                    example: aguardando
+      500:
+        description: Erro interno do servidor
+    """
+    try:
+        fila = SenhaService.obter_fila(servico_id=servico_id)
         
-		# Serializar
-		schema = SenhaSchema(many=True)
+        return jsonify({
+            'servico_id': servico_id,
+            'total': len(fila),
+            'fila': [senha.to_dict(include_relationships=False) for senha in fila]
+        }), 200
         
-		return jsonify({
-			"servico_id": servico_id,
-			"fila": schema.dump(fila),
-			"total": len(fila)
-		}), 200
-    
-	except Exception as e:
-		return jsonify({"erro": "Erro interno do servidor"}), 500
+    except Exception as e:
+        return jsonify({'erro': 'Erro ao buscar fila'}), 500
 
 
 @fila_bp.route('/chamar', methods=['POST'])

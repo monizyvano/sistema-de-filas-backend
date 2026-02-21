@@ -12,6 +12,7 @@ from flask_marshmallow import Marshmallow
 from flask_socketio import SocketIO
 from app.utils.logger import setup_logging
 from app.utils.request_logger import log_request
+from flasgger import Swagger
 
 from app.config import get_config
 
@@ -59,6 +60,48 @@ def create_app(config_name=None):
         'config': config_name or 'development'
     })
 
+        # Configurar Swagger/OpenAPI
+    swagger_config = {
+        "headers": [],
+        "specs": [
+            {
+                "endpoint": 'apispec',
+                "route": '/apispec.json',
+                "rule_filter": lambda rule: True,
+                "model_filter": lambda tag: True,
+            }
+        ],
+        "static_url_path": "/flasgger_static",
+        "swagger_ui": True,
+        "specs_route": "/docs"
+    }
+    
+    swagger_template = {
+        "swagger": "2.0",
+        "info": {
+            "title": "API Sistema de Filas IMTSB",
+            "description": "Sistema Inteligente de Gerenciamento de Filas e Atendimento - Instituto Médio Técnico São Benedito",
+            "version": "1.0.0",
+            "contact": {
+                "name": "Equipe IMTSB",
+                "email": "suporte@imtsb.ao"
+            }
+        },
+        "host": "localhost:5000",
+        "basePath": "/",
+        "schemes": ["http"],
+        "securityDefinitions": {
+            "Bearer": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header",
+                "description": "JWT Token. Use: Bearer {seu_token_aqui}"
+            }
+        }
+    }
+    
+    Swagger(app, config=swagger_config, template=swagger_template)
+    
     # Configurar CORS
     CORS(app, origins=app.config['CORS_ORIGINS'])
     
