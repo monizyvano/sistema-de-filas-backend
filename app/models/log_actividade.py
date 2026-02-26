@@ -2,7 +2,8 @@
 Model de Log de Atividades (auditoria completa)
 Conforme MER Corrigido
 """
-from app import db
+from app.extensions import db
+from app.extensions import bcrypt
 from app.models.base import BaseModel
 
 

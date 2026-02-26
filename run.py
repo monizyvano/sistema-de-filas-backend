@@ -1,14 +1,15 @@
-from app import create_app, socketio
+# run.py
 
-# Criar aplicação
+from app import create_app
+from app.extensions import socketio
+
+# Criar aplicação usando config padrão (development se não passar nada)
 app = create_app()
-app.config['DEBUG'] = True  # ← Adicione esta linha
 
 if __name__ == '__main__':
-    # Rodar com SocketIO para suporte a WebSockets
     socketio.run(
         app,
-        debug=True,
         host='0.0.0.0',
-        port=5000
+        port=5000,
+        debug=app.config.get("DEBUG", False)
     )

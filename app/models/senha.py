@@ -14,7 +14,8 @@ BACKUP ANTES DE APLICAR:
 cp app/models/senha.py app/models/senha.py.backup.$(date +%Y%m%d_%H%M%S)
 """
 
-from app import db
+from app.extensions import db
+from app.extensions import bcrypt
 from app.models.base import BaseModel
 from datetime import datetime, date
 from sqlalchemy import func

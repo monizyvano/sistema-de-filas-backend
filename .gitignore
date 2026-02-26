@@ -4,44 +4,45 @@ __pycache__/
 *$py.class
 *.so
 .Python
+
+# Ambiente virtual
 venv/
 env/
 ENV/
-.venv
 
 # Flask
 instance/
-.flaskenv
+.webassets-cache
 
-# Database
+# Banco de dados
 *.db
 *.sqlite
 *.sqlite3
 
-# Environment
-.env
-.env.local
+# Logs
+logs/
+*.log
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
+# Testes
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Variáveis de ambiente
+.env
+.env.local
+
 # OS
 .DS_Store
 Thumbs.db
 
 # Uploads
-app/static/uploads/*
-!app/static/uploads/.gitkeep
-
-# Tests
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Logs
-*.log
-logs/
+uploads/

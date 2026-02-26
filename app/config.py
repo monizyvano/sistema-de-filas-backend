@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 # Carregar variáveis do .env
 load_dotenv()
 
+class DevelopmentConfig:
+    DEBUG = True
+
+class ProductionConfig:
+    DEBUG = False
+
 class Config:
     """Configuração base (herdada por outras)"""
     

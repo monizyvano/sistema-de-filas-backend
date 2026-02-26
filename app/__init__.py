@@ -2,27 +2,15 @@
 Application Factory Pattern
 Cria e configura a aplicação Flask
 """
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from flask_jwt_extended import JWTManager
-from flask_bcrypt import Bcrypt
-from flask_cors import CORS
-from flask_marshmallow import Marshmallow
-from flask_socketio import SocketIO
+from app.extensions import db, migrate, jwt, bcrypt, ma, socketio
 from app.utils.logger import setup_logging
 from app.utils.request_logger import log_request
 from flasgger import Swagger
+from app.extensions import db, socketio, jwt
+from flask import Flask
+from flask_cors import CORS
 
 from app.config import get_config
-
-# Inicializar extensões (sem app ainda)
-db = SQLAlchemy()
-migrate = Migrate()
-jwt = JWTManager()
-bcrypt = Bcrypt()
-ma = Marshmallow()
-socketio = SocketIO(cors_allowed_origins="*", async_mode='threading')
 
 
 def create_app(config_name=None):
@@ -129,6 +117,7 @@ def register_blueprints(app):
     from app.controllers.fila_controller import fila_bp
     from app.controllers.servico_controller import servico_bp
     from app.controllers.dashboard_controller import dashboard_bp
+    from app.controllers.config_controller import config_bp
    
     
    
@@ -138,6 +127,7 @@ def register_blueprints(app):
     app.register_blueprint(fila_bp, url_prefix='/api/filas')
     app.register_blueprint(servico_bp, url_prefix='/api/servicos')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+    app.register_blueprint(config_bp, url_prefix='/api')  # ← REGISTRAR Blueprint de Configuração
 
 
 

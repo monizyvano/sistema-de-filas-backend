@@ -2,7 +2,8 @@
 Model de Configurações do Sistema
 Conforme MER Corrigido - permite mudar settings sem alterar código
 """
-from app import db
+from app.extensions import db
+from app.extensions import bcrypt
 from app.models.base import BaseModel
 
 
