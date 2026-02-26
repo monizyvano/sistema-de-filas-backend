@@ -14,7 +14,9 @@ class Atendente(BaseModel):
     email = db.Column(db.String(120), unique=True, nullable=False)
     senha_hash = db.Column(db.String(200), nullable=False)
     ativo = db.Column(db.Boolean, default=True)
-
+    tipo = db.Column(db.String(20),nullable=False,default='atendente',comment="Tipo: admin ou atendente")
+    balcao = db.Column(db.Integer,nullable=True,comment="Número do balcão do atendente"
+)
     # ================= MÉTODOS =================
 
     def set_senha(self, senha: str):

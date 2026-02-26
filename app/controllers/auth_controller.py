@@ -118,6 +118,7 @@ def login():
             'nome': atendente.nome,
             'email': atendente.email,
             'tipo': atendente.tipo,
+            'ativo': atendente.ativo,
             'balcao': atendente.balcao
         }
     }), 200
