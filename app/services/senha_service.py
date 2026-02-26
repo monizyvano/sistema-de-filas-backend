@@ -22,6 +22,7 @@ from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 import time
 from app.services.cache_service import CacheService
+from app.services.cache_service import get_cache
 
 
 class SenhaService:
@@ -59,6 +60,11 @@ class SenhaService:
             >>> print(senha.numero)  # N001 (sem risco de duplicação)
         """
         from flask import current_app
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
         
         # Log início
         current_app.logger.info('Iniciando emissão de senha', extra={
@@ -147,6 +153,12 @@ class SenhaService:
     
     @staticmethod
     def _emitir_com_lock(servico_id, tipo, usuario_contato):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         """
         Emissão com lock transacional (método interno)
         
@@ -218,6 +230,11 @@ class SenhaService:
         Returns:
             str: Número no formato N001, N002... ou P001, P002...
         """
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
         # Definir prefixo baseado no tipo
         prefixo = 'P' if tipo == 'prioritaria' else 'N'
         
@@ -248,6 +265,12 @@ class SenhaService:
     
     @staticmethod
     def validar_dados_emissao(servico_id, tipo):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         """Valida dados antes de emitir senha"""
         servico = db.session.get(Servico, servico_id)
         if not servico:
@@ -262,12 +285,24 @@ class SenhaService:
     
     @staticmethod
     def obter_por_id(senha_id):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         """Busca senha por ID"""
         return db.session.get(Senha, senha_id)
     
     
     @staticmethod
     def obter_por_numero(numero, data_emissao=None):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         """Busca senha por número e data"""
         if data_emissao is None:
             data_emissao = datetime.utcnow().date()
@@ -280,6 +315,12 @@ class SenhaService:
     
     @staticmethod
     def cancelar(senha_id, motivo, atendente_id=None):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         """Cancela uma senha"""
         senha = db.session.get(Senha, senha_id)
         if not senha:
@@ -309,39 +350,49 @@ class SenhaService:
     
     
     @staticmethod
-    def obter_estatisticas_hoje(data=None):
-        if data is None:
-            data = datetime.utcnow().date()
-    
-    # Tentar cache
-        cache_key = f'stats:{data.isoformat()}'
-        cached = CacheService.get(cache_key)
+    def obter_estatisticas_hoje():
+        from app.models.senha import Senha
+        from app import db
+
+        cache = get_cache()
+        cache_key = f"estatisticas:{date.today()}"
+
+        # 🔎 1. Tentar cache
+        cached = cache.get(cache_key)
         if cached:
             return cached
-    
-    # Buscar do banco
-        senhas_do_dia = Senha.query.filter(
-            Senha.data_emissao == data
-        )
-    
+
+        # 🧮 2. Calcular se não existir
+        hoje = date.today()
+
         stats = {
-            'data': data.isoformat(),
-            'total_emitidas': senhas_do_dia.count(),
-            'aguardando': senhas_do_dia.filter_by(status='aguardando').count(),
-            'chamando': senhas_do_dia.filter_by(status='chamando').count(),
-            'atendendo': senhas_do_dia.filter_by(status='atendendo').count(),
-            'concluidas': senhas_do_dia.filter_by(status='concluida').count(),
-            'canceladas': senhas_do_dia.filter_by(status='cancelada').count(),
+            "total_emitidas": Senha.query.filter(
+                db.func.date(Senha.emitida_em) == hoje
+            ).count(),
+
+            "aguardando": Senha.query.filter_by(status="aguardando").count(),
+
+            "atendendo": Senha.query.filter_by(status="atendendo").count(),
+
+            "concluidas": Senha.query.filter_by(status="concluida").count(),
+
+            "canceladas": Senha.query.filter_by(status="cancelada").count()
         }
-    
-    # Cache por 30 segundos
-        CacheService.set(cache_key, stats, ttl_seconds=30)
-    
+
+        # 💾 3. Salvar no cache (30 segundos)
+        cache.set(cache_key, stats, ttl=30)
+
         return stats
     
     
     @staticmethod
     def obter_fila(servico_id, data=None):
+        from app.services.cache_service import get_cache
+        from datetime import date
+
+        cache = get_cache()
+        cache.delete(f"estatisticas:{date.today()}")
+
         if data is None:
             data = datetime.utcnow().date()
     

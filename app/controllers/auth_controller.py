@@ -107,7 +107,7 @@ def login():
     
     # Gerar token JWT
     access_token = create_access_token(
-        identity=atendente.id,
+        identity=str(atendente.id),
         expires_delta=timedelta(hours=8)
     )
     
@@ -223,66 +223,35 @@ def me():
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
+from app.services.cache_service import get_cache
+
+from flask import jsonify
+from sqlalchemy import text
+from app import db
+from app.services.cache_service import get_cache
+
+
 @auth_bp.route('/health', methods=['GET'])
-def health_check():
-    """Health check do sistema
-    ---
-    tags:
-      - Sistema
-    responses:
-      200:
-        description: Sistema saudável
-        schema:
-          type: object
-          properties:
-            status:
-              type: string
-              example: healthy
-            timestamp:
-              type: number
-              example: 1771633912.7356348
-            service:
-              type: string
-              example: API Sistema de Filas IMTSB
-            checks:
-              type: object
-              properties:
-                database:
-                  type: string
-                  example: ok
-                cache:
-                  type: string
-                  example: ok
-      503:
-        description: Sistema com problemas
-    """
-    from app import db
-    import time
-    
-    health = {
-        'status': 'healthy',
-        'timestamp': time.time(),
-        'service': 'API Sistema de Filas IMTSB',
-        'checks': {}
-    }
-    
-    # Check database
+def health():
+    # 🔎 Database check
     try:
-        db.session.execute(db.text('SELECT 1'))
-        health['checks']['database'] = 'ok'
+        db.session.execute(text("SELECT 1"))
+        database_status = "ok"
     except Exception as e:
-        health['checks']['database'] = 'error'
-        health['status'] = 'unhealthy'
-    
-    # Check cache
+        database_status = "unavailable"
+
+    # 🔎 Cache check
     try:
-        from app.services.cache_service import CacheService
-        stats = CacheService.get_stats()
-        health['checks']['cache'] = 'ok'
-        health['cache_entries'] = stats['total_entries']
+        cache = get_cache()
+        cache.get_stats()
+        cache_status = "ok"
     except Exception:
-        health['checks']['cache'] = 'unavailable'
-    
-    status_code = 200 if health['status'] == 'healthy' else 503
-    
-    return jsonify(health), status_code
+        cache_status = "unavailable"
+
+    return jsonify({
+        "status": "running",
+        "checks": {
+            "database": database_status,
+            "cache": cache_status
+        }
+    })

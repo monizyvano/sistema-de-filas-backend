@@ -245,6 +245,7 @@ def iniciar_atendimento(senha_id):
         
         # Pegar atendente logado
         atendente_id = get_jwt_identity()
+        atendente_id = int(atendente_id)  # ✅ CORRETO
         
         # Buscar senha
         senha = SenhaService.obter_por_id(senha_id)

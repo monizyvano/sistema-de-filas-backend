@@ -7,6 +7,7 @@ from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.services import FilaService
+from app.services.fila_service import FilaService
 from app.schemas.senha_schema import SenhaSchema
 
 # Criar Blueprint
@@ -82,7 +83,7 @@ def buscar_fila(servico_id):
         description: Erro interno do servidor
     """
     try:
-        fila = SenhaService.obter_fila(servico_id=servico_id)
+        fila = FilaService.obter_fila(servico_id=servico_id)
         
         return jsonify({
             'servico_id': servico_id,
@@ -97,63 +98,42 @@ def buscar_fila(servico_id):
 @fila_bp.route('/chamar', methods=['POST'])
 @jwt_required()
 def chamar_proxima():
-	"""
-	POST /api/filas/chamar
-    
-	Chamar próxima senha (requer autenticação)
-    
-	Headers:
-		Authorization: Bearer <token>
-    
-	Body:
-		{
-			"servico_id": 1,
-			"numero_balcao": 1
-		}
-    
-	Response:
-		{
-			"mensagem": "Senha chamada com sucesso",
-			"senha": {
-				"numero": "P001",
-				"status": "chamando",
-				...
-			}
-		}
-	"""
-	try:
-		data = request.get_json()
-		servico_id = data.get('servico_id')
-		numero_balcao = data.get('numero_balcao')
-        
-		# Validações básicas
-		if not servico_id or not numero_balcao:
-			return jsonify({
-				"erro": "servico_id e numero_balcao são obrigatórios"
-			}), 400
-        
-		# Pegar atendente logado
-		atendente_id = get_jwt_identity()
-        
-		# Chamar próxima senha
-		senha = FilaService.chamar_proxima(
-			servico_id=servico_id,
-			numero_balcao=numero_balcao,
-			atendente_id=atendente_id
-		)
-        
-		# Serializar
-		schema = SenhaSchema()
-        
-		return jsonify({
-			"mensagem": "Senha chamada com sucesso",
-			"senha": schema.dump(senha)
-		}), 200
-    
-	except ValueError as e:
-		return jsonify({"erro": str(e)}), 400
-	except Exception as e:
-		return jsonify({"erro": "Erro interno do servidor"}), 500
+    try:
+        data = request.get_json()
+
+        servico_id = data.get('servico_id')
+        numero_balcao = data.get('numero_balcao')
+
+        if not servico_id or not numero_balcao:
+            return jsonify({
+                "erro": "servico_id e numero_balcao são obrigatórios"
+            }), 400
+
+        atendente_id = get_jwt_identity()
+        atendente_id = int(get_jwt_identity())
+
+        senha = FilaService.chamar_proxima(
+            servico_id=servico_id,
+            numero_balcao=numero_balcao,
+            atendente_id=atendente_id
+        )
+
+        if not senha:
+            return jsonify({
+                "mensagem": "Nenhuma senha aguardando para este serviço"
+            }), 404
+
+        schema = SenhaSchema()
+
+        return jsonify({
+            "mensagem": "Senha chamada com sucesso",
+            "senha": schema.dump(senha)
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "erro": str(e)
+        }), 500
 
 
 @fila_bp.route('/<int:servico_id>/estatisticas', methods=['GET'])

@@ -15,6 +15,7 @@ from sqlalchemy import func
 dashboard_bp = Blueprint('dashboard', __name__)
 
 
+
 @dashboard_bp.route('/estatisticas', methods=['GET'])
 @jwt_required()
 def estatisticas():

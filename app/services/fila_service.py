@@ -59,51 +59,49 @@ class FilaService:
         return query.all()
     
     @staticmethod
-    def proxima_senha(servico_id=None):
+    def proxima_senha(servico_id):
         """
-        Obtém próxima senha a ser atendida (sem chamar)
-        
-        Args:
-            servico_id (int): ID do serviço
-        
-        Returns:
-            Senha: Próxima senha ou None
+        Retorna próxima senha aguardando
+        Prioridade: prioritárias primeiro, depois ordem de emissão
         """
-        fila = FilaService.obter_fila(servico_id, status='aguardando')
-        return fila[0] if fila else None
+
+        return Senha.query.filter(
+            Senha.status == 'aguardando',
+            Senha.servico_id == servico_id
+        ).order_by(
+            db.case(
+                (Senha.tipo == 'prioritaria', 1),
+                else_=0
+            ).desc(),
+            Senha.emitida_em.asc()
+        ).first()
     
     @staticmethod
     def chamar_proxima(servico_id, numero_balcao, atendente_id=None):
         """
         Chama próxima senha da fila
-        
-        Args:
-            servico_id (int): ID do serviço
-            numero_balcao (int): Número do balcão
-            atendente_id (int): ID do atendente (opcional)
-        
+
         Returns:
-            Senha: Senha chamada
-        
-        Raises:
-            ValueError: Se não há senhas na fila
+            Senha | None
         """
+
         senha = FilaService.proxima_senha(servico_id)
-        
+
+        # ✅ 1. Se não existir senha, retorna None (não levanta erro)
         if not senha:
-            raise ValueError(f"Não há senhas aguardando para o serviço {servico_id}")
-        
-        # Chamar senha
+            return None
+
+        # ✅ 2. Chamar senha
         senha.chamar(numero_balcao)
-        
-        # Registrar log
+
+        # ✅ 3. Registrar log
         LogActividade.registrar(
             acao='chamada',
             senha_id=senha.id,
             atendente_id=atendente_id,
             descricao=f"Senha {senha.numero} chamada no balcão {numero_balcao}"
         )
-        
+
         return senha
     
     @staticmethod

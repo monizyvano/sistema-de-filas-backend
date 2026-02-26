@@ -268,6 +268,107 @@ class Senha(BaseModel):
             ),
             cls.emitida_em
         ).all()
+    # ===== MÉTODOS DE AÇÃO (ADICIONAR APÓS obter_fila_do_dia) =====
+    
+    def chamar(self, numero_balcao=None):
+        """
+        Chamar senha (muda status para 'chamada')
+        
+        Args:
+            numero_balcao (int, optional): Número do balcão
+            
+        Raises:
+            ValueError: Se senha não estiver aguardando
+        """
+        if self.status != 'aguardando':
+            raise ValueError(f"Senha {self.numero} não está aguardando (status atual: {self.status})")
+        
+        self.status = 'chamada'
+        self.chamada_em = datetime.utcnow()
+        
+        if numero_balcao:
+            self.numero_balcao = numero_balcao
+        
+        db.session.commit()
+    
+    
+    def iniciar_atendimento(self, atendente_id, numero_balcao=None):
+        """
+        Iniciar atendimento da senha
+        
+        Args:
+            atendente_id (int): ID do atendente
+            numero_balcao (int, optional): Número do balcão
+            
+        Raises:
+            ValueError: Se senha não estiver chamada ou aguardando
+        """
+        if self.status not in ['aguardando', 'chamada']:
+            raise ValueError(f"Senha {self.numero} não pode ser atendida (status: {self.status})")
+        
+        self.status = 'atendendo'
+        self.atendente_id = atendente_id
+        self.atendimento_iniciado_em = datetime.utcnow()
+        
+        if numero_balcao:
+            self.numero_balcao = numero_balcao
+        
+        # Calcular tempo de espera
+        if self.emitida_em:
+            delta = self.atendimento_iniciado_em - self.emitida_em
+            self.tempo_espera_minutos = int(delta.total_seconds() / 60)
+        
+        db.session.commit()
+    
+    
+    def finalizar(self, observacoes=None):
+        """
+        Finalizar atendimento
+        
+        Args:
+            observacoes (str, optional): Observações sobre o atendimento
+            
+        Raises:
+            ValueError: Se senha não estiver em atendimento
+        """
+        if self.status != 'atendendo':
+            raise ValueError(f"Senha {self.numero} não está em atendimento (status: {self.status})")
+        
+        self.status = 'concluida'
+        self.atendimento_concluido_em = datetime.utcnow()
+        
+        if observacoes:
+            self.observacoes = observacoes
+        
+        # Calcular tempo de atendimento
+        if self.atendimento_iniciado_em:
+            delta = self.atendimento_concluido_em - self.atendimento_iniciado_em
+            self.tempo_atendimento_minutos = int(delta.total_seconds() / 60)
+        
+        db.session.commit()
+    
+    
+    def cancelar(self, motivo, atendente_id=None):
+        """
+        Cancelar senha
+        
+        Args:
+            motivo (str): Motivo do cancelamento
+            atendente_id (int, optional): ID do atendente que cancelou
+            
+        Raises:
+            ValueError: Se senha já estiver concluída
+        """
+        if self.status == 'concluida':
+            raise ValueError(f"Senha {self.numero} já foi concluída, não pode ser cancelada")
+        
+        self.status = 'cancelada'
+        self.observacoes = f"CANCELADA: {motivo}"
+        
+        if atendente_id:
+            self.atendente_id = atendente_id
+        
+        db.session.commit()
 
 
 # ===== INSTRUÇÕES DE APLICAÇÃO =====
