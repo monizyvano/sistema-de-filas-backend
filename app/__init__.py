@@ -6,18 +6,14 @@ from app.extensions import db, migrate, jwt, bcrypt, ma, socketio
 from app.utils.logger import setup_logging
 from app.utils.request_logger import log_request
 from flasgger import Swagger
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, render_template, send_from_directory, request, jsonify
 from flask_cors import CORS
 from app.config import get_config
 import os
 
 
 def create_app(config_name=None):
-    """
-    Factory Function - Cria e configura a aplicação
-    """
 
-    # Criar aplicação
     app = Flask(
         __name__,
         instance_relative_config=True,
@@ -25,10 +21,8 @@ def create_app(config_name=None):
         template_folder='../templates'
     )
 
-    # Carregar configuração
     app.config.from_object(get_config(config_name))
 
-    # Inicializar extensões
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
@@ -36,7 +30,6 @@ def create_app(config_name=None):
     ma.init_app(app)
     socketio.init_app(app)
 
-    # Logging
     setup_logging(app)
     log_request(app)
 
@@ -82,13 +75,10 @@ def create_app(config_name=None):
 
     Swagger(app, config=swagger_config, template=swagger_template)
 
-    # ================= CORS =================
     CORS(app, origins=app.config['CORS_ORIGINS'])
 
-    # ================= IMPORTAR MODELS =================
     from app.models import BaseModel, Servico, Senha, Atendente, LogActividade, Configuracao
 
-    # ================= REGISTRAR BLUEPRINTS =================
     register_blueprints(app)
 
     # ================= ROTAS DO FRONTEND =================
@@ -98,6 +88,7 @@ def create_app(config_name=None):
         return render_template('principal.html')
 
     @app.route('/login')
+    @app.route('/logintcc.html')  # ← ADICIONADO
     def login_page():
         return render_template('logintcc.html')
 
@@ -120,22 +111,31 @@ def create_app(config_name=None):
     def painel_admin():
         return render_template('dashadm.html')
 
-    # Servir arquivos estáticos manualmente (caso necessário)
-    @app.route('/static/<path:filename>')
-    def serve_static(filename):
+    # ================= ROTA CATCH-ALL PARA HTML =================
+
+    @app.route('/<path:filename>')
+    def serve_template(filename):
+        """
+        Serve automaticamente qualquer arquivo .html da pasta templates
+        Ex: /calendario.html → templates/calendario.html
+        """
+        if filename.endswith('.html'):
+            try:
+                return render_template(filename)
+            except:
+                return render_template('principal.html'), 404
+
         return send_from_directory(app.static_folder, filename)
 
     # ================= HANDLERS DE ERRO =================
     register_error_handlers(app)
 
-    # Criar pasta de uploads se não existir
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
     return app
 
 
 def register_blueprints(app):
-    """Registra todos os blueprints (controllers)"""
 
     from app.controllers.auth_controller import auth_bp
     from app.controllers.senha_controller import senha_bp
@@ -153,18 +153,24 @@ def register_blueprints(app):
 
 
 def register_error_handlers(app):
-    """Handlers de erro personalizados"""
-
-    from flask import jsonify
 
     @app.errorhandler(404)
     def not_found(error):
-        return jsonify({"erro": "Recurso não encontrado"}), 404
+        # Se for API → retorna JSON
+        if request.path.startswith('/api/'):
+            return jsonify({"erro": "Recurso não encontrado"}), 404
+
+        # Se for HTML → renderiza página principal
+        return render_template('principal.html'), 404
 
     @app.errorhandler(500)
     def internal_error(error):
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+        if request.path.startswith('/api/'):
+            return jsonify({"erro": "Erro interno do servidor"}), 500
+        return render_template('principal.html'), 500
 
     @app.errorhandler(400)
     def bad_request(error):
-        return jsonify({"erro": "Requisição inválida"}), 400
+        if request.path.startswith('/api/'):
+            return jsonify({"erro": "Requisição inválida"}), 400
+        return render_template('principal.html'), 400
