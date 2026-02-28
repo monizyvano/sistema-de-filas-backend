@@ -1,0 +1,134 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> IMTSB</title>
+    <link rel="stylesheet" href="css/dash.css">
+</head>
+<body>
+    <header class="top-bar">
+        <div class="attendant-info">
+            <div class="attendant-avatar" id="workerAvatar">JD</div>
+            <div class="attendant-details">
+                <h3 id="workerName">Joao da Silva</h3>
+                <p id="workerDept">Secretaria Academica</p>
+            </div>
+        </div>
+        
+        <div class="counter-badge" id="counterBadge">Balcao 1</div>
+        
+        <button class="btn-logout" type="button" onclick="sair()">Sair</button>
+
+        <div class="status-indicator">
+            <div class="status-dot"></div>
+            <span class="status-text">Em Atendimento</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <main class="current-client">
+            <div class="section-header">
+                <h2 class="section-title">Atendimento Atual</h2>
+                <div class="timer" id="timer">00:00</div>
+            </div>
+
+            <section class="password-display">
+                <div class="password-label">Senha</div>
+                <div class="password-number" id="currentPassword">---</div>
+                <div class="password-type" id="passwordType">Aguardando atendimento</div>
+            </section>
+
+            <section class="client-info">
+                <div class="info-row">
+                    <span class="info-label">Servico Solicitado</span>
+                    <span class="info-value" id="serviceValue">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Tempo de Espera</span>
+                    <span class="info-value" id="waitTime">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Hora de Emissao</span>
+                    <span class="info-value" id="issuedAt">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Observacoes</span>
+                    <span class="info-value" id="obsValue">Sem observacoes</span>
+                </div>
+            </section>
+
+            <div class="action-buttons">
+                <button class="btn-action btn-next" onclick="callNextCustomer()">
+                    Chamar Proximo
+                </button>
+                
+                <button class="btn-action btn-pause" onclick="togglePause()" id="pauseBtn">
+                    Pausar
+                </button>
+                
+                <button class="btn-action btn-redirect" onclick="redirectCustomer()">
+                    Reencaminhar
+                </button>
+            </div>
+        </main>
+
+        <aside class="sidebar">
+            <section class="queue-summary">
+                <h3 class="summary-title">Resumo da Fila</h3>
+                <div class="summary-stats">
+                    <article class="stat-box">
+                        <div class="stat-info">
+                            <h4>Aguardando</h4>
+                            <p id="waitingCount">00</p>
+                        </div>
+                    </article>
+                    
+                    <article class="stat-box">
+                        <div class="stat-info">
+                            <h4>Atendidos Hoje</h4>
+                            <p id="servedToday">00</p>
+                        </div>
+                    </article>
+                    
+                    <article class="stat-box">
+                        <div class="stat-info">
+                            <h4>Tempo Medio</h4>
+                            <p id="avgTime">~0min</p>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="activity-log">
+                <h3 class="log-title">Historico de Hoje</h3>
+                <div class="log-list" id="activityLog"></div>
+            </section>
+
+            <section class="quick-actions">
+                <label for="receiptFormat" style="display:block; font-weight:700; margin-bottom:8px;">Formato do Recibo</label>
+                <select id="receiptFormat" class="quick-btn" style="margin-bottom:8px;">
+                    <option value="pdf">PDF</option>
+                    <option value="txt">TXT</option>
+                </select>
+                <button class="quick-btn" onclick="addObservation()">Adicionar Observacao</button>
+                <button class="quick-btn" onclick="requestDocuments()">Ver Documentos Anexados</button>
+                <button class="quick-btn" onclick="sendReceipt()">Enviar Recibo</button>
+                <button class="quick-btn" onclick="showStatistics()">Ver Estatisticas</button>
+            </section>
+        </aside>
+    </div>
+
+    <script src="js/api-config.js"></script>
+    <script src="js/api-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="js/realtime-store.js"></script>
+    <script src="js/dash.js"></script>
+</body>
+</html>
+
+
+
+
+
+

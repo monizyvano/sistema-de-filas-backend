@@ -9,6 +9,8 @@ from flasgger import Swagger
 from app.extensions import db, socketio, jwt
 from flask import Flask
 from flask_cors import CORS
+from flask import Flask, render_template, send_from_directory
+
 
 from app.config import get_config
 
@@ -24,7 +26,8 @@ def create_app(config_name=None):
         Flask: Aplicação configurada
     """
     # Criar aplicação
-    app = Flask(__name__, instance_relative_config=True)
+    app = Flask(__name__, instance_relative_config=True,static_folder='../static',      # ← Apontar para static/
+    template_folder='../templates') 
     
     # Carregar configuração
     app.config.from_object(get_config(config_name))

@@ -1,0 +1,93 @@
+﻿<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - IMTSB</title>
+  <link rel="stylesheet" href="css/logintcc.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+</head>
+<body>
+  <main>
+    <section id="login">
+      <div id="imagem"></div>
+
+      <div id="formulario">
+        <h1>Acesso ao Sistema</h1>
+
+        <div class="auth-tabs">
+          <button type="button" class="tab-btn active" data-tab="login">Entrar</button>
+          <button type="button" class="tab-btn" data-tab="cadastro">Cadastrar</button>
+        </div>
+
+        <div id="authMessage" class="auth-message"></div>
+        <p class="helper-text">Admins padrao: admin1@sb.com / Admin1234 e admin2@sb.com / Admin2234</p>
+
+        <form id="loginForm" autocomplete="on">
+          <label class="field-label" for="loginTipo">Perfil</label>
+          <select id="loginTipo" required>
+            <option value="usuario">Usuario</option>
+            <option value="trabalhador">Trabalhador</option>
+            <option value="admin">Administrador</option>
+          </select>
+
+          <div class="campo">
+            <i class="material-icons">mail</i>
+            <input type="email" id="iemail" placeholder="Seu e-mail" required autocomplete="email" maxlength="60">
+          </div>
+
+          <div class="campo">
+            <i class="material-icons">vpn_key</i>
+            <input type="password" id="isenha" placeholder="Sua senha" required minlength="6" maxlength="32" autocomplete="current-password">
+          </div>
+
+          <label class="confirm-line">
+            <input type="checkbox" id="loginConfirmDados">
+            Confirmo que os dados informados estao corretos.
+          </label>
+
+          <input type="submit" value="Entrar" id="botao-enviar">
+          <button type="button" class="btn-voltar" onclick="voltarprincipal()">Voltar</button>
+        </form>
+
+        <form id="registerForm" autocomplete="on" class="hidden">
+          <div class="campo">
+            <i class="material-icons">person</i>
+            <input type="text" id="rnome" placeholder="Nome completo" required minlength="3" maxlength="80" autocomplete="name">
+          </div>
+
+          <p class="field-label">Perfil: Usuario</p>
+
+          <div class="campo">
+            <i class="material-icons">mail</i>
+            <input type="email" id="remail" placeholder="E-mail" required autocomplete="email" maxlength="60">
+          </div>
+
+          <div class="campo">
+            <i class="material-icons">lock</i>
+            <input type="password" id="rsenha" placeholder="Criar senha" required minlength="6" maxlength="32" autocomplete="new-password">
+          </div>
+
+          <label class="confirm-line">
+            <input type="checkbox" id="registerConfirmDados">
+            Confirmo que os dados informados estao corretos.
+          </label>
+
+          <input type="submit" value="Criar Conta" id="botao-cadastrar">
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api-config.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/realtime-store.js"></script>
+  <script src="js/logintcc.js"></script>
+</body>
+</html>
+
+
+
+
+
+
