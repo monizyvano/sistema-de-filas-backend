@@ -2,14 +2,17 @@
   "use strict";
 
   // Yvano essa é a configuracao base para integracao com backend.
-  // ajustar apenas este ficheiro.
+  // Ajustar apenas este ficheiro.
   window.IMTSBApiConfig = {
 
     // Ativa/desativa chamadas reais para API.
+    // Manter false enquanto usa mock.
     enabled: false,
 
-    // Base do backend.
-    baseUrl: "http://localhost:5000/api",
+    // Base do backend - RELATIVA (mesmo servidor Flask)
+    // Remove http://localhost:5000 para evitar CORS
+    baseUrl: "/api",
+
     timeoutMs: 15000,
 
     // Compatibilidade com implementacoes antigas.
@@ -19,24 +22,25 @@
     accessTokenStorageKey: "imtsb_access_token",
     refreshTokenStorageKey: "imtsb_refresh_token",
 
-    // Header de autenticacao (normalmente Authorization: Bearer ...).
+    // Header de autenticacao (Authorization: Bearer ...)
     authHeaderName: "Authorization",
 
     // Margem em segundos para renovar token antes de expirar.
     refreshSkewSec: 30,
+
     endpoints: {
       
-      // Endpoints de autenticacao
+      // ================= AUTENTICACAO =================
       health: { method: "GET", path: "/auth/health" },
       login: { method: "POST", path: "/auth/login" },
       refreshToken: { method: "POST", path: "/auth/refresh" },
       logout: { method: "POST", path: "/auth/logout" },
 
-      // Gestao de usuarios
+      // ================= GESTAO =================
       registerUser: { method: "POST", path: "/users/register" },
       addWorker: { method: "POST", path: "/workers" },
 
-      // Fila / atendimento
+      // ================= FILA / ATENDIMENTO =================
       getSnapshot: { method: "GET", path: "/realtime/snapshot" },
       getQueue: { method: "GET", path: "/queue" },
       getStats: { method: "GET", path: "/stats" },
@@ -51,4 +55,3 @@
     }
   };
 })();
-
