@@ -1,6 +1,150 @@
-﻿(function () {
+(function () {
   "use strict";
 
+  if (window.IMTSBApiConfig && window.IMTSBApiConfig.enabled) {
+    console.log("API real ativada - mock desabilitado");
+
+    const REAL_SESSION_KEY = "imtsb_session_v1";
+
+    function readSession() {
+      const raw = localStorage.getItem(REAL_SESSION_KEY);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    function saveSession(user) {
+      localStorage.setItem(REAL_SESSION_KEY, JSON.stringify({
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        department: user.department || null,
+        loggedAt: new Date().toISOString()
+      }));
+    }
+
+    function clearSession() {
+      localStorage.removeItem(REAL_SESSION_KEY);
+    }
+
+    const store = {
+      apiEnabled: true,
+      apiConfig: window.IMTSBApiConfig || null,
+      apiClient: window.IMTSBApiClient || null,
+      adapter: window.ApiAdapter || null,
+
+      ensureSeed() {},
+
+      onChange() {
+        return function () {};
+      },
+
+      getSnapshot() {
+        return {
+          updatedAt: new Date().toISOString(),
+          users: [],
+          queue: [],
+          history: [],
+          dailyArchives: [],
+          lastCalled: null
+        };
+      },
+
+      getSession: readSession,
+
+      requireRole(roles) {
+        const session = readSession();
+        if (!session || !roles.includes(session.role)) {
+          window.location.href = "/logintcc.html";
+          return null;
+        }
+        return session;
+      },
+
+      logout() {
+        clearSession();
+        window.location.href = "/logintcc.html";
+      },
+
+      async login(email, password, selectedRole) {
+        if (!this.adapter || !this.apiClient) {
+          return { ok: false, message: "Adaptador/API indisponivel." };
+        }
+
+        const result = await this.adapter.login(this.apiClient, {
+          email,
+          senha: password,
+          tipo: selectedRole
+        });
+
+        if (!result.ok) return result;
+
+        saveSession(result.user);
+        return {
+          ok: true,
+          user: result.user,
+          redirect: result.redirect
+        };
+      },
+
+      register() {
+        return { ok: false, message: "Cadastro via API ainda nao implementado." };
+      },
+
+      addWorker() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      removeWorker() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      async issueTicket(payload) {
+        if (!this.adapter || !this.apiClient) {
+          return { ok: false, message: "Adaptador/API indisponivel." };
+        }
+        return this.adapter.emitirSenha(this.apiClient, payload);
+      },
+
+      callNext() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      concludeCurrent() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      setReceipt() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      redirectCurrent() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      setCurrentNote() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      markReceived() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      rateTicket() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      },
+
+      archiveAndResetDay() {
+        return { ok: false, message: "Operacao disponivel apenas no modo mock." };
+      }
+    };
+
+    window.IMTSBStore = store;
+    return;
+  }
   const DATA_KEY = "imtsb_realtime_data_v1";
   const SESSION_KEY = "imtsb_session_v1";
 
@@ -209,7 +353,7 @@
       const user = data.users.find((item) => item.email === normalized);
 
       if (!user) {
-        return { ok: false, message: "Conta nao encontrada. Faça o cadastro." };
+        return { ok: false, message: "Conta nao encontrada. Fa�a o cadastro." };
       }
 
       if (user.password !== typedPassword) {
@@ -552,4 +696,5 @@ Observacoes: ${ticket.notes || "Sem observacoes"}
   window.IMTSBStore = store;
   store.ensureSeed();
 })();
+
 

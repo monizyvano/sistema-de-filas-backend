@@ -32,7 +32,7 @@
 
   tabs.forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
-  loginForm.addEventListener("submit", (event) => {
+  loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const email = document.getElementById("iemail").value;
@@ -45,7 +45,7 @@
       return;
     }
 
-    const result = window.IMTSBStore.login(email, senha, tipo);
+    const result = await Promise.resolve(window.IMTSBStore.login(email, senha, tipo));
     if (!result.ok) {
       showMessage(result.message, "error");
       return;
@@ -55,7 +55,7 @@
     window.location.href = result.redirect;
   });
 
-  registerForm.addEventListener("submit", (event) => {
+  registerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const confirmDados = document.getElementById("registerConfirmDados");
     if (!confirmDados || !confirmDados.checked) {
@@ -70,7 +70,7 @@
       password: document.getElementById("rsenha").value
     };
 
-    const result = window.IMTSBStore.register(payload);
+    const result = await Promise.resolve(window.IMTSBStore.register(payload));
     if (!result.ok) {
       showMessage(result.message, "error");
       return;

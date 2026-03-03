@@ -437,12 +437,12 @@
 
     try {
       const attachments = await readFiles(docInput.files);
-      const result = window.IMTSBStore.issueTicket({
+      const result = await Promise.resolve(window.IMTSBStore.issueTicket({
         service: selectedService,
         userEmail: session.email,
         userName: session.name,
         attachments
-      });
+      }));
 
       if (!result.ok) {
         showMessage(result.message, "warn");
