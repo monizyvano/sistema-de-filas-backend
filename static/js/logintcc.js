@@ -30,14 +30,21 @@
     showMessage("", "");
   }
 
-  tabs.forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+  tabs.forEach((btn) =>
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab))
+  );
+
+  // ===============================
+  // 🔐 LOGIN (COMPATÍVEL API + MOCK)
+  // ===============================
 
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const email = document.getElementById("iemail").value;
+    const email = document.getElementById("iemail").value.trim();
     const senha = document.getElementById("isenha").value;
-    const tipo = document.getElementById("loginTipo").value;
+    const tipoSelect = document.getElementById("loginTipo");
+    const tipo = tipoSelect ? tipoSelect.value : null;
     const confirmDados = document.getElementById("loginConfirmDados");
 
     if (!confirmDados || !confirmDados.checked) {
@@ -45,44 +52,89 @@
       return;
     }
 
-    const result = await Promise.resolve(window.IMTSBStore.login(email, senha, tipo));
-    if (!result.ok) {
-      showMessage(result.message, "error");
+    if (!window.IMTSBStore) {
+      showMessage("Sistema não inicializado.", "error");
       return;
     }
 
-    showMessage(`Bem-vindo, ${result.user.name}.`, "ok");
-    window.location.href = result.redirect;
+    showMessage("Entrando...", "");
+
+    try {
+      const result = await Promise.resolve(
+        window.IMTSBStore.login(email, senha, tipo)
+      );
+
+      if (!result || !result.ok) {
+        showMessage(result?.message || "Erro ao fazer login.", "error");
+        return;
+      }
+
+      showMessage(`Bem-vindo, ${result.user?.name || "Usuário"}!`, "ok");
+
+      // Pequeno delay para UX
+      setTimeout(() => {
+        window.location.href = result.redirect || "index.html";
+      }, 500);
+
+    } catch (error) {
+      console.error("Erro no login:", error);
+      showMessage("Erro inesperado. Tente novamente.", "error");
+    }
   });
+
+  // ===============================
+  // 📝 CADASTRO
+  // ===============================
 
   registerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
     const confirmDados = document.getElementById("registerConfirmDados");
+
     if (!confirmDados || !confirmDados.checked) {
       showMessage("Confirme os dados antes de cadastrar.", "error");
       return;
     }
 
-    const payload = {
-      name: document.getElementById("rnome").value,
-      role: "usuario",
-      email: document.getElementById("remail").value,
-      password: document.getElementById("rsenha").value
-    };
-
-    const result = await Promise.resolve(window.IMTSBStore.register(payload));
-    if (!result.ok) {
-      showMessage(result.message, "error");
+    if (!window.IMTSBStore || !window.IMTSBStore.register) {
+      showMessage("Cadastro não disponível.", "error");
       return;
     }
 
-    showMessage("Cadastro feito. Agora entre com o novo perfil.", "ok");
-    registerForm.reset();
-    switchTab("login");
+    const payload = {
+      name: document.getElementById("rnome").value.trim(),
+      role: "usuario",
+      email: document.getElementById("remail").value.trim(),
+      password: document.getElementById("rsenha").value
+    };
+
+    showMessage("Processando cadastro...", "");
+
+    try {
+      const result = await Promise.resolve(
+        window.IMTSBStore.register(payload)
+      );
+
+      if (!result || !result.ok) {
+        showMessage(result?.message || "Erro no cadastro.", "error");
+        return;
+      }
+
+      showMessage(
+        "Cadastro feito com sucesso. Agora entre com o novo perfil.",
+        "ok"
+      );
+
+      registerForm.reset();
+      switchTab("login");
+
+    } catch (error) {
+      console.error("Erro no cadastro:", error);
+      showMessage("Erro inesperado no cadastro.", "error");
+    }
   });
 })();
 
 function voltarprincipal() {
-  window.location.href = "principal.html";
+  window.location.href = "\\templates\\principal.html";
 }
-

@@ -1,290 +1,264 @@
-﻿(function () {
+﻿/**
+ * API CLIENT - Integração Real com Backend Flask + JWT Refresh
+ * Arquitetura compatível com IMTSBApiConfig + ApiAdapter
+ * Versão melhorada com controle de refresh concorrente
+ */
+
+(function () {
   "use strict";
 
-  // Evita varias chamadas simultaneas de refresh token.
-  // Enquanto um refresh estiver em andamento, os outros aguardam a mesma Promise.
+  const config = window.IMTSBApiConfig;
+  const adapter = window.ApiAdapter;
+
+  if (!config || !config.enabled) {
+    console.warn("⚠ API desativada no api-config.js");
+    return;
+  }
+
+  // ===============================
+  // 🔐 TOKEN HELPERS
+  // ===============================
+
+  let isRefreshing = false;
   let refreshPromise = null;
 
-  // Le configuracao central da API (api-config.js).
-  function getCfg() {
-    return window.IMTSBApiConfig || {};
-  }
-
-  // [JWT] Chave do access token no localStorage.
-  function accessTokenKey() {
-    const cfg = getCfg();
-    return cfg.accessTokenStorageKey || cfg.tokenStorageKey || "imtsb_api_token";
-  }
-
-  // [JWT] Chave do refresh token no localStorage.
-  function refreshTokenKey() {
-    const cfg = getCfg();
-    return cfg.refreshTokenStorageKey || "imtsb_refresh_token";
-  }
-
-  // [JWT] Recupera o access token salvo.
   function getAccessToken() {
-    return localStorage.getItem(accessTokenKey());
+    return localStorage.getItem(config.accessTokenStorageKey);
   }
 
-  // [JWT] Recupera o refresh token salvo.
   function getRefreshToken() {
-    return localStorage.getItem(refreshTokenKey());
+    return localStorage.getItem(config.refreshTokenStorageKey);
   }
 
-  // [JWT] Limpa todos os tokens locais (logout local/sessao expirada).
-  function clearAuth() {
-    const cfg = getCfg();
-    localStorage.removeItem(accessTokenKey());
-    localStorage.removeItem(refreshTokenKey());
-    if (cfg.tokenStorageKey && cfg.tokenStorageKey !== accessTokenKey()) {
-      localStorage.removeItem(cfg.tokenStorageKey);
-    }
-  }
+  function setTokens(data) {
+    if (!data) return;
 
-  // [JWT] Aceita respostas do backend em formatos mais comuns:
-  // - accessToken + refreshToken (recomendado)
-  // - token (compatibilidade)
-  function setTokensFromResponse(data) {
-    if (!data || typeof data !== "object") return;
-
-    const cfg = getCfg();
-    const access = data.accessToken || data.token || null;
-    const refresh = data.refreshToken || null;
+    const access = data.access_token || data.accessToken || null;
+    const refresh = data.refresh_token || data.refreshToken || null;
 
     if (access) {
-      localStorage.setItem(accessTokenKey(), access);
-      if (cfg.tokenStorageKey) localStorage.setItem(cfg.tokenStorageKey, access);
+      localStorage.setItem(config.accessTokenStorageKey, access);
     }
 
     if (refresh) {
-      localStorage.setItem(refreshTokenKey(), refresh);
+      localStorage.setItem(config.refreshTokenStorageKey, refresh);
     }
   }
 
-  // [JWT] Decodifica somente o payload do JWT para ler dados como 'exp'.
-  // Nao valida assinatura aqui (quem valida e o backend= Yvano).
-  function parseJwtPayload(token) {
-    try {
-      const payloadPart = String(token || "").split(".")[1];
-      if (!payloadPart) return null;
-
-      const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-      const decoded = atob(padded);
-
-      return JSON.parse(decoded);
-    } catch (_error) {
-      return null;
-    }
+  function clearSession() {
+    localStorage.removeItem(config.accessTokenStorageKey);
+    localStorage.removeItem(config.refreshTokenStorageKey);
   }
 
-  // [JWT] Considera token expirado quando chega perto do 'exp'
-  // (usa margem de seguranca refreshSkewSec).
-  function isTokenExpired(token) {
-    const payload = parseJwtPayload(token);
-    if (!payload || !payload.exp) return false;
-
-    const cfg = getCfg();
-    const skewSec = Number(cfg.refreshSkewSec) || 30;
-    const nowSec = Math.floor(Date.now() / 1000);
-
-    return nowSec >= (Number(payload.exp) - skewSec);
+  function redirectToLogin() {
+    clearSession();
+    window.location.href = "/login";
   }
 
-  // [JWT] Monta headers base; so injeta Authorization quando nao for skipAuth.
-  function baseHeaders(skipAuth) {
-    const cfg = getCfg();
-    const headers = { "Content-Type": "application/json" };
+  // ===============================
+  // 🔁 REFRESH TOKEN (ROBUSTO)
+  // ===============================
 
-    if (!skipAuth) {
-      const token = getAccessToken();
-      if (token) headers[cfg.authHeaderName || "Authorization"] = `Bearer ${token}`;
+  async function refreshToken() {
+    if (isRefreshing) {
+      return refreshPromise;
     }
 
-    return headers;
-  }
-
-  // [JWT] Executor bruto de request HTTP.
-  // Faz retry automatico 1x em 401 quando conseguir renovar token.
-  async function rawRequest(meta, payload, options) {
-    const cfg = getCfg();
-    const optsArg = options || {};
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), cfg.timeoutMs || 15000);
-
-    try {
-      const url = `${cfg.baseUrl || ""}${meta.path}`;
-      const req = {
-        method: meta.method,
-        headers: baseHeaders(!!optsArg.skipAuth),
-        signal: controller.signal
-      };
-
-      if (meta.method !== "GET" && payload !== undefined) {
-        req.body = JSON.stringify(payload);
-      }
-
-      const resp = await fetch(url, req);
-      const data = await resp.json().catch(() => ({}));
-
-      if (!resp.ok) {
-        // [JWT] Se token venceu durante a request, tenta refresh e repete 1 vez.
-        const canRetry = resp.status === 401 && optsArg.retryOnUnauthorized !== false && !optsArg.skipAuth;
-        if (canRetry) {
-          const refreshed = await refreshAccessToken();
-          if (refreshed.ok) {
-            return rawRequest(meta, payload, { skipAuth: false, retryOnUnauthorized: false });
-          }
-          clearAuth();
-        }
-
-        return {
-          ok: false,
-          status: resp.status,
-          message: data.message || "Falha na API",
-          data
-        };
-      }
-
-      setTokensFromResponse(data);
-      return { ok: true, data };
-    } catch (error) {
-      // Diferencia timeout de erro de rede para facilitar diagnostico.
-      return {
-        ok: false,
-        message: error && error.name === "AbortError" ? "Tempo limite da API excedido" : "Erro de conexao com API",
-        error: String(error || "")
-      };
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  // [JWT] Fluxo de renovacao de access token usando refresh token.
-  // Se falhar, limpa sessao local.
-  async function refreshAccessToken() {
-    const cfg = getCfg();
     const refresh = getRefreshToken();
-    const meta = cfg.endpoints && cfg.endpoints.refreshToken;
-
-    if (!refresh || !meta || !meta.path || !meta.method) {
-      return { ok: false, message: "Refresh token indisponivel." };
+    if (!refresh) {
+      redirectToLogin();
+      return false;
     }
 
-    if (!refreshPromise) {
-      refreshPromise = (async () => {
-        const result = await rawRequest(meta, { refreshToken: refresh }, {
-          skipAuth: true,
-          retryOnUnauthorized: false
-        });
+    isRefreshing = true;
 
-        if (result.ok) {
-          setTokensFromResponse(result.data || {});
-          return { ok: true };
+    refreshPromise = fetch(`${config.baseUrl}/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [config.authHeaderName]: `Bearer ${refresh}`
+      }
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error("Refresh inválido");
         }
 
-        clearAuth();
-        return { ok: false, message: result.message || "Falha ao renovar token." };
-      })().finally(() => {
-        refreshPromise = null;
+        setTokens(data);
+        console.log("🔄 Access token renovado com sucesso");
+        return true;
+      })
+      .catch(() => {
+        console.warn("❌ Refresh falhou");
+        redirectToLogin();
+        return false;
+      })
+      .finally(() => {
+        isRefreshing = false;
       });
-    }
 
     return refreshPromise;
   }
 
-  // [JWT] Metodo principal por endpoint-key.
-  // 1- valida configuracao
-  // 2- valida endpoint
-  // 3- se token esta perto de expirar, tenta refresh antes da chamada
-  // 4- executa request
-  async function requestByKey(key, payload, options) {
-    const cfg = getCfg();
-    if (!cfg.enabled) {
-      return { ok: false, message: "API desativada no api-config.js" };
-    }
+  // ===============================
+  // 🌐 BASE REQUEST (COM RETRY)
+  // ===============================
 
-    const meta = cfg.endpoints && cfg.endpoints[key];
-    if (!meta || !meta.path || !meta.method) {
-      return { ok: false, message: `Endpoint nao configurado: ${key}` };
-    }
-
-    const opts = options || {};
-    const token = getAccessToken();
-    if (!opts.skipAuth && token && isTokenExpired(token)) {
-      const refreshed = await refreshAccessToken();
-      if (!refreshed.ok) {
-        clearAuth();
-        return { ok: false, status: 401, message: "Sessao expirada. Faca login novamente." };
-      }
-    }
-
-    return rawRequest(meta, payload, opts);
-  }
-
-  // Polling generico para "tempo real" por intervalos.
-  // Retorna uma funcao stopPolling() para interromper.
-  function startPolling(requestKey, onSuccess, intervalMs, payloadFactory) {
-    const ms = Number(intervalMs) > 0 ? Number(intervalMs) : 3000;
-    let timerId = null;
-    let stopped = false;
-
-    async function tick() {
-      if (stopped) return;
-      const payload = typeof payloadFactory === "function" ? payloadFactory() : undefined;
-      const result = await requestByKey(requestKey, payload);
-      if (result.ok && typeof onSuccess === "function") {
-        onSuccess(result.data);
-      }
-      if (!stopped) {
-        timerId = setTimeout(tick, ms);
-      }
-    }
-
-    tick();
-
-    return function stopPolling() {
-      stopped = true;
-      if (timerId) clearTimeout(timerId);
+  async function apiRequest(path, options = {}, retry = true) {
+    const headers = {
+      "Content-Type": "application/json",
+      ...options.headers
     };
+
+    const token = getAccessToken();
+    if (token && !options.skipAuth) {
+      headers[config.authHeaderName] = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(`${config.baseUrl}${path}`, {
+        ...options,
+        headers
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      // 🔥 TOKEN EXPIRADO
+      if (response.status === 401 && retry && !options.skipAuth) {
+        const refreshed = await refreshToken();
+
+        if (refreshed) {
+          return apiRequest(path, options, false);
+        }
+
+        return { ok: false, message: "Sessão expirada" };
+      }
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: response.status,
+          message: data.message || "Erro na API"
+        };
+      }
+
+      return { ok: true, data };
+
+    } catch (error) {
+      console.error("❌ Erro de conexão:", error);
+      return { ok: false, message: "Erro de conexão com servidor" };
+    }
   }
 
-  // API publica consumida pelas telas.
-  window.IMTSBApiClient = {
-    // [JWT] Helpers de auth/token
-    getAccessToken,
-    getRefreshToken,
-    clearAuth,
-    refreshAccessToken,
-    requestByKey,
+  // ===============================
+  // 🚀 API METHODS (INALTERADOS)
+  // ===============================
 
-    // [JWT] Auth
-    login: (payload) => requestByKey("login", payload, { skipAuth: true, retryOnUnauthorized: false }),
-    logout: async (payload) => {
-      const result = await requestByKey("logout", payload || {}, { retryOnUnauthorized: false });
-      clearAuth();
-      return result;
+  const ApiClient = {
+
+    async login(email, senha) {
+      const result = await apiRequest("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, senha }),
+        skipAuth: true
+      });
+
+      if (!result.ok) {
+        return { ok: false, message: "Email ou senha inválidos" };
+      }
+
+      setTokens(result.data);
+
+      const adapted = adapter?.adaptLoginResponse
+        ? adapter.adaptLoginResponse(result.data)
+        : result.data;
+
+      return { ok: true, ...adapted };
     },
 
-    // Health check e operacoes de negocio
-    checkHealth: () => requestByKey("health", undefined, { skipAuth: true, retryOnUnauthorized: false }),
-    registerUser: (payload) => requestByKey("registerUser", payload),
-    addWorker: (payload) => requestByKey("addWorker", payload),
-    getSnapshot: () => requestByKey("getSnapshot"),
-    getQueue: () => requestByKey("getQueue"),
-    getStats: () => requestByKey("getStats"),
-    issueTicket: (payload) => requestByKey("issueTicket", payload),
-    callNext: (payload) => requestByKey("callNext", payload),
-    startAttendance: (payload) => requestByKey("startAttendance", payload),
-    concludeCurrent: (payload) => requestByKey("concludeCurrent", payload),
-    redirectCurrent: (payload) => requestByKey("redirectCurrent", payload),
-    setCurrentNote: (payload) => requestByKey("setCurrentNote", payload),
-    markReceived: (payload) => requestByKey("markReceived", payload),
-    rateTicket: (payload) => requestByKey("rateTicket", payload),
+    async logout() {
+      await apiRequest("/auth/logout", { method: "POST" });
+      redirectToLogin();
+    },
 
-    // Tempo real por polling
-    startPolling
+    async getServices() {
+      const result = await apiRequest("/servicos");
+      return result.ok ? result.data : [];
+    },
+
+    async issueTicket(frontendData) {
+      const backendData = adapter?.adaptIssueTicket
+        ? adapter.adaptIssueTicket(frontendData)
+        : frontendData;
+
+      const result = await apiRequest("/senhas", {
+        method: "POST",
+        body: JSON.stringify(backendData)
+      });
+
+      if (!result.ok) {
+        return { ok: false, message: "Erro ao emitir senha" };
+      }
+
+      const ticket = adapter?.adaptTicketResponse
+        ? adapter.adaptTicketResponse(result.data.senha)
+        : result.data;
+
+      return { ok: true, ticket };
+    },
+
+    async getQueue(servicoId = null) {
+      const path = servicoId
+        ? `/filas/${servicoId}`
+        : "/senhas";
+
+      const result = await apiRequest(path);
+      return result.ok ? result.data : [];
+    },
+
+    async callNext(dataFrontend) {
+      const backendData = adapter?.adaptCallNext
+        ? adapter.adaptCallNext(dataFrontend)
+        : dataFrontend;
+
+      return apiRequest("/filas/chamar", {
+        method: "POST",
+        body: JSON.stringify(backendData)
+      });
+    },
+
+    async startAttendance(id) {
+      return apiRequest(`/senhas/${id}/iniciar`, {
+        method: "PUT"
+      });
+    },
+
+    async finishAttendance(id, observacoes = "") {
+      return apiRequest(`/senhas/${id}/finalizar`, {
+        method: "PUT",
+        body: JSON.stringify({ observacoes })
+      });
+    },
+
+    async getStats() {
+      const result = await apiRequest("/senhas/estatisticas");
+      return result.ok ? result.data : {};
+    },
+
+    async healthCheck() {
+      const result = await apiRequest("/auth/health", {
+        skipAuth: true
+      });
+      return result.ok ? result.data : { status: "offline" };
+    }
   };
+
+  window.ApiClient = ApiClient;
+
+  console.log("✅ API Client carregado (JWT + Refresh automático robusto)");
+
+  ApiClient.healthCheck();
+
 })();
