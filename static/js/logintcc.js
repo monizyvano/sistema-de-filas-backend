@@ -1,4 +1,9 @@
-﻿(function () {
+﻿/**
+ * LOGINTCC.JS - Login integrado com API real
+ * Localização: static/js/logintcc.js
+ */
+
+(function () {
   "use strict";
 
   const tabs = document.querySelectorAll(".tab-btn");
@@ -35,7 +40,7 @@
   );
 
   // ===============================
-  // 🔐 LOGIN (COMPATÍVEL API + MOCK)
+  // 🔐 LOGIN COM API REAL
   // ===============================
 
   loginForm.addEventListener("submit", async (event) => {
@@ -60,20 +65,17 @@
     showMessage("Entrando...", "");
 
     try {
-      const result = await Promise.resolve(
-        window.IMTSBStore.login(email, senha, tipo)
-      );
+      const result = await window.IMTSBStore.login(email, senha, tipo);
 
       if (!result || !result.ok) {
-        showMessage(result?.message || "Erro ao fazer login.", "error");
+        showMessage(result?.message || "Email ou senha incorretos", "error");
         return;
       }
 
       showMessage(`Bem-vindo, ${result.user?.name || "Usuário"}!`, "ok");
 
-      // Pequeno delay para UX
       setTimeout(() => {
-        window.location.href = result.redirect || "index.html";
+        window.location.href = result.redirect || "/index.html";
       }, 500);
 
     } catch (error) {
@@ -96,11 +98,6 @@
       return;
     }
 
-    if (!window.IMTSBStore || !window.IMTSBStore.register) {
-      showMessage("Cadastro não disponível.", "error");
-      return;
-    }
-
     const payload = {
       name: document.getElementById("rnome").value.trim(),
       role: "usuario",
@@ -111,30 +108,33 @@
     showMessage("Processando cadastro...", "");
 
     try {
-      const result = await Promise.resolve(
-        window.IMTSBStore.register(payload)
-      );
+      if (!window.IMTSBStore || !window.IMTSBStore.register) {
+        showMessage("Cadastro em desenvolvimento. Use login.", "error");
+        return;
+      }
+
+      const result = await window.IMTSBStore.register(payload);
 
       if (!result || !result.ok) {
         showMessage(result?.message || "Erro no cadastro.", "error");
         return;
       }
 
-      showMessage(
-        "Cadastro feito com sucesso. Agora entre com o novo perfil.",
-        "ok"
-      );
-
+      showMessage("Cadastro realizado! Agora faça login.", "ok");
       registerForm.reset();
       switchTab("login");
 
     } catch (error) {
       console.error("Erro no cadastro:", error);
-      showMessage("Erro inesperado no cadastro.", "error");
+      showMessage("Cadastro em desenvolvimento.", "error");
     }
   });
 })();
 
+// ===============================
+// 🔙 VOLTAR PARA PRINCIPAL
+// ===============================
+
 function voltarprincipal() {
-  window.location.href = "\\templates\\principal.html";
+  window.location.href = "/";
 }
