@@ -60,6 +60,17 @@
         };
       },
 
+      async register(payload) {
+        if (!this.apiClient || typeof this.apiClient.register !== "function") {
+          return { ok: false, message: "API indisponível." };
+        }
+
+        const result = await this.apiClient.register(payload);
+        if (!result.ok) return result;
+
+        return { ok: true, message: "Conta criada com sucesso." };
+      },
+
       async logout() {
         try {
           if (this.apiClient) {

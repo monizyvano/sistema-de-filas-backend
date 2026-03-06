@@ -7,12 +7,10 @@ from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 from datetime import timedelta
 
-from app.models.atendente import Atendente  # ← ADICIONAR
+from app.models.atendente import Atendente
 from app.schemas.auth_schema import LoginSchema, RegistrarAtendenteSchema
-from app.schemas.senha_schema import AtendenteSchema  # ← ADICIONAR
+from app.schemas.senha_schema import AtendenteSchema
 from app.utils.rate_limiter import rate_limit
-from app import bcrypt
-
 
 
 # Criar Blueprint
@@ -125,15 +123,11 @@ def login():
 
 
 @auth_bp.route('/register', methods=['POST'])
-@jwt_required()
 def register():
     """
     POST /api/auth/register
     
-    Registrar novo atendente (requer autenticação)
-    
-    Headers:
-        Authorization: Bearer <token>
+    Registrar novo atendente (cadastro público)
     
     Body:
         {
@@ -163,7 +157,7 @@ def register():
         novo_atendente = Atendente(
             nome=data['nome'],
             email=data['email'],
-            senha=data['senha'],  # ⚠️ IMPORTANTE: Deveria usar hash!
+            senha=data['senha'],
             tipo=data.get('tipo', 'atendente'),
             balcao=data.get('balcao')
         )
@@ -182,7 +176,7 @@ def register():
     
     except ValidationError as e:
         return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
-    except Exception as e:
+    except Exception:
         from app import db
         db.session.rollback()
         return jsonify({"erro": "Erro interno do servidor"}), 500
@@ -196,9 +190,6 @@ def me():
     
     Dados do usuário logado
     
-    Headers:
-        Authorization: Bearer <token>
-    
     Response:
         {
             "id": 1,
@@ -209,8 +200,8 @@ def me():
     """
     try:
         # Pegar ID do atendente do token JWT
-        atendente_id = get_jwt_identity()
-        
+        atendente_id = int(get_jwt_identity())
+
         # Buscar atendente
         atendente = Atendente.query.get(atendente_id)
         
@@ -220,13 +211,10 @@ def me():
         schema = AtendenteSchema()
         return jsonify(schema.dump(atendente)), 200
     
-    except Exception as e:
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
-from app.services.cache_service import get_cache
-
-from flask import jsonify
 from sqlalchemy import text
 from app import db
 from app.services.cache_service import get_cache
@@ -238,7 +226,7 @@ def health():
     try:
         db.session.execute(text("SELECT 1"))
         database_status = "ok"
-    except Exception as e:
+    except Exception:
         database_status = "unavailable"
 
     # 🔎 Cache check

@@ -47,12 +47,11 @@ def servico(db_session):
 
 @pytest.fixture
 def atendente(db_session, app):
-    from app import bcrypt
     with app.app_context():
         atendente = Atendente(
             nome='Atendente Teste',
             email='atendente@test.com',
-            senha=bcrypt.generate_password_hash('senha123').decode('utf-8'),
+            senha='senha123',
             tipo='atendente',
             balcao=1,
             ativo=True

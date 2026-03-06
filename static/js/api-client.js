@@ -66,40 +66,12 @@
 
     const refresh = getRefreshToken();
     if (!refresh) {
-      redirectToLogin();
       return false;
     }
 
-    isRefreshing = true;
-
-    refreshPromise = fetch(`${config.baseUrl}/auth/refresh`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        [config.authHeaderName]: `Bearer ${refresh}`
-      }
-    })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error("Refresh inválido");
-        }
-
-        setTokens(data);
-        console.log("🔄 Access token renovado com sucesso");
-        return true;
-      })
-      .catch(() => {
-        console.warn("❌ Refresh falhou");
-        redirectToLogin();
-        return false;
-      })
-      .finally(() => {
-        isRefreshing = false;
-      });
-
-    return refreshPromise;
+    // Backend atual não expõe endpoint de refresh.
+    // Mantemos compatibilidade e evitamos chamadas para rota inexistente.
+    return false;
   }
 
   // ===============================
@@ -140,7 +112,7 @@
         return {
           ok: false,
           status: response.status,
-          message: data.message || "Erro na API"
+          message: data.erro || data.message || "Erro na API"
         };
       }
 
@@ -178,8 +150,31 @@
       return { ok: true, ...adapted };
     },
 
+
+    async register(payload) {
+      const body = {
+        nome: payload?.name || payload?.nome || "",
+        email: payload?.email || "",
+        senha: payload?.password || payload?.senha || "",
+        tipo: "atendente",
+        balcao: null
+      };
+
+      const result = await apiRequest("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(body),
+        skipAuth: true
+      });
+
+      if (!result.ok) {
+        return { ok: false, message: result.message || "Erro no cadastro" };
+      }
+
+      return { ok: true, data: result.data };
+    },
+
     async logout() {
-      await apiRequest("/auth/logout", { method: "POST" });
+      clearSession();
       redirectToLogin();
     },
 

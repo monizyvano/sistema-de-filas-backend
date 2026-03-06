@@ -17,6 +17,14 @@ class Atendente(BaseModel):
     tipo = db.Column(db.String(20),nullable=False,default='atendente',comment="Tipo: admin ou atendente")
     balcao = db.Column(db.Integer,nullable=True,comment="Número do balcão do atendente"
 )
+
+    def __init__(self, **kwargs):
+        """Permite receber `senha` e armazenar apenas o hash em `senha_hash`."""
+        senha = kwargs.pop("senha", None)
+        super().__init__(**kwargs)
+
+        if senha:
+            self.set_senha(senha)
     # ================= MÉTODOS =================
 
     def set_senha(self, senha: str):
