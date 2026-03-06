@@ -1,7 +1,7 @@
 """
 Schemas para autenticacao
 """
-from marshmallow import Schema, fields, validate, validates, ValidationError
+from marshmallow import Schema, fields, validate
 
 
 class LoginSchema(Schema):
@@ -46,9 +46,3 @@ class RegistrarAtendenteSchema(Schema):
     tipo = fields.Str(validate=validate.OneOf(['admin', 'atendente']), missing='atendente')
     balcao = fields.Int(allow_none=True)
     
-    @validates('balcao')
-    def validate_balcao(self, value):
-        """Valida que atendente deve ter balcao"""
-        tipo = self.get_attribute({'tipo': 'atendente'}, 'tipo', None)
-        if tipo == 'atendente' and not value:
-            raise ValidationError('Atendente deve ter balcao definido')
