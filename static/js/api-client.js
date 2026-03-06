@@ -118,10 +118,8 @@
     }
 
     try {
-      const response = await fetch(`${config.baseUrl}${path}`, {
-        ...options,
-        headers
-      });
+  
+      const response = await fetch(`${config.baseUrl}${path}`, headers, ...options);
 
       const data = await response.json().catch(() => ({}));
 

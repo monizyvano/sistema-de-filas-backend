@@ -1,8 +1,8 @@
 /**
- * REALTIME-STORE.JS - CAMADA DE COMPATIBILIDADE
- * 
- * Mantém interface do IMTSBStore mas delega para API real
+ * REALTIME-STORE.JS - COM MODO ANÔNIMO
  * Localização: static/js/realtime-store.js
+ * 
+ * Permite navegação sem login para usuários
  */
 
 (function () {
@@ -21,7 +21,7 @@
     return;
   }
 
-  console.log("✅ API real ativada - Store integrado");
+  console.log("✅ API real ativada - Store integrado (modo anônimo permitido)");
 
   // ===============================
   // 🔐 GERENCIAMENTO DE SESSÃO
@@ -80,7 +80,6 @@
           return { ok: false, message: result.message || "Login falhou" };
         }
 
-        // Salvar sessão
         saveSession(result);
 
         return {
@@ -97,19 +96,33 @@
 
     logout() {
       clearSession();
-      window.location.href = "/login";
+      window.location.href = "/";
     },
 
-    // ===== CONTROLE DE ACESSO =====
+    // ===== CONTROLE DE ACESSO (MODIFICADO) =====
 
     requireRole(allowedRoles) {
       const user = getUser();
 
+      // Se não tem usuário
       if (!user) {
+        // Se é página de usuário comum, permitir modo anônimo
+        if (allowedRoles && allowedRoles.includes("usuario")) {
+          console.log("⚠️ Modo anônimo ativado (sem login)");
+          return {
+            name: "Visitante",
+            email: "anonimo@imtsb.ao",
+            role: "usuario",
+            isAnonymous: true
+          };
+        }
+
+        // Para trabalhador/admin, redirecionar para login
         window.location.href = "/login";
         return null;
       }
 
+      // Tem usuário - verificar role
       if (allowedRoles && !allowedRoles.includes(user.role)) {
         window.location.href = "/login";
         return null;
@@ -122,9 +135,22 @@
       return getUser();
     },
 
+    isLoggedIn() {
+      return getUser() !== null;
+    },
+
     // ===== SENHAS =====
 
     async issueTicket(payload) {
+      // VERIFICAR SE ESTÁ LOGADO
+      if (!this.isLoggedIn()) {
+        return {
+          ok: false,
+          message: "Você precisa fazer login para emitir senha",
+          requireLogin: true
+        };
+      }
+
       try {
         return await window.ApiClient.issueTicket(payload);
       } catch (error) {
@@ -159,37 +185,31 @@
     },
 
     async concludeCurrent(attendantName, notes, durationSec) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("concludeCurrent: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async redirectCurrent(attendantName, notes) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("redirectCurrent: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async setCurrentNote(note, attendantName) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("setCurrentNote: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async markReceived(ticketId, userEmail) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("markReceived: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async rateTicket(ticketId, userEmail, score, comment) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("rateTicket: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async setReceipt(ticketId, receipt) {
-      // TODO: Implementar quando backend tiver endpoint
       console.warn("setReceipt: não implementado ainda");
       return { ok: false, message: "Função em desenvolvimento" };
     },
@@ -216,8 +236,6 @@
     // ===== SNAPSHOT (COMPATIBILIDADE UI) =====
 
     getSnapshot() {
-      // Retornar estrutura vazia para compatibilidade
-      // Dashboards devem buscar dados via API diretamente
       return {
         updatedAt: new Date().toISOString(),
         users: [],
@@ -231,32 +249,27 @@
     // ===== EVENTOS (COMPATIBILIDADE UI) =====
 
     onChange(callback) {
-      // Não faz nada - dashboards devem usar polling
       return () => {};
     },
 
     // ===== ADMIN =====
 
     async addWorker(payload) {
-      // TODO: Implementar endpoint de admin
       console.warn("addWorker: não implementado");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async removeWorker(workerId) {
-      // TODO: Implementar endpoint de admin
       console.warn("removeWorker: não implementado");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async register(payload) {
-      // TODO: Implementar registro de usuário
       console.warn("register: não implementado");
       return { ok: false, message: "Função em desenvolvimento" };
     },
 
     async archiveAndResetDay(label) {
-      // TODO: Implementar reset de dia
       console.warn("archiveAndResetDay: não implementado");
       return { ok: false, message: "Função em desenvolvimento" };
     }
@@ -268,6 +281,6 @@
 
   window.IMTSBStore = IMTSBStore;
 
-  console.log("✅ IMTSBStore integrado com API real");
+  console.log("✅ IMTSBStore integrado (modo anônimo permitido)");
 
 })();

@@ -92,6 +92,10 @@ def create_app(config_name=None):
     def login_page():
         return render_template('logintcc.html')
 
+    @app.route('/api/auth/register', methods=['POST'])
+    def register():
+        return AuthController.register()
+
     @app.route('/principal.html')
     def principal():
         return render_template('principal.html')

@@ -256,3 +256,110 @@ def health():
             "cache": cache_status
         }
     })
+
+"""
+ADICIONAR AO ARQUIVO: app/controllers/auth_controller.py
+
+Adicionar este método na classe AuthController
+"""
+
+@staticmethod
+def register():
+    """
+    Endpoint de registro de usuário
+    POST /api/auth/register
+    
+    Body:
+    {
+        "nome": "Nome Completo",
+        "email": "email@exemplo.com",
+        "senha": "senha123",
+        "papel": "usuario"  # ou "atendente" ou "admin"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        # Validar campos obrigatórios
+        if not data or not data.get('nome') or not data.get('email') or not data.get('senha'):
+            return jsonify({
+                'erro': 'Nome, email e senha são obrigatórios'
+            }), 400
+        
+        nome = data.get('nome').strip()
+        email = data.get('email').strip().lower()
+        senha = data.get('senha')
+        papel = data.get('papel', 'usuario').strip().lower()
+        
+        # Validar papel
+        papeis_validos = ['usuario', 'atendente', 'admin']
+        if papel not in papeis_validos:
+            papel = 'usuario'
+        
+        # Validar formato de email
+        import re
+        email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_regex, email):
+            return jsonify({
+                'erro': 'Email inválido'
+            }), 400
+        
+        # Verificar se email já existe
+        from app.models.atendente import Atendente
+        atendente_existente = Atendente.buscar_por_email(email)
+        if atendente_existente:
+            return jsonify({
+                'erro': 'Email já cadastrado'
+            }), 409
+        
+        # Criar hash da senha
+        from app.services.auth_service import AuthService
+        senha_hash = AuthService.hash_senha(senha)
+        
+        # Mapear papel para tipo do backend
+        tipo_mapeamento = {
+            'usuario': 'atendente',  # Usuários são criados como atendentes
+            'atendente': 'atendente',
+            'admin': 'admin'
+        }
+        tipo = tipo_mapeamento.get(papel, 'atendente')
+        
+        # Criar atendente
+        novo_atendente = Atendente(
+            nome=nome,
+            email=email,
+            senha_hash=senha_hash,
+            tipo=tipo,
+            numero_balcao=None if tipo == 'admin' else 3,  # Balcão 3 para novos usuários
+            ativo=True
+        )
+        
+        from app import db
+        db.session.add(novo_atendente)
+        db.session.commit()
+        
+        return jsonify({
+            'mensagem': 'Usuário criado com sucesso',
+            'usuario': {
+                'id': novo_atendente.id,
+                'nome': novo_atendente.nome,
+                'email': novo_atendente.email,
+                'tipo': tipo
+            }
+        }), 201
+        
+    except Exception as e:
+        from app import db
+        db.session.rollback()
+        return jsonify({
+            'erro': 'Erro ao criar usuário',
+            'detalhes': str(e)
+        }), 500
+
+
+"""
+ADICIONAR AO ARQUIVO: app/__init__.py
+
+Na seção de rotas de autenticação, adicionar:
+"""
+
