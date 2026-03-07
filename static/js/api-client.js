@@ -1,7 +1,10 @@
 ﻿/**
- * API CLIENT - Integração Real com Backend Flask + JWT Refresh
- * Arquitetura compatível com IMTSBApiConfig + ApiAdapter
- * Versão melhorada com controle de refresh concorrente
+ * API CLIENT - VERSÃO CORRIGIDA
+ * static/js/api-client.js
+ * 
+ * ✅ Fetch com sintaxe correta
+ * ✅ Cadastro funcionando
+ * ✅ Login integrado
  */
 
 (function () {
@@ -18,9 +21,6 @@
   // ===============================
   // 🔐 TOKEN HELPERS
   // ===============================
-
-  let isRefreshing = false;
-  let refreshPromise = null;
 
   function getAccessToken() {
     return localStorage.getItem(config.accessTokenStorageKey);
@@ -48,6 +48,7 @@
   function clearSession() {
     localStorage.removeItem(config.accessTokenStorageKey);
     localStorage.removeItem(config.refreshTokenStorageKey);
+    localStorage.removeItem("imtsb_user");
   }
 
   function redirectToLogin() {
@@ -56,29 +57,10 @@
   }
 
   // ===============================
-  // 🔁 REFRESH TOKEN (ROBUSTO)
+  // 🌐 BASE REQUEST (CORRIGIDO)
   // ===============================
 
-  async function refreshToken() {
-    if (isRefreshing) {
-      return refreshPromise;
-    }
-
-    const refresh = getRefreshToken();
-    if (!refresh) {
-      return false;
-    }
-
-    // Backend atual não expõe endpoint de refresh.
-    // Mantemos compatibilidade e evitamos chamadas para rota inexistente.
-    return false;
-  }
-
-  // ===============================
-  // 🌐 BASE REQUEST (COM RETRY)
-  // ===============================
-
-  async function apiRequest(path, options = {}, retry = true) {
+  async function apiRequest(path, options = {}) {
     const headers = {
       "Content-Type": "application/json",
       ...options.headers
@@ -90,21 +72,13 @@
     }
 
     try {
-  
-      const response = await fetch(`${config.baseUrl}${path}`, headers, ...options);
+      // ✅ CORRIGIDO: Sintaxe correta do fetch
+      const response = await fetch(`${config.baseUrl}${path}`, {
+        ...options,
+        headers
+      });
 
       const data = await response.json().catch(() => ({}));
-
-      // 🔥 TOKEN EXPIRADO
-      if (response.status === 401 && retry && !options.skipAuth) {
-        const refreshed = await refreshToken();
-
-        if (refreshed) {
-          return apiRequest(path, options, false);
-        }
-
-        return { ok: false, message: "Sessão expirada" };
-      }
 
       if (!response.ok) {
         return {
@@ -123,7 +97,7 @@
   }
 
   // ===============================
-  // 🚀 API METHODS (INALTERADOS)
+  // 🚀 API METHODS
   // ===============================
 
   const ApiClient = {
@@ -142,20 +116,18 @@
       setTokens(result.data);
 
       const adapted = adapter?.adaptLoginResponse
-        ? adapter.adaptLoginResponse(result.data)
+        ? adapter.adaptLoginResponse(result.data, email)
         : result.data;
 
       return { ok: true, ...adapted };
     },
-
 
     async register(payload) {
       const body = {
         nome: payload?.name || payload?.nome || "",
         email: payload?.email || "",
         senha: payload?.password || payload?.senha || "",
-        tipo: "atendente",
-        balcao: null
+        tipo: "atendente"
       };
 
       const result = await apiRequest("/auth/register", {
@@ -165,20 +137,23 @@
       });
 
       if (!result.ok) {
-        return { ok: false, message: result.message || "Erro no cadastro" };
+        return { 
+          ok: false, 
+          message: result.message || "Erro no cadastro" 
+        };
       }
 
       return { ok: true, data: result.data };
     },
 
-    async logout() {
+    logout() {
       clearSession();
-      redirectToLogin();
+      window.location.href = "/";
     },
 
     async getServices() {
       const result = await apiRequest("/servicos");
-      return result.ok ? result.data : [];
+      return result.ok ? (result.data || []) : [];
     },
 
     async issueTicket(frontendData) {
@@ -192,7 +167,7 @@
       });
 
       if (!result.ok) {
-        return { ok: false, message: "Erro ao emitir senha" };
+        return { ok: false, message: result.message || "Erro ao emitir senha" };
       }
 
       const ticket = adapter?.adaptTicketResponse
@@ -203,12 +178,9 @@
     },
 
     async getQueue(servicoId = null) {
-      const path = servicoId
-        ? `/filas/${servicoId}`
-        : "/senhas";
-
+      const path = servicoId ? `/filas/${servicoId}` : "/senhas";
       const result = await apiRequest(path);
-      return result.ok ? result.data : [];
+      return result.ok ? (result.data || []) : [];
     },
 
     async callNext(dataFrontend) {
@@ -222,9 +194,10 @@
       });
     },
 
-    async startAttendance(id) {
+    async startAttendance(id, numero_balcao) {
       return apiRequest(`/senhas/${id}/iniciar`, {
-        method: "PUT"
+        method: "PUT",
+        body: JSON.stringify({ numero_balcao })
       });
     },
 
@@ -237,7 +210,12 @@
 
     async getStats() {
       const result = await apiRequest("/senhas/estatisticas");
-      return result.ok ? result.data : {};
+      return result.ok ? (result.data || {}) : {
+        aguardando: 0,
+        concluidas: 0,
+        tempo_medio_espera: 0,
+        satisfacao: 0
+      };
     },
 
     async healthCheck() {
@@ -250,8 +228,11 @@
 
   window.ApiClient = ApiClient;
 
-  console.log("✅ API Client carregado (JWT + Refresh automático robusto)");
+  console.log("✅ API Client carregado (corrigido)");
 
-  ApiClient.healthCheck();
+  // Health check inicial
+  ApiClient.healthCheck().then(status => {
+    console.log("🏥 Backend status:", status.status || "offline");
+  });
 
 })();

@@ -1,309 +1,283 @@
 /**
- * REALTIME-STORE.JS - COM MODO ANÔNIMO
- * Localização: static/js/realtime-store.js
+ * REALTIME STORE - VERSÃO CORRIGIDA FINAL
+ * static/js/realtime-store.js
  * 
- * Permite navegação sem login para usuários
+ * ✅ Sintaxe corrigida (chaves balanceadas)
+ * ✅ Métodos register, login, logout implementados
+ * ✅ Integração com ApiClient
  */
 
 (function () {
   "use strict";
 
-  const apiEnabled = window.IMTSBApiConfig && window.IMTSBApiConfig.enabled;
+  const ApiClient = window.ApiClient;
 
-  if (!apiEnabled) {
-    console.log("🧪 Modo Mock ativado (API desabilitada)");
-    window.IMTSBStore = {
-      login: () => ({ ok: false, message: "API desabilitada" }),
-      logout: () => window.location.href = "/login",
-      requireRole: () => null,
-      getSnapshot: () => ({ queue: [], history: [], users: [] })
-    };
+  if (!ApiClient) {
+    console.warn("⚠ ApiClient não carregado! realtime-store.js não funcionará.");
     return;
   }
 
-  console.log("✅ API real ativada - Store integrado (modo anônimo permitido)");
-
-  // ===============================
-  // 🔐 GERENCIAMENTO DE SESSÃO
-  // ===============================
-
-  const ACCESS_KEY = "imtsb_access_token";
-  const REFRESH_KEY = "imtsb_refresh_token";
-  const USER_KEY = "imtsb_user";
-
-  function saveSession(loginResult) {
-    if (loginResult.accessToken) {
-      localStorage.setItem(ACCESS_KEY, loginResult.accessToken);
-    }
-    if (loginResult.refreshToken) {
-      localStorage.setItem(REFRESH_KEY, loginResult.refreshToken);
-    }
-    if (loginResult.user) {
-      localStorage.setItem(USER_KEY, JSON.stringify(loginResult.user));
-    }
-  }
-
-  function clearSession() {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem(USER_KEY);
-  }
-
-  function getUser() {
-    const raw = localStorage.getItem(USER_KEY);
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  // ===============================
-  // 📦 STORE COMPATÍVEL
-  // ===============================
-
   const IMTSBStore = {
-    apiEnabled: true,
+    // ===============================
+    // 🗄️ STATE INTERNO
+    // ===============================
+    _state: {
+      user: null,
+      queue: [],
+      history: [],
+      stats: {
+        aguardando: 0,
+        concluidas: 0,
+        tempo_medio: 0,
+        satisfacao: 0
+      },
+      currentTicket: null,
+      lastCall: null
+    },
 
-    // ===== AUTENTICAÇÃO =====
+    _listeners: [],
 
-    async login(email, senha, tipo) {
-      if (!window.ApiClient) {
-        return { ok: false, message: "ApiClient não carregado" };
+    // ===============================
+    // 📡 SUBSCRIPTION
+    // ===============================
+    subscribe(callback) {
+      this._listeners.push(callback);
+      return () => {
+        const index = this._listeners.indexOf(callback);
+        if (index > -1) this._listeners.splice(index, 1);
+      };
+    },
+
+    _notify() {
+      this._listeners.forEach(fn => fn(this._state));
+    },
+
+    // ===============================
+    // 📊 GETTERS
+    // ===============================
+    getSnapshot() {
+      return {
+        queue: [...this._state.queue],
+        history: [...this._state.history],
+        users: [],
+        stats: { ...this._state.stats }
+      };
+    },
+
+    getUser() {
+      const stored = localStorage.getItem("imtsb_user");
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch {
+          return null;
+        }
       }
+      return this._state.user;
+    },
 
+    getCurrentTicket() {
+      return this._state.currentTicket;
+    },
+
+    // ===============================
+    // 🔐 AUTENTICAÇÃO
+    // ===============================
+    async login(email, password) {
       try {
-        const result = await window.ApiClient.login(email, senha);
+        const result = await ApiClient.login(email, password);
 
         if (!result.ok) {
-          return { ok: false, message: result.message || "Login falhou" };
+          return { ok: false, message: result.message || "Erro no login" };
         }
 
-        saveSession(result);
-
-        return {
-          ok: true,
-          user: result.user,
-          redirect: result.redirect || "/index.html"
+        // Salvar usuário
+        const user = {
+          id: result.id,
+          name: result.name,
+          email: result.email,
+          role: result.role,
+          token: result.token
         };
-      },
 
-      async register(payload) {
-        if (!this.apiClient || typeof this.apiClient.register !== "function") {
-          return { ok: false, message: "API indisponível." };
-        }
+        this._state.user = user;
+        localStorage.setItem("imtsb_user", JSON.stringify(user));
 
-        const result = await this.apiClient.register(payload);
-        if (!result.ok) return result;
+        this._notify();
 
-        return { ok: true, message: "Conta criada com sucesso." };
-      },
-
-      async logout() {
-        try {
-          if (this.apiClient) {
-            await this.apiClient.logout();
-          }
-        } catch (_) {}
-
-        clearSession();
-        window.location.href = "logintcc.html";
-      },
+        return { ok: true, user, role: result.role };
 
       } catch (error) {
-        console.error("Erro no login:", error);
-        return { ok: false, message: "Erro ao conectar com servidor" };
+        console.error("❌ Erro no login:", error);
+        return { ok: false, message: "Erro de conexão" };
+      }
+    },
+
+    async register(payload) {
+      try {
+        const result = await ApiClient.register(payload);
+
+        if (!result.ok) {
+          return { 
+            ok: false, 
+            message: result.message || "Erro no cadastro" };
+        }
+
+        return { ok: true, data: result.data };
+
+      } catch (error) {
+        console.error("❌ Erro no cadastro:", error);
+        return { ok: false, message: "Erro de conexão" };
       }
     },
 
     logout() {
-      clearSession();
+      this._state.user = null;
+      this._state.queue = [];
+      this._state.history = [];
+      this._state.currentTicket = null;
+
+      localStorage.removeItem("imtsb_user");
+      localStorage.removeItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.refreshTokenStorageKey || "imtsb_refresh_token");
+
+      this._notify();
+
       window.location.href = "/";
     },
 
-    // ===== CONTROLE DE ACESSO (MODIFICADO) =====
+    // ===============================
+    // 🎫 SENHAS
+    // ===============================
+    async issueTicket(serviceId, tipo = "normal", contato = null) {
+      try {
+        const result = await ApiClient.issueTicket({
+          servico_id: serviceId,
+          tipo: tipo,
+          usuario_contato: contato
+        });
 
-    requireRole(allowedRoles) {
-      const user = getUser();
-
-      // Se não tem usuário
-      if (!user) {
-        // Se é página de usuário comum, permitir modo anônimo
-        if (allowedRoles && allowedRoles.includes("usuario")) {
-          console.log("⚠️ Modo anônimo ativado (sem login)");
-          return {
-            name: "Visitante",
-            email: "anonimo@imtsb.ao",
-            role: "usuario",
-            isAnonymous: true
-          };
+        if (!result.ok) {
+          return { ok: false, message: result.message || "Erro ao emitir senha" };
         }
 
-        // Para trabalhador/admin, redirecionar para login
-        window.location.href = "/login";
-        return null;
-      }
+        this._state.currentTicket = result.ticket;
+        this._notify();
 
-      // Tem usuário - verificar role
-      if (allowedRoles && !allowedRoles.includes(user.role)) {
-        window.location.href = "/login";
-        return null;
-      }
+        return { ok: true, ticket: result.ticket };
 
-      return user;
-    },
-
-    getSession() {
-      return getUser();
-    },
-
-    isLoggedIn() {
-      return getUser() !== null;
-    },
-
-    // ===== SENHAS =====
-
-    async issueTicket(payload) {
-      // VERIFICAR SE ESTÁ LOGADO
-      if (!this.isLoggedIn()) {
-        return {
-          ok: false,
-          message: "Você precisa fazer login para emitir senha",
-          requireLogin: true
-        };
-      }
-
-      try {
-        return await window.ApiClient.issueTicket(payload);
       } catch (error) {
-        return { ok: false, message: "Erro ao emitir senha" };
+        console.error("❌ Erro ao emitir senha:", error);
+        return { ok: false, message: "Erro de conexão" };
       }
     },
 
-    async callNext(payload) {
+    async refreshQueue(servicoId = null) {
       try {
-        const result = await window.ApiClient.callNext(payload);
-        
-        if (result.ok && result.data) {
-          const adapted = window.ApiAdapter?.adaptTicketResponse 
-            ? window.ApiAdapter.adaptTicketResponse(result.data.senha)
-            : result.data;
-          
-          return { ok: true, ticket: adapted };
-        }
-        
-        return result;
+        const queue = await ApiClient.getQueue(servicoId);
+        this._state.queue = Array.isArray(queue) ? queue : [];
+        this._notify();
+        return this._state.queue;
       } catch (error) {
-        return { ok: false, message: "Erro ao chamar senha" };
-      }
-    },
-
-    async startAttendance(senhaId) {
-      try {
-        return await window.ApiClient.startAttendance(senhaId);
-      } catch (error) {
-        return { ok: false, message: "Erro ao iniciar atendimento" };
-      }
-    },
-
-    async concludeCurrent(attendantName, notes, durationSec) {
-      console.warn("concludeCurrent: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async redirectCurrent(attendantName, notes) {
-      console.warn("redirectCurrent: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async setCurrentNote(note, attendantName) {
-      console.warn("setCurrentNote: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async markReceived(ticketId, userEmail) {
-      console.warn("markReceived: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async rateTicket(ticketId, userEmail, score, comment) {
-      console.warn("rateTicket: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async setReceipt(ticketId, receipt) {
-      console.warn("setReceipt: não implementado ainda");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    // ===== FILAS =====
-
-    async getQueue(servicoId) {
-      try {
-        const data = await window.ApiClient.getQueue(servicoId);
-        return Array.isArray(data) ? data : [];
-      } catch (error) {
+        console.error("❌ Erro ao atualizar fila:", error);
         return [];
       }
     },
 
-    async getStats() {
+    async refreshStats() {
       try {
-        return await window.ApiClient.getStats();
+        const stats = await ApiClient.getStats();
+        this._state.stats = stats;
+        this._notify();
+        return stats;
       } catch (error) {
-        return { waiting: 0, completed: 0, avgWaitTime: 0 };
+        console.error("❌ Erro ao atualizar stats:", error);
+        return this._state.stats;
       }
     },
 
-    // ===== SNAPSHOT (COMPATIBILIDADE UI) =====
+    // ===============================
+    // 👨‍💼 TRABALHADOR
+    // ===============================
+    async callNext(serviceId, balcao) {
+      try {
+        const result = await ApiClient.callNext({
+          servico_id: serviceId,
+          numero_balcao: balcao
+        });
 
-    getSnapshot() {
-      return {
-        updatedAt: new Date().toISOString(),
-        users: [],
-        queue: [],
-        history: [],
-        dailyArchives: [],
-        lastCalled: null
-      };
+        if (result.ok && result.data?.senha) {
+          this._state.lastCall = result.data.senha;
+          await this.refreshQueue(serviceId);
+          this._notify();
+          return { ok: true, senha: result.data.senha };
+        }
+
+        return { ok: false, message: "Nenhuma senha disponível" };
+
+      } catch (error) {
+        console.error("❌ Erro ao chamar próxima:", error);
+        return { ok: false, message: "Erro de conexão" };
+      }
     },
 
-    // ===== EVENTOS (COMPATIBILIDADE UI) =====
-
-    onChange(callback) {
-      return () => {};
+    async startAttendance(senhaId, balcao) {
+      try {
+        const result = await ApiClient.startAttendance(senhaId, balcao);
+        if (result.ok) {
+          await this.refreshQueue();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("❌ Erro ao iniciar atendimento:", error);
+        return { ok: false, message: "Erro de conexão" };
+      }
     },
 
-    // ===== ADMIN =====
-
-    async addWorker(payload) {
-      console.warn("addWorker: não implementado");
-      return { ok: false, message: "Função em desenvolvimento" };
+    async finishAttendance(senhaId, observacoes = "") {
+      try {
+        const result = await ApiClient.finishAttendance(senhaId, observacoes);
+        if (result.ok) {
+          await this.refreshQueue();
+          await this.refreshStats();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("❌ Erro ao finalizar atendimento:", error);
+        return { ok: false, message: "Erro de conexão" };
+      }
     },
 
-    async removeWorker(workerId) {
-      console.warn("removeWorker: não implementado");
-      return { ok: false, message: "Função em desenvolvimento" };
+    // ===============================
+    // 🔄 POLLING (Auto-refresh)
+    // ===============================
+    _pollingInterval: null,
+
+    startPolling(intervalMs = 5000) {
+      this.stopPolling();
+      this._pollingInterval = setInterval(async () => {
+        await this.refreshQueue();
+        await this.refreshStats();
+      }, intervalMs);
+      console.log("✅ Polling iniciado:", intervalMs + "ms");
     },
 
-    async register(payload) {
-      console.warn("register: não implementado");
-      return { ok: false, message: "Função em desenvolvimento" };
-    },
-
-    async archiveAndResetDay(label) {
-      console.warn("archiveAndResetDay: não implementado");
-      return { ok: false, message: "Função em desenvolvimento" };
+    stopPolling() {
+      if (this._pollingInterval) {
+        clearInterval(this._pollingInterval);
+        this._pollingInterval = null;
+        console.log("🛑 Polling parado");
+      }
     }
   };
 
   // ===============================
-  // 📢 EXPORTAR
+  // 🌐 EXPORTAR
   // ===============================
-
   window.IMTSBStore = IMTSBStore;
 
-  console.log("✅ IMTSBStore integrado (modo anônimo permitido)");
+  console.log("✅ IMTSBStore carregado (corrigido)");
 
 })();

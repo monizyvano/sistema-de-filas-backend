@@ -1,185 +1,184 @@
 ﻿/**
- * LOGINTCC.JS - VERSÃO FINAL CORRIGIDA
- * Localização: static/js/logintcc.js
+ * LOGINTCC.JS - VERSÃO CORRIGIDA
+ * static/js/logintcc.js
  * 
- * ✅ Login admin funcionando
- * ✅ Cadastro funcionando
- * ✅ Validação de perfil corrigida
+ * ✅ Cadastro usando ApiClient.register()
+ * ✅ Login usando IMTSBStore.login()
+ * ✅ Redirect baseado em role do backend
  */
 
-(function () {
+(function() {
   "use strict";
 
-  const tabs = document.querySelectorAll(".tab-btn");
-  const loginForm = document.getElementById("loginForm");
-  const registerForm = document.getElementById("registerForm");
-  const messageBox = document.getElementById("authMessage");
+  const store = window.IMTSBStore;
+  const adapter = window.ApiAdapter;
 
-  function showMessage(text, kind) {
-    if (!messageBox) return;
-    messageBox.textContent = text || "";
-    messageBox.className = "auth-message";
-    if (kind) messageBox.classList.add(kind);
+  if (!store) {
+    console.error("❌ IMTSBStore não carregado!");
+    return;
   }
 
-  function switchTab(target) {
-    tabs.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.tab === target);
+  // ===============================
+  // 📱 ELEMENTOS DO DOM
+  // ===============================
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const authMessage = document.getElementById('authMessage');
+
+  // ===============================
+  // 🎨 TABS
+  // ===============================
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+
+      tabBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      if (tab === 'login') {
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+      } else {
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+      }
+
+      clearMessage();
     });
-
-    if (target === "cadastro") {
-      loginForm.classList.add("hidden");
-      registerForm.classList.remove("hidden");
-      showMessage("", "");
-      return;
-    }
-
-    registerForm.classList.add("hidden");
-    loginForm.classList.remove("hidden");
-    showMessage("", "");
-  }
-
-  tabs.forEach((btn) =>
-    btn.addEventListener("click", () => switchTab(btn.dataset.tab))
-  );
-
-  // ===============================
-  // 🔐 LOGIN COM API REAL
-  // ===============================
-
-  loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const email = document.getElementById("iemail").value.trim();
-    const senha = document.getElementById("isenha").value;
-    const tipoSelect = document.getElementById("loginTipo");
-    const tipo = tipoSelect ? tipoSelect.value : "usuario";
-    const confirmDados = document.getElementById("loginConfirmDados");
-
-    if (!confirmDados || !confirmDados.checked) {
-      showMessage("⚠️ Confirme os dados antes de entrar.", "error");
-      return;
-    }
-
-    if (!window.IMTSBStore) {
-      showMessage("❌ Sistema não inicializado.", "error");
-      return;
-    }
-
-    showMessage("🔄 Entrando...", "");
-
-    try {
-      // LOGIN DIRETO - SEM VALIDAÇÃO DE TIPO
-      const result = await window.IMTSBStore.login(email, senha);
-
-      if (!result || !result.ok) {
-        showMessage(result?.message || "❌ Email ou senha incorretos", "error");
-        return;
-      }
-
-      // VERIFICAR PERFIL RETORNADO
-      const userRole = result.user?.role || "usuario";
-      
-      // Se selecionou admin mas não é admin
-      if (tipo === "admin" && userRole !== "admin") {
-        showMessage("❌ Este usuário não tem permissão de administrador", "error");
-        return;
-      }
-
-      // Se selecionou trabalhador mas não é trabalhador
-      if (tipo === "trabalhador" && userRole !== "trabalhador" && userRole !== "atendente") {
-        showMessage("❌ Este usuário não tem permissão de trabalhador", "error");
-        return;
-      }
-
-      showMessage(`✅ Bem-vindo, ${result.user?.name || "Usuário"}!`, "ok");
-
-      // Redirecionar baseado no PERFIL REAL
-      let redirect = "/index.html";
-      if (userRole === "admin") {
-        redirect = "/dashadm.html";
-      } else if (userRole === "trabalhador" || userRole === "atendente") {
-        redirect = "/dashtrabalho.html";
-      }
-
-      setTimeout(() => {
-        window.location.href = redirect;
-      }, 500);
-
-    } catch (error) {
-      console.error("Erro no login:", error);
-      showMessage("❌ Erro inesperado. Tente novamente.", "error");
-    }
   });
 
   // ===============================
-  // 📝 CADASTRO FUNCIONANDO
+  // 📝 MENSAGENS
   // ===============================
+  function showMessage(msg, type = 'success') {
+    if (!authMessage) return;
+    authMessage.textContent = msg;
+    authMessage.className = `auth-message ${type}`;
+    authMessage.style.display = 'block';
+  }
 
-  registerForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    const confirmDados = document.getElementById("registerConfirmDados");
-
-    if (!confirmDados || !confirmDados.checked) {
-      showMessage("⚠️ Confirme os dados antes de cadastrar.", "error");
-      return;
+  function clearMessage() {
+    if (authMessage) {
+      authMessage.style.display = 'none';
+      authMessage.textContent = '';
     }
+  }
 
-    const nome = document.getElementById("rnome").value.trim();
-    const email = document.getElementById("remail").value.trim();
-    const senha = document.getElementById("rsenha").value;
+  // ===============================
+  // 🔐 LOGIN
+  // ===============================
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-    if (!nome || !email || !senha) {
-      showMessage("⚠️ Preencha todos os campos.", "error");
-      return;
-    }
+      const email = document.getElementById('iemail')?.value.trim();
+      const senha = document.getElementById('isenha')?.value;
+      const tipo = document.getElementById('loginTipo')?.value;
+      const confirmDados = document.getElementById('loginConfirmDados')?.checked;
 
-    showMessage("🔄 Criando conta...", "");
+      // Validações
+      if (!email || !senha) {
+        showMessage("❌ Preencha email e senha", "error");
+        return;
+      }
 
-    try {
-      // CADASTRO VIA API
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          nome: nome,
-          email: email,
-          senha: senha,
-          papel: "usuario"
-        })
+      if (!confirmDados) {
+        showMessage("⚠ Confirme que os dados estão corretos", "error");
+        return;
+      }
+
+      // Login
+      showMessage("🔄 Autenticando...", "info");
+
+      const result = await store.login(email, senha);
+
+      if (!result.ok) {
+        showMessage(`❌ ${result.message}`, "error");
+        return;
+      }
+
+      // Sucesso
+      showMessage("✅ Login realizado!", "success");
+
+      // Redirect baseado no role retornado do backend
+      const userRole = result.role || "usuario";
+
+      setTimeout(() => {
+        if (userRole === "admin") {
+          window.location.href = "/dashadm.html";
+        } else if (userRole === "trabalhador" || userRole === "atendente") {
+          window.location.href = "/dashtrabalho.html";
+        } else {
+          window.location.href = "/index.html";
+        }
+      }, 500);
+    });
+  }
+
+  // ===============================
+  // ✍️ CADASTRO (CORRIGIDO)
+  // ===============================
+  if (registerForm) {
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nome = document.getElementById('rnome')?.value.trim();
+      const email = document.getElementById('remail')?.value.trim();
+      const senha = document.getElementById('rsenha')?.value;
+      const confirmDados = document.getElementById('registerConfirmDados')?.checked;
+
+      // Validações
+      if (!nome || !email || !senha) {
+        showMessage("❌ Preencha todos os campos", "error");
+        return;
+      }
+
+      if (senha.length < 6) {
+        showMessage("❌ Senha deve ter no mínimo 6 caracteres", "error");
+        return;
+      }
+
+      if (!confirmDados) {
+        showMessage("⚠ Confirme que os dados estão corretos", "error");
+        return;
+      }
+
+      // ✅ CORRIGIDO: Usar ApiClient.register via store
+      showMessage("🔄 Criando conta...", "info");
+
+      const result = await store.register({
+        name: nome,
+        email: email,
+        password: senha
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        showMessage(data.erro || data.message || "❌ Erro ao criar conta.", "error");
+      if (!result.ok) {
+        showMessage(`❌ ${result.message}`, "error");
         return;
       }
 
-      showMessage("✅ Cadastro realizado! Agora faça login.", "ok");
-      registerForm.reset();
-      
-      // Mudar para aba de login após 1.5s
+      // Sucesso
+      showMessage("✅ Conta criada! Faça login para continuar.", "success");
+
+      // Trocar para aba de login após 2s
       setTimeout(() => {
-        switchTab("login");
-        // Preencher email
-        document.getElementById("iemail").value = email;
-      }, 1500);
+        document.querySelector('[data-tab="login"]')?.click();
+        // Preencher email no login
+        if (document.getElementById('iemail')) {
+          document.getElementById('iemail').value = email;
+        }
+      }, 2000);
+    });
+  }
 
-    } catch (error) {
-      console.error("Erro no cadastro:", error);
-      showMessage("❌ Erro ao conectar com servidor.", "error");
-    }
-  });
+  // ===============================
+  // 🔙 VOLTAR
+  // ===============================
+  window.voltarprincipal = function() {
+    window.location.href = "/principal.html";
+  };
+
+  console.log("✅ logintcc.js carregado");
+
 })();
-
-// ===============================
-// 🔙 VOLTAR PARA PRINCIPAL
-// ===============================
-
-function voltarprincipal() {
-  window.location.href = "/";
-}

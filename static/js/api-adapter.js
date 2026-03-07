@@ -1,153 +1,243 @@
+/**
+ * API ADAPTER - VERSÃO CORRIGIDA
+ * static/js/api-adapter.js
+ * 
+ * ✅ Adaptação backend ↔ frontend
+ * ✅ Role mapping correto (atendente → usuario para não-admins)
+ * ✅ Transformação de dados
+ */
+
 (function () {
   "use strict";
 
-  const serviceMap = {
-    "Matricula": { servico_id: 1, tipo: "normal" },
-    "Reconfirmacao": { servico_id: 2, tipo: "normal" },
-    "Tesouraria": { servico_id: 3, tipo: "normal" },
-    "Pedido de declaracao": { servico_id: 4, tipo: "prioritaria" },
-    "Apoio ao Cliente": { servico_id: 5, tipo: "normal" }
-  };
-
-  const statusMap = {
-    aguardando: "aguardando",
-    atendendo: "em_atendimento",
-    em_atendimento: "em_atendimento",
-    concluida: "concluido",
-    concluido: "concluido",
-    cancelada: "cancelado",
-    cancelado: "cancelado"
-  };
-
-  function normalizeEmail(value) {
-    return String(value || "").trim().toLowerCase();
-  }
-
-  function detectRoleByEmail(email) {
-    const normalized = normalizeEmail(email);
-    if (normalized.includes("admin")) return "admin";
-    if (normalized.includes("trabalhador") || normalized.includes("worker") || normalized.includes("atendente")) {
-      return "trabalhador";
-    }
-    return "usuario";
-  }
-
-  function roleRedirect(role) {
-    if (role === "admin") return "/dashadm.html";
-    if (role === "trabalhador") return "/dashtrabalho.html";
-    return "/index.html";
-  }
-
-  function mapService(serviceName) {
-    return serviceMap[String(serviceName || "").trim()] || { servico_id: 1, tipo: "normal" };
-  }
-
-  function convertStatus(value) {
-    const key = String(value || "").trim().toLowerCase();
-    return statusMap[key] || "aguardando";
-  }
-
-  function adaptLoginResponse(apiData, fallbackEmail, selectedRole) {
-    const atendente = apiData && apiData.atendente ? apiData.atendente : {};
-    const email = normalizeEmail(atendente.email || fallbackEmail);
-    const roleFromApi = atendente.tipo === "admin" ? "admin" : "trabalhador";
-    const role = selectedRole || roleFromApi || detectRoleByEmail(email);
-
-    return {
-      ok: true,
-      user: {
-        id: atendente.id || null,
-        name: atendente.nome || email || "Utilizador",
-        email,
-        role,
-        department: null
-      },
-      accessToken: (apiData && apiData.access_token) || null,
-      refreshToken: (apiData && apiData.refresh_token) || null,
-      redirect: roleRedirect(role),
-      raw: apiData || {}
-    };
-  }
-
-  function adaptTicketResponse(rawTicket) {
-    const ticket = rawTicket || {};
-    const numero = ticket.numero || ticket.code || "";
-
-    return {
-      id: ticket.id || null,
-      code: numero,
-      status: convertStatus(ticket.status),
-      serviceId: ticket.servico_id || ticket.servicoId || null,
-      createdAt: ticket.data_emissao || ticket.created_at || ticket.createdAt || null,
-      raw: ticket
-    };
-  }
-
-  async function login(apiClient, payload) {
-    if (!apiClient || typeof apiClient.login !== "function") {
-      return { ok: false, message: "Cliente da API indisponivel." };
-    }
-
-    const email = normalizeEmail(payload && payload.email);
-    const senha = String((payload && payload.senha) || "");
-    const selectedRole = payload && payload.tipo ? payload.tipo : null;
-
-    const result = await apiClient.login({ email, senha });
-    if (!result || !result.ok) {
-      return { ok: false, message: (result && result.message) || "Falha no login." };
-    }
-
-    return adaptLoginResponse(result.data, email, selectedRole);
-  }
-
-  async function emitirSenha(apiClient, payload) {
-    const cfg = window.IMTSBApiConfig || {};
-    const mapped = mapService(payload && payload.service);
-    const accessToken = apiClient && typeof apiClient.getAccessToken === "function"
-      ? apiClient.getAccessToken()
-      : null;
-
-    const headers = {
-      "Content-Type": "application/json"
-    };
-
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-
-    try {
-      const response = await fetch(`${cfg.baseUrl || ""}/senhas`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          servico_id: mapped.servico_id,
-          tipo: mapped.tipo,
-          usuario_contato: (payload && payload.userEmail) || ""
-        })
-      });
-
-      const data = await response.json().catch(function () { return {}; });
-      if (!response.ok) {
-        return { ok: false, message: data.erro || data.message || "Falha ao emitir senha.", raw: data };
-      }
-
-      const ticket = adaptTicketResponse(data.senha || data.ticket || data);
-      return { ok: true, ticket, raw: data };
-    } catch (error) {
-      return { ok: false, message: "Erro de conexao com backend.", error: String(error || "") };
-    }
-  }
-
   const ApiAdapter = {
-    serviceMap,
-    statusMap,
-    mapService,
-    convertStatus,
-    detectRoleByEmail,
-    roleRedirect,
-    adaptLoginResponse,
-    adaptTicketResponse,
-    login,
-    emitirSenha
+    
+    // ===============================
+    // 🔐 AUTENTICAÇÃO
+    // ===============================
+    
+    adaptLoginResponse(backendData, email) {
+      /**
+       * Adapta resposta de login do backend para frontend
+       * 
+       * Backend retorna:
+       * {
+       *   access_token: "...",
+       *   atendente: {
+       *     id: 1,
+       *     nome: "João",
+       *     email: "joao@...",
+       *     tipo: "admin" | "atendente",
+       *     balcao: 1 | null
+       *   }
+       * }
+       * 
+       * Frontend espera:
+       * {
+       *   ok: true,
+       *   token: "...",
+       *   id: 1,
+       *   name: "João",
+       *   email: "joao@...",
+       *   role: "admin" | "trabalhador" | "usuario"
+       * }
+       */
+      
+      const atendente = backendData.atendente || {};
+      const tipo = atendente.tipo || "atendente";
+      const balcao = atendente.balcao;
+      
+      // ✅ MAPEAMENTO CORRETO DE ROLES
+      let role;
+      
+      if (tipo === "admin") {
+        role = "admin";
+      } else if (tipo === "atendente" && balcao != null) {
+        // Atendente COM balcão → trabalhador
+        role = "trabalhador";
+      } else {
+        // Atendente SEM balcão → usuário comum
+        role = "usuario";
+      }
+      
+      return {
+        ok: true,
+        token: backendData.access_token,
+        id: atendente.id,
+        name: atendente.nome,
+        email: atendente.email || email,
+        role: role,
+        balcao: balcao
+      };
+    },
+    
+    // ===============================
+    // 🎫 SENHAS
+    // ===============================
+    
+    adaptIssueTicket(frontendData) {
+      /**
+       * Adapta dados de emissão de senha frontend → backend
+       * 
+       * Frontend envia:
+       * {
+       *   servico_id: 1,
+       *   tipo: "normal",
+       *   usuario_contato: "923456789"
+       * }
+       * 
+       * Backend espera o mesmo formato
+       */
+      return {
+        servico_id: frontendData.servico_id,
+        tipo: frontendData.tipo || "normal",
+        usuario_contato: frontendData.usuario_contato || null
+      };
+    },
+    
+    adaptTicketResponse(backendSenha) {
+      /**
+       * Adapta resposta de senha backend → frontend
+       * 
+       * Backend retorna:
+       * {
+       *   id: 1,
+       *   numero: "N001",
+       *   tipo: "normal",
+       *   status: "aguardando",
+       *   servico_id: 1,
+       *   data_emissao: "2026-03-07",
+       *   emitida_em: "2026-03-07T14:30:00",
+       *   ...
+       * }
+       */
+      return {
+        id: backendSenha.id,
+        number: backendSenha.numero,
+        type: backendSenha.tipo,
+        status: backendSenha.status,
+        serviceId: backendSenha.servico_id,
+        issuedAt: backendSenha.emitida_em,
+        calledAt: backendSenha.chamada_em,
+        balcao: backendSenha.numero_balcao
+      };
+    },
+    
+    // ===============================
+    // 👨‍💼 TRABALHADOR
+    // ===============================
+    
+    adaptCallNext(frontendData) {
+      /**
+       * Adapta dados de "chamar próxima" frontend → backend
+       * 
+       * Frontend envia:
+       * {
+       *   servico_id: 1,
+       *   numero_balcao: 1
+       * }
+       * 
+       * Backend espera o mesmo formato
+       */
+      return {
+        servico_id: frontendData.servico_id,
+        numero_balcao: frontendData.numero_balcao
+      };
+    },
+    
+    // ===============================
+    // 📊 ESTATÍSTICAS
+    // ===============================
+    
+    adaptStatsResponse(backendStats) {
+      /**
+       * Adapta estatísticas backend → frontend
+       */
+      return {
+        waiting: backendStats.aguardando || 0,
+        serving: backendStats.atendendo || 0,
+        completed: backendStats.concluidas || 0,
+        cancelled: backendStats.canceladas || 0,
+        totalToday: backendStats.total_emitidas || 0,
+        avgWaitTime: backendStats.tempo_medio_espera || 0
+      };
+    },
+    
+    // ===============================
+    // 🔧 HELPERS
+    // ===============================
+    
+    formatDate(isoString) {
+      /**
+       * Formata data ISO para exibição
+       * "2026-03-07T14:30:00" → "07/03/2026 14:30"
+       */
+      if (!isoString) return "-";
+      
+      try {
+        const date = new Date(isoString);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+      } catch {
+        return isoString;
+      }
+    },
+    
+    formatTime(isoString) {
+      /**
+       * Formata apenas hora
+       * "2026-03-07T14:30:00" → "14:30"
+       */
+      if (!isoString) return "-";
+      
+      try {
+        const date = new Date(isoString);
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+      } catch {
+        return "-";
+      }
+    },
+    
+    statusToPortuguese(status) {
+      /**
+       * Traduz status para português
+       */
+      const translations = {
+        'aguardando': 'Aguardando',
+        'chamada': 'Chamada',
+        'atendendo': 'Em Atendimento',
+        'concluida': 'Concluída',
+        'cancelada': 'Cancelada'
+      };
+      
+      return translations[status] || status;
+    },
+    
+    typeToPortuguese(type) {
+      /**
+       * Traduz tipo para português
+       */
+      const translations = {
+        'normal': 'Normal',
+        'prioritaria': 'Prioritária'
+      };
+      
+      return translations[type] || type;
+    }
   };
 
+  // ===============================
+  // 🌐 EXPORTAR
+  // ===============================
   window.ApiAdapter = ApiAdapter;
+  
+  console.log("✅ ApiAdapter carregado (corrigido)");
+
 })();
