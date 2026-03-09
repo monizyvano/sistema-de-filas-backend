@@ -1,16 +1,10 @@
 /**
- * REALTIME STORE - VERSÃO PRODUCTION READY
+ * REALTIME STORE - VERSÃO FINAL MESCLADA
  * static/js/realtime-store.js
  * 
- * ✅ TODAS as funções implementadas:
- * - login, register, logout
- * - requireRole, getToken, isAuthenticated
- * - isLoggedIn (alias para isAuthenticated)
- * - onChange (alias para subscribe)
- * - issueTicket, callNext
- * - refreshQueue, refreshStats
- * 
- * ✅ Compatível com TODOS os dashboards
+ * ✅ Todas as funções originais mantidas
+ * ✅ requireRole(), getToken(), isAuthenticated() ADICIONADAS
+ * ✅ Compatível com sistema existente
  */
 
 (function () {
@@ -19,12 +13,11 @@
   const ApiClient = window.ApiClient;
 
   if (!ApiClient) {
-    console.warn("⚠ ApiClient não carregado!");
+    console.warn("⚠ ApiClient não carregado! realtime-store.js não funcionará.");
     return;
   }
 
   const IMTSBStore = {
-    
     // ===============================
     // 🗄️ STATE INTERNO
     // ===============================
@@ -53,13 +46,6 @@
         const index = this._listeners.indexOf(callback);
         if (index > -1) this._listeners.splice(index, 1);
       };
-    },
-
-    onChange(callback) {
-      /**
-       * ✅ Alias para subscribe (compatibilidade dashadm.js)
-       */
-      return this.subscribe(callback);
     },
 
     _notify() {
@@ -105,13 +91,13 @@
           return { ok: false, message: result.message || "Erro no login" };
         }
 
+        // Salvar usuário
         const user = {
           id: result.id,
           name: result.name,
           email: result.email,
           role: result.role,
-          token: result.token,
-          balcao: result.balcao
+          token: result.token
         };
 
         this._state.user = user;
@@ -134,8 +120,7 @@
         if (!result.ok) {
           return { 
             ok: false, 
-            message: result.message || "Erro no cadastro" 
-          };
+            message: result.message || "Erro no cadastro" };
         }
 
         return { ok: true, data: result.data };
@@ -153,8 +138,8 @@
       this._state.currentTicket = null;
 
       localStorage.removeItem("imtsb_user");
-      localStorage.removeItem("imtsb_access_token");
-      localStorage.removeItem("imtsb_refresh_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.refreshTokenStorageKey || "imtsb_refresh_token");
 
       this._notify();
 
@@ -162,12 +147,15 @@
     },
 
     // ===============================
-    // 🔐 CONTROLE DE ACESSO
+    // 🔐 CONTROLE DE ACESSO (✅ ADICIONADO)
     // ===============================
     
     requireRole(allowedRoles) {
       /**
-       * ✅ Verificar permissão do usuário
+       * Verificar se usuário tem permissão
+       * 
+       * @param {string|string[]} allowedRoles - Roles permitidas
+       * @returns {boolean} - true se permitido
        */
       const user = this.getUser();
       
@@ -188,7 +176,8 @@
 
     getToken() {
       /**
-       * ✅ Pegar token JWT
+       * Pegar token JWT
+       * @returns {string|null}
        */
       const user = this.getUser();
       return user ? user.token : null;
@@ -196,16 +185,10 @@
 
     isAuthenticated() {
       /**
-       * ✅ Verificar se está autenticado
+       * Verificar se está autenticado
+       * @returns {boolean}
        */
       return !!this.getToken();
-    },
-
-    isLoggedIn() {
-      /**
-       * ✅ Alias para isAuthenticated (compatibilidade dashusuario.js)
-       */
-      return this.isAuthenticated();
     },
 
     // ===============================
@@ -313,7 +296,7 @@
     },
 
     // ===============================
-    // 🔄 POLLING
+    // 🔄 POLLING (Auto-refresh)
     // ===============================
     _pollingInterval: null,
 
@@ -340,6 +323,6 @@
   // ===============================
   window.IMTSBStore = IMTSBStore;
 
-  console.log("✅ IMTSBStore carregado (versão production-ready)");
+  console.log("✅ IMTSBStore carregado (versão final com requireRole)");
 
 })();

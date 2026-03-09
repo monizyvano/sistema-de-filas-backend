@@ -1,184 +1,185 @@
 """
-FilaService - Lógica de gerenciamento de filas
-Responsável por: ordenação, próxima senha, estatísticas
+Fila Service - VERSÃO CORRIGIDA
+app/services/fila_service.py
+
+✅ CORREÇÃO CRÍTICA:
+- Finaliza senha anterior automaticamente ao chamar próxima
+- Garante que concluídas sejam contabilizadas
 """
-from datetime import datetime
-from app import db
-from app.models import Senha, Servico, LogActividade
-from sqlalchemy import func, case
+
+from app.models.senha import Senha
+from app.extensions import db
+from datetime import date
+from sqlalchemy import func, and_
 
 
 class FilaService:
-    """
-    Service para gerenciar filas
-    
-    Methods:
-        obter_fila(): Lista senhas na fila de um serviço
-        proxima_senha(): Obtém próxima senha a ser chamada
-        chamar_proxima(): Chama próxima senha
-        calcular_tempo_espera(): Estima tempo de espera
-    """
-    
+    """Serviço para gerenciamento de filas"""
+
     @staticmethod
-    def obter_fila(servico_id=None, status='aguardando'):
+    def obter_fila(servico_id=None, tipo=None):
         """
-        Obtém fila de senhas
+        Obtém senhas aguardando, ordenadas por prioridade e ordem
         
         Args:
-            servico_id (int): ID do serviço (None = todos)
-            status (str): Status das senhas
-        
+            servico_id: ID do serviço (opcional)
+            tipo: 'prioritaria' ou 'normal' (opcional)
+            
         Returns:
-            list[Senha]: Senhas ordenadas (prioritárias primeiro, depois FIFO)
-        
-        Example:
-            >>> fila = FilaService.obter_fila(servico_id=1)
-            >>> for senha in fila:
-            ...     print(f"{senha.numero} - {senha.tipo}")
-            P001 - prioritaria
-            P002 - prioritaria
-            N001 - normal
-            N002 - normal
+            List[Senha]: Lista de senhas aguardando
         """
-        query = Senha.query.filter_by(status=status)
+        hoje = date.today()
         
-        # Filtrar por serviço se especificado
+        query = Senha.query.filter(
+            Senha.status == 'aguardando',
+            func.date(Senha.emitida_em) == hoje
+        )
+        
         if servico_id:
-            query = query.filter_by(servico_id=servico_id)
+            query = query.filter(Senha.servico_id == servico_id)
         
-        # Ordenar: prioritárias primeiro, depois por ordem de chegada (FIFO)
-        # Usar CASE para mapear tipo para número (prioritaria=1, normal=0)
+        if tipo:
+            query = query.filter(Senha.tipo == tipo)
+        
+        # Ordenar: prioritárias primeiro, depois por ordem de emissão
         query = query.order_by(
-            case(
-                (Senha.tipo == 'prioritaria', 1),
-                else_=0
-            ).desc(),
-            Senha.created_at.asc()
+            Senha.tipo.desc(),  # 'prioritaria' > 'normal'
+            Senha.emitida_em.asc()
         )
         
         return query.all()
-    
+
     @staticmethod
-    def proxima_senha(servico_id):
+    def chamar_proxima(servico_id, numero_balcao, atendente_id):
         """
-        Retorna próxima senha aguardando
-        Prioridade: prioritárias primeiro, depois ordem de emissão
-        """
-
-        return Senha.query.filter(
-            Senha.status == 'aguardando',
-            Senha.servico_id == servico_id
-        ).order_by(
-            db.case(
-                (Senha.tipo == 'prioritaria', 1),
-                else_=0
-            ).desc(),
-            Senha.emitida_em.asc()
-        ).first()
-    
-    @staticmethod
-    def chamar_proxima(servico_id, numero_balcao, atendente_id=None):
-        """
-        Chama próxima senha da fila
-
-        Returns:
-            Senha | None
-        """
-
-        senha = FilaService.proxima_senha(servico_id)
-
-        # ✅ 1. Se não existir senha, retorna None (não levanta erro)
-        if not senha:
-            return None
-
-        # ✅ 2. Chamar senha
-        senha.chamar(numero_balcao)
-
-        # ✅ 3. Registrar log
-        LogActividade.registrar(
-            acao='chamada',
-            senha_id=senha.id,
-            atendente_id=atendente_id,
-            descricao=f"Senha {senha.numero} chamada no balcão {numero_balcao}"
-        )
-
-        return senha
-    
-    @staticmethod
-    def calcular_tempo_espera(servico_id):
-        """
-        Calcula tempo estimado de espera para nova senha
+        ✅ CORRIGIDO - Chama próxima senha da fila
+        
+        CORREÇÃO: Finaliza senha anterior ANTES de chamar nova
         
         Args:
-            servico_id (int): ID do serviço
-        
+            servico_id: ID do serviço
+            numero_balcao: Número do balcão
+            atendente_id: ID do atendente
+            
         Returns:
-            int: Tempo estimado em minutos
-        
-        Logic:
-            tempo_espera = senhas_na_fila * tempo_medio_atendimento
+            Senha: Próxima senha ou None se fila vazia
         """
-        servico = Servico.query.get(servico_id)
-        if not servico:
-            return 0
+        # ✅ PASSO 1: FINALIZAR SENHA ANTERIOR DESTE ATENDENTE
+        senha_anterior = Senha.query.filter(
+            Senha.atendente_id == atendente_id,
+            Senha.status == 'atendendo'
+        ).first()
         
-        # Contar senhas aguardando + atendendo
-        senhas_pendentes = Senha.query.filter(
-            Senha.servico_id == servico_id,
-            Senha.status.in_(['aguardando', 'atendendo'])
-        ).count()
+        if senha_anterior:
+            # Marcar como concluída
+            senha_anterior.finalizar()
+            db.session.commit()
+            
+            print(f"✅ Senha anterior {senha_anterior.numero} finalizada automaticamente")
         
-        return senhas_pendentes * servico.tempo_medio_minutos
-    
+        # ✅ PASSO 2: BUSCAR PRÓXIMA SENHA NA FILA
+        # Priorizar prioritárias, depois normais
+        fila_prioritaria = FilaService.obter_fila(
+            servico_id=servico_id, 
+            tipo='prioritaria'
+        )
+        
+        fila_normal = FilaService.obter_fila(
+            servico_id=servico_id, 
+            tipo='normal'
+        )
+        
+        # Pegar primeira prioritária ou primeira normal
+        proxima_senha = None
+        
+        if fila_prioritaria:
+            proxima_senha = fila_prioritaria[0]
+        elif fila_normal:
+            proxima_senha = fila_normal[0]
+        
+        if not proxima_senha:
+            return None
+        
+        # ✅ PASSO 3: INICIAR ATENDIMENTO DA NOVA SENHA
+        proxima_senha.iniciar_atendimento(
+            atendente_id=atendente_id,
+            numero_balcao=numero_balcao
+        )
+        
+        db.session.commit()
+        
+        print(f"✅ Senha {proxima_senha.numero} chamada para balcão {numero_balcao}")
+        
+        return proxima_senha
+
     @staticmethod
     def obter_estatisticas_fila(servico_id=None):
         """
-        Estatísticas da fila em tempo real
+        Estatísticas da fila
         
         Args:
-            servico_id (int): ID do serviço (None = geral)
-        
+            servico_id: ID do serviço (opcional)
+            
         Returns:
             dict: Estatísticas
         """
-        query = Senha.query
+        hoje = date.today()
+        
+        query_base = Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje
+        )
         
         if servico_id:
-            query = query.filter_by(servico_id=servico_id)
+            query_base = query_base.filter(Senha.servico_id == servico_id)
+        
+        # Contar por status e tipo
+        aguardando_total = query_base.filter(Senha.status == 'aguardando').count()
+        
+        aguardando_normal = query_base.filter(
+            Senha.status == 'aguardando',
+            Senha.tipo == 'normal'
+        ).count()
+        
+        aguardando_prioritaria = query_base.filter(
+            Senha.status == 'aguardando',
+            Senha.tipo == 'prioritaria'
+        ).count()
+        
+        atendendo = query_base.filter(Senha.status == 'atendendo').count()
+        
+        # Tempo estimado (simplificado: 10min por senha na fila)
+        tempo_espera_estimado = aguardando_total * 10
         
         return {
-            'aguardando_total': query.filter_by(status='aguardando').count(),
-            'aguardando_normal': query.filter_by(
-                status='aguardando',
-                tipo='normal'
-            ).count(),
-            'aguardando_prioritaria': query.filter_by(
-                status='aguardando',
-                tipo='prioritaria'
-            ).count(),
-            'atendendo': query.filter_by(status='atendendo').count(),
-            'tempo_espera_estimado': FilaService.calcular_tempo_espera(servico_id) if servico_id else 0
+            'aguardando_total': aguardando_total,
+            'aguardando_normal': aguardando_normal,
+            'aguardando_prioritaria': aguardando_prioritaria,
+            'atendendo': atendendo,
+            'tempo_espera_estimado': tempo_espera_estimado
         }
-    
+
     @staticmethod
-    def obter_posicao_na_fila(senha_id):
+    def obter_posicao_fila(senha_id):
         """
-        Calcula posição de uma senha na fila
+        Obtém posição de uma senha na fila
         
         Args:
-            senha_id (int): ID da senha
-        
+            senha_id: ID da senha
+            
         Returns:
-            int: Posição (1 = próxima)
+            int: Posição na fila (1-based) ou None se não estiver aguardando
         """
         senha = Senha.query.get(senha_id)
+        
         if not senha or senha.status != 'aguardando':
             return None
         
-        fila = FilaService.obter_fila(senha.servico_id, status='aguardando')
+        # Buscar fila do mesmo serviço
+        fila = FilaService.obter_fila(servico_id=senha.servico_id)
         
-        for posicao, senha_fila in enumerate(fila, start=1):
-            if senha_fila.id == senha_id:
-                return posicao
+        # Encontrar posição
+        for idx, s in enumerate(fila, start=1):
+            if s.id == senha_id:
+                return idx
         
         return None

@@ -150,11 +150,11 @@ def register_blueprints(app):
     from app.controllers.config_controller import config_bp
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(senha_bp, url_prefix='/api')
+    app.register_blueprint(senha_bp, url_prefix='/api/senhas')
     app.register_blueprint(fila_bp, url_prefix='/api/filas')
     app.register_blueprint(servico_bp, url_prefix='/api/servicos')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
-    app.register_blueprint(config_bp, url_prefix='/api')
+    app.register_blueprint(config_bp, url_prefix='/api/configuracoes')
 
 
 def register_error_handlers(app):

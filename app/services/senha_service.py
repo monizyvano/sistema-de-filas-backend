@@ -1,370 +1,246 @@
 """
-SenhaService - Lógica de negócio para senhas
+Senha Service - VERSÃO CORRIGIDA
 app/services/senha_service.py
 
-✅ Numeração diária funcionando
-✅ Proteção contra race conditions (SELECT FOR UPDATE)
-✅ Cache integrado
-✅ Retry logic para deadlocks
-✅ Compatível com todo o sistema
+✅ CORREÇÃO: Geração de número movida para o service
+✅ Métodos completos de estatísticas
 """
+
+from app.models.senha import Senha
+from app.models.servico import Servico
+from app.extensions import db
 from datetime import datetime, date
-from app import db
-from app.models import Senha, Servico, LogActividade
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError, OperationalError
-import time
 
 
 class SenhaService:
-    """
-    Service para gerenciar senhas
-    
-    Methods:
-        emitir(): Emite nova senha com proteção contra race conditions
-        obter_por_id(): Busca senha por ID
-        obter_por_numero(): Busca senha por número
-        cancelar(): Cancela senha
-        obter_estatisticas_hoje(): Estatísticas do dia (com cache)
-    """
-    
-    # Configurações de retry para race conditions
-    MAX_RETRIES = 3
-    RETRY_DELAY = 0.1  # segundos
-    
+    """Serviço para gerenciamento de senhas"""
+
     @staticmethod
-    def emitir(servico_id, tipo='normal', usuario_contato=None, data_emissao=None):
+    def emitir(servico_id, tipo='normal', usuario_contato=None):
         """
-        Emite nova senha com numeração diária E proteção contra race conditions
+        ✅ CORRIGIDO - Emite uma nova senha
         
         Args:
-            servico_id (int): ID do serviço
-            tipo (str): 'normal' ou 'prioritaria'
-            usuario_contato (str): Contato do usuário
-            data_emissao (date): Data de emissão (default: hoje)
-        
-        Returns:
-            Senha: Senha criada
-        
-        Raises:
-            ValueError: Se serviço inválido ou tipo inválido
-        
-        Example:
-            >>> senha = SenhaService.emitir(servico_id=1, tipo='normal')
-            >>> print(senha.numero)  # N001 (único, sem duplicação)
-        """
-        from flask import current_app
-        
-        # Log início (se logger disponível)
-        try:
-            current_app.logger.info('Iniciando emissão de senha', extra={
-                'servico_id': servico_id,
-                'tipo': tipo
-            })
-        except:
-            print(f"📝 Emitindo senha: servico={servico_id}, tipo={tipo}")
-        
-        # Tentar até MAX_RETRIES vezes (proteção contra deadlocks)
-        for tentativa in range(SenhaService.MAX_RETRIES):
-            try:
-                # Chamar método interno com lock
-                senha = SenhaService._emitir_com_lock(
-                    servico_id, 
-                    tipo, 
-                    usuario_contato,
-                    data_emissao
-                )
-                
-                # Invalidar cache
-                SenhaService._invalidar_cache(data_emissao or datetime.utcnow().date())
-                
-                # Log sucesso
-                try:
-                    current_app.logger.info('Senha emitida', extra={
-                        'senha_id': senha.id,
-                        'numero': senha.numero
-                    })
-                except:
-                    print(f"✅ Senha emitida: {senha.numero}")
-                
-                return senha
-                
-            except IntegrityError as e:
-                # Violação de UNIQUE - número duplicado
-                db.session.rollback()
-                
-                if tentativa < SenhaService.MAX_RETRIES - 1:
-                    print(f"⚠️ IntegrityError, tentando novamente ({tentativa + 1}/{SenhaService.MAX_RETRIES})")
-                    time.sleep(SenhaService.RETRY_DELAY * (tentativa + 1))
-                    continue
-                else:
-                    raise ValueError(f"Erro ao gerar número único após {SenhaService.MAX_RETRIES} tentativas")
+            servico_id: ID do serviço
+            tipo: 'normal' ou 'prioritaria'
+            usuario_contato: Contato do usuário (opcional)
             
-            except OperationalError as e:
-                # Deadlock ou timeout
-                db.session.rollback()
-                
-                if tentativa < SenhaService.MAX_RETRIES - 1:
-                    print(f"⚠️ OperationalError, tentando novamente ({tentativa + 1}/{SenhaService.MAX_RETRIES})")
-                    time.sleep(SenhaService.RETRY_DELAY * (tentativa + 1))
-                    continue
-                else:
-                    raise ValueError(f"Erro de concorrência após {SenhaService.MAX_RETRIES} tentativas")
-        
-        # Se chegou aqui, todas as tentativas falharam
-        raise ValueError("Erro inesperado ao emitir senha")
-    
-    @staticmethod
-    def _emitir_com_lock(servico_id, tipo, usuario_contato, data_emissao):
+        Returns:
+            Senha: Objeto da senha criada
         """
-        Emissão com lock transacional (método interno)
+        # Validar serviço
+        servico = Servico.query.get(servico_id)
+        if not servico:
+            raise ValueError(f"Serviço {servico_id} não encontrado")
         
-        Usa SELECT ... FOR UPDATE para evitar race conditions
-        """
-        # 1. Validar dados de entrada
-        SenhaService.validar_dados_emissao(servico_id, tipo)
+        # ✅ GERAR NÚMERO AQUI (não no model)
+        hoje = date.today()
         
-        # 2. Data de emissão (default: hoje)
-        if data_emissao is None:
-            data_emissao = datetime.utcnow().date()
+        # Contar senhas do dia
+        count = Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje
+        ).count()
         
-        # 3. Gerar número sequencial COM LOCK
-        numero = SenhaService._gerar_proximo_numero_com_lock(tipo, data_emissao)
+        # Gerar número sequencial
+        prefixo = 'P' if tipo == 'prioritaria' else 'N'
+        numero = f"{prefixo}{count + 1:03d}"
         
-        # 4. Criar objeto Senha
+        # Criar senha COM número
         senha = Senha(
-            numero=numero,
+            numero=numero,  # ✅ Passar número diretamente
             servico_id=servico_id,
             tipo=tipo,
             usuario_contato=usuario_contato,
-            data_emissao=data_emissao
+            status='aguardando'
         )
         
-        # 5. Salvar no banco de dados
+        # Salvar
         db.session.add(senha)
-        db.session.flush()  # Flush para detectar violações antes do commit
-        
-        # 6. Criar log de atividade
-        try:
-            servico = db.session.get(Servico, servico_id)
-            servico_nome = servico.nome if servico else f"Serviço ID {servico_id}"
-            
-            LogActividade.registrar(
-                acao='emitida',
-                senha_id=senha.id,
-                descricao=f"Senha {senha.numero} emitida para {servico_nome}"
-            )
-        except Exception as log_error:
-            print(f"⚠️ Aviso: Não foi possível criar log: {log_error}")
-        
-        # 7. Commit das alterações
         db.session.commit()
         
-        # 8. Recarregar senha com relacionamentos
-        db.session.refresh(senha)
-        
         return senha
-    
+
     @staticmethod
-    def _gerar_proximo_numero_com_lock(tipo, data_emissao):
+    def listar_senhas(usuario_id=None, status=None, servico_id=None):
         """
-        Gera próximo número COM LOCK PESSIMISTA
-        
-        Usa SELECT ... FOR UPDATE para bloquear linha durante leitura
-        Isso evita que dois processos leiam o mesmo número simultaneamente
-        
-        Args:
-            tipo (str): 'normal' ou 'prioritaria'
-            data_emissao (date): Data da senha
-            
-        Returns:
-            str: Número no formato N001, N002... ou P001, P002...
+        Lista senhas com filtros opcionais
         """
-        # Definir prefixo baseado no tipo
-        prefixo = 'P' if tipo == 'prioritaria' else 'N'
+        query = Senha.query
         
-        # ===== QUERY COM LOCK PESSIMISTA =====
-        # FOR UPDATE bloqueia a linha durante a transação
-        # Outros processos aguardam até o commit
-        ultima_senha = db.session.query(Senha).filter(
-            Senha.tipo == tipo,
-            Senha.data_emissao == data_emissao
-        ).order_by(Senha.id.desc()).with_for_update().first()
+        # Aplicar filtros
+        if status:
+            query = query.filter(Senha.status == status)
         
-        # Calcular próximo número
-        if ultima_senha:
-            try:
-                ultimo_numero = int(ultima_senha.numero[1:])  # Remove prefixo
-                proximo_numero = ultimo_numero + 1
-            except (ValueError, IndexError):
-                proximo_numero = 1
-        else:
-            proximo_numero = 1
+        if servico_id:
+            query = query.filter(Senha.servico_id == servico_id)
         
-        # Formatar com zero à esquerda
-        return f'{prefixo}{proximo_numero:03d}'
-    
-    @staticmethod
-    def validar_dados_emissao(servico_id, tipo):
-        """Valida dados antes de emitir senha"""
-        servico = db.session.get(Servico, servico_id)
+        # Ordenar por data (mais recentes primeiro)
+        query = query.order_by(Senha.created_at.desc())
         
-        if not servico:
-            raise ValueError(f"Serviço com ID {servico_id} não encontrado")
-        
-        if not servico.ativo:
-            raise ValueError(f"Serviço '{servico.nome}' está inativo")
-        
-        if tipo not in ['normal', 'prioritaria']:
-            raise ValueError(f"Tipo '{tipo}' inválido. Use 'normal' ou 'prioritaria'")
-    
+        return query.all()
+
     @staticmethod
     def obter_por_id(senha_id):
         """Busca senha por ID"""
-        return db.session.get(Senha, senha_id)
-    
+        return Senha.query.get(senha_id)
+
     @staticmethod
-    def obter_por_numero(numero, data_emissao=None):
-        """Busca senha por número e data"""
-        if data_emissao is None:
-            data_emissao = datetime.utcnow().date()
-        
-        return Senha.query.filter_by(
-            numero=numero.upper(),
-            data_emissao=data_emissao
+    def obter_por_numero(numero):
+        """Busca senha por número"""
+        hoje = date.today()
+        return Senha.query.filter(
+            Senha.numero == numero,
+            func.date(Senha.emitida_em) == hoje
         ).first()
-    
+
     @staticmethod
-    def cancelar(senha_id, motivo, atendente_id=None):
+    def obter_senhas_hoje():
+        """Retorna todas as senhas emitidas hoje"""
+        hoje = date.today()
+        return Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje
+        ).order_by(Senha.emitida_em.desc()).all()
+
+    @staticmethod
+    def cancelar(senha_id, motivo, atendente_id):
         """Cancela uma senha"""
-        senha = db.session.get(Senha, senha_id)
+        senha = Senha.query.get(senha_id)
         
         if not senha:
-            raise ValueError(f"Senha com ID {senha_id} não encontrada")
+            raise ValueError("Senha não encontrada")
         
-        if senha.status == 'concluida':
-            raise ValueError("Não é possível cancelar senha já concluída")
+        if senha.status not in ['aguardando', 'chamada']:
+            raise ValueError("Apenas senhas aguardando ou chamadas podem ser canceladas")
         
-        # Cancelar
-        senha.cancelar(motivo, atendente_id)
+        senha.status = 'cancelada'
+        senha.observacoes = f"Cancelada: {motivo}"
+        senha.atendente_id = atendente_id
         
-        # Registrar log
-        try:
-            LogActividade.registrar(
-                acao='cancelada',
-                senha_id=senha.id,
-                atendente_id=atendente_id,
-                descricao=f"Senha {senha.numero} cancelada: {motivo}"
-            )
-        except Exception as e:
-            print(f"⚠️ Aviso: Não foi possível criar log de cancelamento: {e}")
-        
-        # Invalidar cache
-        SenhaService._invalidar_cache(senha.data_emissao)
+        db.session.commit()
         
         return senha
-    
+
     @staticmethod
-    def obter_estatisticas_hoje(data=None):
+    def calcular_tempo_medio_espera():
         """
-        Estatísticas de senhas do dia (COM CACHE)
-        
-        Args:
-            data (date): Data (default: hoje)
+        Calcula tempo médio de espera (em minutos)
         
         Returns:
-            dict: Estatísticas
+            int: Tempo médio em minutos
         """
-        if data is None:
-            data = datetime.utcnow().date()
+        hoje = date.today()
         
-        # Tentar pegar do cache
-        cache_key = f"estatisticas:{data.isoformat()}"
-        cached = SenhaService._get_cache(cache_key)
-        if cached:
-            return cached
-        
-        # Calcular estatísticas
-        total_emitidas = Senha.query.filter_by(data_emissao=data).count()
-        
-        aguardando = Senha.query.filter(
-            Senha.data_emissao == data,
-            Senha.status == 'aguardando'
-        ).count()
-        
-        atendendo = Senha.query.filter(
-            Senha.data_emissao == data,
-            Senha.status == 'atendendo'
-        ).count()
-        
-        concluidas = Senha.query.filter(
-            Senha.data_emissao == data,
-            Senha.status == 'concluida'
-        ).count()
-        
-        canceladas = Senha.query.filter(
-            Senha.data_emissao == data,
-            Senha.status == 'cancelada'
-        ).count()
-        
-        # Tempo médio de espera
-        senhas_concluidas = Senha.query.filter(
-            Senha.data_emissao == data,
-            Senha.status == 'concluida',
-            Senha.tempo_espera_minutos.isnot(None)
+        # Buscar senhas atendidas hoje
+        senhas = Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje,
+            Senha.status.in_(['atendendo', 'concluida']),
+            Senha.atendimento_iniciado_em.isnot(None)
         ).all()
         
-        if senhas_concluidas:
-            tempos = [s.tempo_espera_minutos for s in senhas_concluidas]
-            tempo_medio_espera = sum(tempos) / len(tempos)
-        else:
-            tempo_medio_espera = 0
+        if not senhas:
+            return 0
         
-        stats = {
-            'total_emitidas': total_emitidas,
+        # Calcular tempo de cada senha
+        tempos = []
+        for senha in senhas:
+            delta = senha.atendimento_iniciado_em - senha.emitida_em
+            minutos = delta.total_seconds() / 60
+            tempos.append(minutos)
+        
+        # Retornar média arredondada
+        return round(sum(tempos) / len(tempos))
+
+    @staticmethod
+    def obter_estatisticas_hoje():
+        """
+        Estatísticas completas do dia
+        
+        Returns:
+            dict com estatísticas
+        """
+        hoje = date.today()
+        
+        # Query base: senhas de hoje
+        query_hoje = Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje
+        )
+        
+        # Contar por status
+        total = query_hoje.count()
+        aguardando = query_hoje.filter(Senha.status == 'aguardando').count()
+        atendendo = query_hoje.filter(Senha.status == 'atendendo').count()
+        concluidas = query_hoje.filter(Senha.status == 'concluida').count()
+        canceladas = query_hoje.filter(Senha.status == 'cancelada').count()
+        
+        # Calcular tempo médio
+        tempo_medio = SenhaService.calcular_tempo_medio_espera()
+        
+        return {
+            'total_emitidas': total,
             'aguardando': aguardando,
             'atendendo': atendendo,
             'concluidas': concluidas,
             'canceladas': canceladas,
-            'tempo_medio_espera': round(tempo_medio_espera, 1)
+            'tempo_medio_espera': tempo_medio
         }
+
+    @staticmethod
+    def obter_estatisticas_trabalhador(atendente_id):
+        """
+        Estatísticas de um trabalhador específico hoje
+        """
+        hoje = date.today()
         
-        # Salvar no cache (30 segundos)
-        SenhaService._set_cache(cache_key, stats, ttl=30)
+        # Senhas atendidas por este trabalhador hoje
+        senhas = Senha.query.filter(
+            Senha.atendente_id == atendente_id,
+            func.date(Senha.emitida_em) == hoje,
+            Senha.status.in_(['atendendo', 'concluida'])
+        ).all()
         
-        return stats
-    
-    # ===============================
-    # 🗄️ CACHE HELPERS
-    # ===============================
-    
+        # Contar concluídas
+        concluidas = [s for s in senhas if s.status == 'concluida']
+        atendidos_hoje = len(concluidas)
+        
+        # Calcular tempo médio de atendimento
+        tempos_atendimento = []
+        for senha in concluidas:
+            if senha.tempo_atendimento_minutos:
+                tempos_atendimento.append(senha.tempo_atendimento_minutos)
+        
+        tempo_medio = 0
+        if tempos_atendimento:
+            tempo_medio = round(sum(tempos_atendimento) / len(tempos_atendimento))
+        
+        # Senha em atendimento atual
+        em_atendimento = Senha.query.filter(
+            Senha.atendente_id == atendente_id,
+            Senha.status == 'atendendo'
+        ).first()
+        
+        return {
+            'atendidos_hoje': atendidos_hoje,
+            'tempo_medio_atendimento': tempo_medio,
+            'em_atendimento': em_atendimento
+        }
+
     @staticmethod
-    def _get_cache(key):
-        """Tenta pegar do cache (se disponível)"""
-        try:
-            from app.services.cache_service import get_cache
-            cache = get_cache()
-            return cache.get(key)
-        except:
-            return None
-    
-    @staticmethod
-    def _set_cache(key, value, ttl=60):
-        """Salva no cache (se disponível)"""
-        try:
-            from app.services.cache_service import get_cache
-            cache = get_cache()
-            cache.set(key, value, ttl)
-        except:
-            pass
-    
-    @staticmethod
-    def _invalidar_cache(data_emissao):
-        """Invalida cache de estatísticas"""
-        try:
-            from app.services.cache_service import get_cache
-            cache = get_cache()
-            cache_key = f"estatisticas:{data_emissao.isoformat()}"
-            cache.delete(cache_key)
-        except:
-            pass
+    def finalizar_atendimento_anterior(atendente_id):
+        """
+        Finaliza automaticamente senha anterior do atendente
+        """
+        # Buscar senha em atendimento deste trabalhador
+        senha_anterior = Senha.query.filter(
+            Senha.atendente_id == atendente_id,
+            Senha.status == 'atendendo'
+        ).first()
+        
+        if senha_anterior:
+            # Marcar como concluída
+            senha_anterior.finalizar()
+            db.session.commit()
+            
+            print(f"✅ Senha {senha_anterior.numero} finalizada automaticamente")
+        
+        return senha_anterior
