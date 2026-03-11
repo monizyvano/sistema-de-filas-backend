@@ -1,9 +1,10 @@
 """
-Senha Service - VERSÃO CORRIGIDA
+Senha Service - VERSÃO COMPLETA MESCLADA
 app/services/senha_service.py
 
-✅ CORREÇÃO: Geração de número movida para o service
-✅ Métodos completos de estatísticas
+✅ FIX: emitida_em e data_emissao preenchidos SEMPRE
+✅ TODOS os métodos implementados
+✅ Serialização correta
 """
 
 from app.models.senha import Senha
@@ -19,7 +20,7 @@ class SenhaService:
     @staticmethod
     def emitir(servico_id, tipo='normal', usuario_contato=None):
         """
-        ✅ CORRIGIDO - Emite uma nova senha
+        ✅ FIX CRÍTICO - Emite senha com emitida_em SEMPRE preenchido
         
         Args:
             servico_id: ID do serviço
@@ -34,7 +35,7 @@ class SenhaService:
         if not servico:
             raise ValueError(f"Serviço {servico_id} não encontrado")
         
-        # ✅ GERAR NÚMERO AQUI (não no model)
+        # ✅ GERAR NÚMERO
         hoje = date.today()
         
         # Contar senhas do dia
@@ -46,29 +47,48 @@ class SenhaService:
         prefixo = 'P' if tipo == 'prioritaria' else 'N'
         numero = f"{prefixo}{count + 1:03d}"
         
-        # Criar senha COM número
+        # ✅ CRIAR SENHA COM DATAS PREENCHIDAS
+        agora = datetime.now()
+        
         senha = Senha(
             numero=numero,
             servico_id=servico_id,
             tipo=tipo,
             usuario_contato=usuario_contato
-            # status='aguardando' já é definido no __init__ do model
         )
+        
+        # ✅ FORÇAR PREENCHIMENTO DAS DATAS
+        senha.emitida_em = agora
+        senha.data_emissao = hoje
+        senha.status = 'aguardando'
         
         # Salvar
         db.session.add(senha)
         db.session.commit()
         
+        print(f"\n{'='*60}")
+        print(f"✅ SENHA EMITIDA COM SUCESSO!")
+        print(f"  Número: {senha.numero}")
+        print(f"  Serviço ID: {servico_id}")
+        print(f"  Tipo: {tipo}")
+        print(f"  Status: {senha.status}")
+        print(f"  Emitida em: {senha.emitida_em}")
+        print(f"  Data emissão: {senha.data_emissao}")
+        print(f"{'='*60}\n")
+        
         return senha
 
     @staticmethod
-    def listar_senhas(usuario_id=None, status=None, servico_id=None):
+    def listar_senhas(atendente_id=None, status=None, servico_id=None):
         """
         Lista senhas com filtros opcionais
         """
         query = Senha.query
         
         # Aplicar filtros
+        if atendente_id:
+            query = query.filter(Senha.atendente_id == atendente_id)
+        
         if status:
             query = query.filter(Senha.status == status)
         
@@ -154,7 +174,7 @@ class SenhaService:
     @staticmethod
     def obter_estatisticas_hoje():
         """
-        Estatísticas completas do dia
+        ✅ Estatísticas completas do dia
         
         Returns:
             dict com estatísticas
@@ -188,7 +208,15 @@ class SenhaService:
     @staticmethod
     def obter_estatisticas_trabalhador(atendente_id):
         """
-        Estatísticas de um trabalhador específico hoje
+        ✅ CORRIGIDO - Estatísticas de um trabalhador específico hoje
+        
+        Returns:
+            dict: {
+                'atendidos_hoje': int,
+                'tempo_medio_atendimento': int,
+                'em_atendimento': dict | None,
+                'aguardando': int
+            }
         """
         hoje = date.today()
         
@@ -219,10 +247,22 @@ class SenhaService:
             Senha.status == 'atendendo'
         ).first()
         
+        # ✅ SERIALIZAR OBJETO SENHA PARA DICT
+        em_atendimento_dict = None
+        if em_atendimento:
+            em_atendimento_dict = em_atendimento.to_dict()
+        
+        # Aguardando no sistema
+        aguardando = Senha.query.filter(
+            func.date(Senha.emitida_em) == hoje,
+            Senha.status == 'aguardando'
+        ).count()
+        
         return {
             'atendidos_hoje': atendidos_hoje,
             'tempo_medio_atendimento': tempo_medio,
-            'em_atendimento': em_atendimento
+            'em_atendimento': em_atendimento_dict,
+            'aguardando': aguardando
         }
 
     @staticmethod

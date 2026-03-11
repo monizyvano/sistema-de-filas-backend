@@ -1,106 +1,51 @@
 """
-Controller de Senhas - VERSÃO COMPLETA
+Senha Controller - FIX ERROS 500
 app/controllers/senha_controller.py
 
-✅ Todas as rotas necessárias
-✅ GET /api/senhas - Listar senhas (com filtros opcionais)
-✅ POST /api/senhas/emitir - Emitir nova senha
-✅ GET /api/senhas/estatisticas - Estatísticas do dia
-✅ GET /api/senhas/:id - Buscar senha específica
-✅ Compatível com frontend existente
+✅ Corrigir chamadas ao service
+✅ Filtros corretos
 """
 
 from flask import Blueprint, request, jsonify
-from app.services.senha_service import SenhaService
-from app.schemas.senha_schema import (
-    EmitirSenhaSchema,
-    CancelarSenhaSchema,
-    IniciarAtendimentoSchema,
-    FinalizarAtendimentoSchema,
-    SenhaSchema 
-)
-from app.utils.rate_limiter import rate_limit
-from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.services.senha_service import SenhaService
+from app.schemas.senha_schema import SenhaSchema
+from datetime import date
 
-# Criar Blueprint
 senha_bp = Blueprint('senha', __name__)
+senha_schema = SenhaSchema()
+senhas_schema = SenhaSchema(many=True)
 
 
-@senha_bp.route('/', methods=['GET'])
-def listar_senhas():
-    """
-    ✅ ROTA ADICIONADA - Listar senhas com filtros opcionais
-    
-    GET /api/senhas
-    GET /api/senhas?usuario_id=5
-    GET /api/senhas?status=aguardando
-    GET /api/senhas?servico_id=1
-    
-    Response:
-        {
-            "total": 10,
-            "senhas": [...]
-        }
-    """
-    try:
-        # Pegar filtros da query string
-        usuario_id = request.args.get('usuario_id', type=int)
-        status = request.args.get('status')
-        servico_id = request.args.get('servico_id', type=int)
-        
-        # Buscar senhas (service deve implementar filtros)
-        senhas = SenhaService.listar_senhas(
-            usuario_id=usuario_id,
-            status=status,
-            servico_id=servico_id
-        )
-        
-        schema = SenhaSchema(many=True)
-        
-        return jsonify({
-            'total': len(senhas),
-            'senhas': schema.dump(senhas)
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'erro': 'Erro ao listar senhas'}), 500
-
-
+@senha_bp.route('/', methods=['POST'])
 @senha_bp.route('/emitir', methods=['POST'])
-@senha_bp.route('/', methods=['POST'])  # Alias para compatibilidade
-@rate_limit(limit=10, window=60)
 def emitir_senha():
     """
-    Emite nova senha
+    ✅ Emitir nova senha
     
     POST /api/senhas/emitir
     Body: {
         "servico_id": 1,
         "tipo": "normal",
-        "usuario_contato": "923456789"
+        "usuario_contato": "email@example.com"
     }
     """
-    
-    # Validar dados de entrada
-    schema = EmitirSenhaSchema()
     try:
-        dados = schema.load(request.json or {})
-    except ValidationError as err:
-        return jsonify({
-            'erro': 'Dados inválidos',
-            'detalhes': err.messages
-        }), 400
-    
-    # Emitir senha
-    try:
-        senha = SenhaService.emitir(
-            servico_id=dados['servico_id'],
-            tipo=dados['tipo'],
-            usuario_contato=dados.get('usuario_contato')
-        )
+        data = request.get_json()
         
-        senha_schema = SenhaSchema()
+        servico_id = data.get('servico_id')
+        tipo = data.get('tipo', 'normal')
+        usuario_contato = data.get('usuario_contato')
+        
+        if not servico_id:
+            return jsonify({'erro': 'servico_id é obrigatório'}), 400
+        
+        # Emitir senha
+        senha = SenhaService.emitir(
+            servico_id=servico_id,
+            tipo=tipo,
+            usuario_contato=usuario_contato
+        )
         
         return jsonify({
             'mensagem': 'Senha emitida com sucesso',
@@ -110,198 +55,138 @@ def emitir_senha():
     except ValueError as e:
         return jsonify({'erro': str(e)}), 400
     except Exception as e:
-        return jsonify({'erro': 'Erro interno ao emitir senha'}), 500
+        print(f"[ERROR] Emitir senha: {e}")
+        return jsonify({'erro': 'Erro ao emitir senha'}), 500
+
+
+@senha_bp.route('/', methods=['GET'])
+def listar_senhas():
+    """
+    ✅ FIX CRÍTICO - Listar senhas com filtros
+    
+    GET /api/senhas/?status=aguardando
+    GET /api/senhas/?atendente_id=13&status=concluida
+    """
+    try:
+        # Pegar parâmetros query
+        atendente_id = request.args.get('atendente_id', type=int)
+        status = request.args.get('status')
+        servico_id = request.args.get('servico_id', type=int)
+        
+        print(f"\n[INFO] Listar senhas - Filtros:")
+        print(f"  atendente_id: {atendente_id}")
+        print(f"  status: {status}")
+        print(f"  servico_id: {servico_id}\n")
+        
+        # Chamar service
+        senhas = SenhaService.listar_senhas(
+            atendente_id=atendente_id,
+            status=status,
+            servico_id=servico_id
+        )
+        
+        return jsonify({
+            'senhas': senhas_schema.dump(senhas),
+            'total': len(senhas)
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Listar senhas: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro ao listar senhas'}), 500
 
 
 @senha_bp.route('/<int:senha_id>', methods=['GET'])
-def buscar(senha_id):
-    """
-    Buscar senha por ID
-    
-    GET /api/senhas/5
-    """
+def obter_senha(senha_id):
+    """Buscar senha por ID"""
     try:
         senha = SenhaService.obter_por_id(senha_id)
         
         if not senha:
-            return jsonify({"erro": "Senha não encontrada"}), 404
+            return jsonify({'erro': 'Senha não encontrada'}), 404
         
-        schema = SenhaSchema()
-        return jsonify(schema.dump(senha)), 200
-    
+        return jsonify(senha_schema.dump(senha)), 200
+        
     except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+        print(f"[ERROR] Obter senha: {e}")
+        return jsonify({'erro': 'Erro ao buscar senha'}), 500
 
 
 @senha_bp.route('/numero/<string:numero>', methods=['GET'])
-def buscar_por_numero(numero):
-    """
-    Buscar senha por número
-    
-    GET /api/senhas/numero/N001
-    """
+def obter_senha_por_numero(numero):
+    """Buscar senha por número"""
     try:
-        senha = SenhaService.obter_por_numero(numero.upper())
+        senha = SenhaService.obter_por_numero(numero)
         
         if not senha:
-            return jsonify({"erro": f"Senha {numero} não encontrada"}), 404
+            return jsonify({'erro': 'Senha não encontrada'}), 404
         
-        schema = SenhaSchema()
-        return jsonify(schema.dump(senha)), 200
-    
+        return jsonify(senha_schema.dump(senha)), 200
+        
     except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-@senha_bp.route('/<int:senha_id>/cancelar', methods=['DELETE'])
-@jwt_required()
-def cancelar(senha_id):
-    """
-    Cancelar senha (requer autenticação)
-    
-    DELETE /api/senhas/5/cancelar
-    """
-    try:
-        schema = CancelarSenhaSchema()
-        data = schema.load(request.get_json())
-        
-        atendente_id = get_jwt_identity()
-        
-        senha = SenhaService.cancelar(
-            senha_id=senha_id,
-            motivo=data['motivo'],
-            atendente_id=atendente_id
-        )
-        
-        senha_schema = SenhaSchema()
-        
-        return jsonify({
-            "mensagem": "Senha cancelada com sucesso",
-            "senha": senha_schema.dump(senha)
-        }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
-    except ValueError as e:
-        return jsonify({"erro": str(e)}), 400
-    except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-@senha_bp.route('/<int:senha_id>/iniciar', methods=['PUT'])
-@jwt_required()
-def iniciar_atendimento(senha_id):
-    """
-    Iniciar atendimento
-    
-    PUT /api/senhas/5/iniciar
-    """
-    try:
-        schema = IniciarAtendimentoSchema()
-        data = schema.load(request.get_json())
-        
-        atendente_id = int(get_jwt_identity())
-        
-        senha = SenhaService.obter_por_id(senha_id)
-        if not senha:
-            return jsonify({"erro": "Senha não encontrada"}), 404
-        
-        senha.iniciar_atendimento(
-            atendente_id=atendente_id,
-            numero_balcao=data['numero_balcao']
-        )
-        
-        senha_schema = SenhaSchema()
-        
-        return jsonify({
-            "mensagem": "Atendimento iniciado",
-            "senha": senha_schema.dump(senha)
-        }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
-    except ValueError as e:
-        return jsonify({"erro": str(e)}), 400
-    except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-@senha_bp.route('/<int:senha_id>/finalizar', methods=['PUT'])
-@jwt_required()
-def finalizar_atendimento(senha_id):
-    """
-    Finalizar atendimento
-    
-    PUT /api/senhas/5/finalizar
-    """
-    try:
-        schema = FinalizarAtendimentoSchema()
-        data = schema.load(request.get_json())
-        
-        senha = SenhaService.obter_por_id(senha_id)
-        if not senha:
-            return jsonify({"erro": "Senha não encontrada"}), 404
-        
-        senha.finalizar(observacoes=data.get('observacoes'))
-        
-        senha_schema = SenhaSchema()
-        
-        return jsonify({
-            "mensagem": "Atendimento finalizado",
-            "senha": senha_schema.dump(senha)
-        }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
-    except ValueError as e:
-        return jsonify({"erro": str(e)}), 400
-    except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+        print(f"[ERROR] Obter senha por número: {e}")
+        return jsonify({'erro': 'Erro ao buscar senha'}), 500
 
 
 @senha_bp.route('/estatisticas', methods=['GET'])
-def estatisticas():
+def obter_estatisticas():
     """
-    Estatísticas de senhas do dia
+    ✅ Estatísticas gerais do dia
     
     GET /api/senhas/estatisticas
-    
-    Response:
-        {
-            "total_emitidas": 42,
-            "aguardando": 5,
-            "atendendo": 2,
-            "concluidas": 35,
-            "canceladas": 0,
-            "tempo_medio_espera": 12
-        }
     """
     try:
         stats = SenhaService.obter_estatisticas_hoje()
         return jsonify(stats), 200
-    
-    except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-@senha_bp.route('/hoje', methods=['GET'])
-def obter_senhas_hoje():
-    """
-    Obter todas as senhas emitidas hoje
-    
-    GET /api/senhas/hoje
-    """
-    try:
-        senhas = SenhaService.obter_senhas_hoje()
-        schema = SenhaSchema(many=True)
         
-        from datetime import datetime
+    except Exception as e:
+        print(f"[ERROR] Estatísticas: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'erro': 'Erro ao obter estatísticas'}), 500
+
+
+@senha_bp.route('/<int:senha_id>/cancelar', methods=['PUT', 'DELETE'])
+@jwt_required()
+def cancelar_senha(senha_id):
+    """Cancelar uma senha"""
+    try:
+        atendente_id = int(get_jwt_identity())
+        data = request.get_json() or {}
+        motivo = data.get('motivo', 'Cancelada pelo atendente')
+        
+        senha = SenhaService.cancelar(senha_id, motivo, atendente_id)
         
         return jsonify({
-            'data': datetime.now().strftime('%Y-%m-%d'),
-            'quantidade': len(senhas),
-            'senhas': schema.dump(senhas)
+            'mensagem': 'Senha cancelada com sucesso',
+            'senha': senha_schema.dump(senha)
         }), 200
         
+    except ValueError as e:
+        return jsonify({'erro': str(e)}), 400
     except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+        print(f"[ERROR] Cancelar senha: {e}")
+        return jsonify({'erro': 'Erro ao cancelar senha'}), 500
+
+
+@senha_bp.route('/<int:senha_id>/observacoes', methods=['PUT'])
+@jwt_required()
+def atualizar_observacoes(senha_id):
+    """Atualizar observações da senha"""
+    try:
+        data = request.get_json()
+        observacoes = data.get('observacoes', '')
+        
+        senha = SenhaService.atualizar_observacoes(senha_id, observacoes)
+        
+        return jsonify({
+            'mensagem': 'Observações atualizadas',
+            'senha': senha_schema.dump(senha)
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({'erro': str(e)}), 400
+    except Exception as e:
+        print(f"[ERROR] Atualizar observações: {e}")
+        return jsonify({'erro': 'Erro ao atualizar observações'}), 500

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ✅ DASH.JS CORRIGIDO - DASHBOARD TRABALHADOR
  * 
  * CORREÇÕES:
@@ -101,6 +101,14 @@
           'Content-Type': 'application/json'
         }
       });
+
+      // Se 401, redirecionar para login
+      if (response.status === 401) {
+        console.warn("Token inválido ou expirado. Redirecionando para login...");
+        store.logout();
+        window.location.href = '/login';
+        return;
+      }
 
       if (!response.ok) {
         console.error("Erro ao buscar estatísticas:", response.status);
@@ -266,6 +274,14 @@
           'Content-Type': 'application/json'
         }
       });
+
+      // Se 401, redirecionar para login
+      if (response.status === 401) {
+        console.warn("Token inválido. Redirecionando...");
+        store.logout();
+        window.location.href = '/login';
+        return;
+      }
 
       if (!response.ok) {
         console.error("Erro ao buscar histórico:", response.status);

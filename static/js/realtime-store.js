@@ -1,16 +1,8 @@
 /**
- * REALTIME STORE - VERSÃO PRODUCTION READY
+ * REALTIME STORE - FIX CALL NEXT
  * static/js/realtime-store.js
  * 
- * ✅ TODAS as funções implementadas:
- * - login, register, logout
- * - requireRole, getToken, isAuthenticated
- * - isLoggedIn (alias para isAuthenticated)
- * - onChange (alias para subscribe)
- * - issueTicket, callNext
- * - refreshQueue, refreshStats
- * 
- * ✅ Compatível com TODOS os dashboards
+ * ✅ FIX: callNext retorna { senha } em vez de { data: { senha } }
  */
 
 (function () {
@@ -25,9 +17,6 @@
 
   const IMTSBStore = {
     
-    // ===============================
-    // 🗄️ STATE INTERNO
-    // ===============================
     _state: {
       user: null,
       queue: [],
@@ -44,9 +33,6 @@
 
     _listeners: [],
 
-    // ===============================
-    // 📡 SUBSCRIPTION
-    // ===============================
     subscribe(callback) {
       this._listeners.push(callback);
       return () => {
@@ -56,9 +42,6 @@
     },
 
     onChange(callback) {
-      /**
-       * ✅ Alias para subscribe (compatibilidade dashadm.js)
-       */
       return this.subscribe(callback);
     },
 
@@ -66,9 +49,6 @@
       this._listeners.forEach(fn => fn(this._state));
     },
 
-    // ===============================
-    // 📊 GETTERS
-    // ===============================
     getSnapshot() {
       return {
         queue: [...this._state.queue],
@@ -94,9 +74,6 @@
       return this._state.currentTicket;
     },
 
-    // ===============================
-    // 🔐 AUTENTICAÇÃO
-    // ===============================
     async login(email, password) {
       try {
         const result = await ApiClient.login(email, password);
@@ -111,7 +88,9 @@
           email: result.email,
           role: result.role,
           token: result.token,
-          balcao: result.balcao
+          balcao: result.balcao,
+          numero_balcao: result.numero_balcao || result.balcao,
+          departamento: result.departamento
         };
 
         this._state.user = user;
@@ -161,14 +140,7 @@
       window.location.href = "/";
     },
 
-    // ===============================
-    // 🔐 CONTROLE DE ACESSO
-    // ===============================
-    
     requireRole(allowedRoles) {
-      /**
-       * ✅ Verificar permissão do usuário
-       */
       const user = this.getUser();
       
       if (!user) {
@@ -187,30 +159,18 @@
     },
 
     getToken() {
-      /**
-       * ✅ Pegar token JWT
-       */
       const user = this.getUser();
       return user ? user.token : null;
     },
 
     isAuthenticated() {
-      /**
-       * ✅ Verificar se está autenticado
-       */
       return !!this.getToken();
     },
 
     isLoggedIn() {
-      /**
-       * ✅ Alias para isAuthenticated (compatibilidade dashusuario.js)
-       */
       return this.isAuthenticated();
     },
 
-    // ===============================
-    // 🎫 SENHAS
-    // ===============================
     async issueTicket(serviceId, tipo = "normal", contato = null) {
       try {
         const result = await ApiClient.issueTicket({
@@ -258,24 +218,38 @@
       }
     },
 
-    // ===============================
-    // 👨‍💼 TRABALHADOR
-    // ===============================
     async callNext(serviceId, balcao) {
+      /**
+       * ✅ FIX CRÍTICO: Backend retorna { senha } diretamente
+       * NÃO retorna { data: { senha } }
+       */
       try {
+        console.log("\n[CALL NEXT] Chamando próxima senha...");
+        console.log("  Serviço ID:", serviceId);
+        console.log("  Balcão:", balcao);
+
         const result = await ApiClient.callNext({
           servico_id: serviceId,
           numero_balcao: balcao
         });
 
-        if (result.ok && result.data?.senha) {
-          this._state.lastCall = result.data.senha;
+        console.log("[CALL NEXT] Resultado:", result);
+
+        // ✅ FIX: Backend retorna { senha } diretamente
+        if (result.ok && result.senha) {
+          this._state.lastCall = result.senha;
           await this.refreshQueue(serviceId);
           this._notify();
-          return { ok: true, senha: result.data.senha };
+          
+          console.log("[SUCCESS] Senha chamada:", result.senha.numero);
+          return { ok: true, senha: result.senha };
         }
 
-        return { ok: false, message: "Nenhuma senha disponível" };
+        // Se não houver senha
+        const message = result.mensagem || result.message || "Nenhuma senha disponível";
+        console.log("[INFO]", message);
+        
+        return { ok: false, message };
 
       } catch (error) {
         console.error("❌ Erro ao chamar próxima:", error);
@@ -312,9 +286,6 @@
       }
     },
 
-    // ===============================
-    // 🔄 POLLING
-    // ===============================
     _pollingInterval: null,
 
     startPolling(intervalMs = 5000) {
@@ -335,11 +306,8 @@
     }
   };
 
-  // ===============================
-  // 🌐 EXPORTAR
-  // ===============================
   window.IMTSBStore = IMTSBStore;
 
-  console.log("✅ IMTSBStore carregado (versão production-ready)");
+  console.log("✅ IMTSBStore carregado (FIX callNext aplicado)");
 
 })();

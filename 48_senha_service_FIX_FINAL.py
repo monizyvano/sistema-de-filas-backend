@@ -1,9 +1,10 @@
 """
-Senha Service - VERSÃO CORRIGIDA
+Senha Service - VERSÃO CORRIGIDA FINAL
 app/services/senha_service.py
 
 ✅ CORREÇÃO: Geração de número movida para o service
 ✅ Métodos completos de estatísticas
+✅ FIX: em_atendimento serializado corretamente
 """
 
 from app.models.senha import Senha
@@ -188,7 +189,14 @@ class SenhaService:
     @staticmethod
     def obter_estatisticas_trabalhador(atendente_id):
         """
-        Estatísticas de um trabalhador específico hoje
+        ✅ CORRIGIDO - Estatísticas de um trabalhador específico hoje
+        
+        Returns:
+            dict: {
+                'atendidos_hoje': int,
+                'tempo_medio_atendimento': int,
+                'em_atendimento': dict | None  # ✅ Serializado corretamente
+            }
         """
         hoje = date.today()
         
@@ -219,10 +227,15 @@ class SenhaService:
             Senha.status == 'atendendo'
         ).first()
         
+        # ✅ SERIALIZAR OBJETO SENHA PARA DICT
+        em_atendimento_dict = None
+        if em_atendimento:
+            em_atendimento_dict = em_atendimento.to_dict()
+        
         return {
             'atendidos_hoje': atendidos_hoje,
             'tempo_medio_atendimento': tempo_medio,
-            'em_atendimento': em_atendimento
+            'em_atendimento': em_atendimento_dict  # ✅ Dict em vez de objeto
         }
 
     @staticmethod

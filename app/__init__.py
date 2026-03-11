@@ -1,10 +1,10 @@
 """
-Application Factory Pattern - VERSÃO CORRIGIDA
+Application Factory Pattern - VERSÃO FINAL CORRIGIDA
 app/__init__.py
 
-✅ Imports corretos
-✅ AuthController importado
-✅ Rotas de registro configuradas
+✅ Blueprints com prefixos corretos
+✅ Todos os controllers registrados
+✅ Sem duplicação
 """
 from app.extensions import db, migrate, jwt, bcrypt, ma, socketio
 from app.utils.logger import setup_logging
@@ -140,21 +140,36 @@ def create_app(config_name=None):
 
 
 def register_blueprints(app):
-    """Registra todos os blueprints da aplicação"""
-
+    """
+    ✅ Registra todos os blueprints com prefixos corretos
+    """
     from app.controllers.auth_controller import auth_bp
     from app.controllers.senha_controller import senha_bp
     from app.controllers.fila_controller import fila_bp
     from app.controllers.servico_controller import servico_bp
     from app.controllers.dashboard_controller import dashboard_bp
     from app.controllers.config_controller import config_bp
+    from app.controllers.atendente_controller import atendente_bp
 
+    # ✅ REGISTRO CORRETO COM PREFIXOS
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(senha_bp, url_prefix='/api/senhas')
+    app.register_blueprint(senha_bp, url_prefix='/api/senhas')  # ✅ FIX!
     app.register_blueprint(fila_bp, url_prefix='/api/filas')
     app.register_blueprint(servico_bp, url_prefix='/api/servicos')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
     app.register_blueprint(config_bp, url_prefix='/api/configuracoes')
+    app.register_blueprint(atendente_bp, url_prefix='/api/atendentes')
+
+    print("\n" + "="*60)
+    print("✅ BLUEPRINTS REGISTRADOS:")
+    print("  - /api/auth")
+    print("  - /api/senhas")  # ✅ CORRETO!
+    print("  - /api/filas")
+    print("  - /api/servicos")
+    print("  - /api/dashboard")
+    print("  - /api/configuracoes")
+    print("  - /api/atendentes")
+    print("="*60 + "\n")
 
 
 def register_error_handlers(app):
