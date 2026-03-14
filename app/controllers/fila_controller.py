@@ -1,11 +1,13 @@
 """
-Fila Controller - FIX DEFINITIVO 404
+Fila Controller - VERSÃO FINAL COMPLETA
 app/controllers/fila_controller.py
 
-✅ FIX: Retorna 200 (não 404) quando não há senha aguardando
-✅ Frontend recebe {"mensagem": "...", "senha": null}
+✅ Rota /api/filas/chamar FUNCIONANDO
+✅ Sem dependência de get_logger
+✅ Print para debug
 """
-from flask import Blueprint, jsonify, request
+
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.services.fila_service import FilaService
 from app.schemas.senha_schema import SenhaSchema
@@ -18,41 +20,41 @@ senha_schema = SenhaSchema()
 @jwt_required()
 def chamar_proxima():
     """
-    ✅ FIX DEFINITIVO: Retorna 200 quando fila vazia
-    
-    Chamar próxima senha da fila
+    ✅ Chamar próxima senha da fila
     
     POST /api/filas/chamar
-    Authorization: Bearer <token>
-    
-    Request Body:
-    {
+    Headers: Authorization: Bearer <token>
+    Body: {
         "servico_id": 1,
         "numero_balcao": 1
     }
     
-    Response 200 (COM senha):
+    Response 200:
     {
         "mensagem": "Senha chamada com sucesso",
         "senha": {
-            "numero": "N003",
+            "id": 1,
+            "numero": "N001",
             "status": "atendendo",
-            ...
+            "servico_id": 1,
+            "atendente_id": 13,
+            "numero_balcao": 1
         }
     }
     
-    Response 200 (SEM senha - FILA VAZIA):
+    Response 404:
     {
-        "mensagem": "Nenhuma senha aguardando",
-        "senha": null
+        "erro": "Nenhuma senha aguardando",
+        "mensagem": "Não há senhas na fila para este serviço"
     }
     """
     try:
-        # Obter atendente do JWT
-        atendente_id = get_jwt_identity()
+        # Pegar ID do atendente do token JWT
+        atendente_id = int(get_jwt_identity())
         
-        # Dados do request
+        # Pegar dados do body
         data = request.get_json()
+        
         servico_id = data.get('servico_id')
         numero_balcao = data.get('numero_balcao')
         
@@ -77,13 +79,13 @@ def chamar_proxima():
             numero_balcao=numero_balcao
         )
         
-        # ✅ FIX CRÍTICO: Se não houver senha, retornar 200 (não 404)
+        # Se não houver senha aguardando
         if not senha:
-            print(f"[INFO] Nenhuma senha aguardando - Serviço {servico_id}")
+            print(f"[WARNING] Nenhuma senha aguardando - Serviço {servico_id}")
             return jsonify({
-                'mensagem': 'Nenhuma senha aguardando',
-                'senha': None  # ✅ null no JSON
-            }), 200  # ✅ 200, não 404!
+                'erro': 'Nenhuma senha aguardando',
+                'mensagem': 'Não há senhas na fila para este serviço'
+            }), 404
         
         print(f"\n{'='*60}")
         print(f"[SUCCESS] Senha chamada com sucesso!")
@@ -126,130 +128,113 @@ def obter_status_fila(servico_id):
     }
     """
     try:
+        print(f"[INFO] Obtendo status da fila - Serviço {servico_id}")
+        
         status = FilaService.obter_status_fila(servico_id)
         
-        return jsonify({
-            'servico_id': servico_id,
-            'aguardando': status['aguardando'],
-            'em_atendimento': status['em_atendimento'],
-            'proxima_senha': status.get('proxima_senha')
-        }), 200
+        return jsonify(status), 200
         
     except Exception as e:
-        print(f"[ERROR] Erro ao obter status da fila: {e}")
-        return jsonify({'erro': 'Erro ao obter status'}), 500
+        print(f"[ERROR] Erro ao obter status da fila {servico_id}: {e}")
+        return jsonify({'erro': 'Erro ao obter status da fila'}), 500
 
 
-@fila_bp.route('/historico', methods=['GET'])
-@jwt_required()
-def obter_historico():
+@fila_bp.route('/painel/<int:servico_id>', methods=['GET'])
+def obter_painel_fila(servico_id):
     """
-    Obter histórico de chamadas do atendente
+    Obter dados para painel de exibição (TV/Monitor)
     
-    GET /api/filas/historico?limite=10
-    Authorization: Bearer <token>
+    GET /api/filas/painel/1
     
     Response 200:
     {
-        "historico": [
-            {
-                "numero": "N003",
-                "chamada_em": "2026-03-11T02:30:00",
-                "status": "concluida"
-            }
-        ]
+        "senha_atual": "N005",
+        "balcao": 1,
+        "proximas": ["N006", "N007", "N008"]
     }
     """
     try:
-        atendente_id = get_jwt_identity()
-        limite = request.args.get('limite', 10, type=int)
+        print(f"[INFO] Obtendo painel da fila - Serviço {servico_id}")
         
-        historico = FilaService.obter_historico_atendente(atendente_id, limite)
+        painel = FilaService.obter_painel(servico_id)
         
-        return jsonify({
-            'historico': [senha_schema.dump(s) for s in historico]
-        }), 200
+        return jsonify(painel), 200
         
     except Exception as e:
-        print(f"[ERROR] Erro ao obter histórico: {e}")
-        return jsonify({'erro': 'Erro ao obter histórico'}), 500
+        print(f"[ERROR] Erro ao obter painel da fila {servico_id}: {e}")
+        return jsonify({'erro': 'Erro ao obter painel'}), 500
 
 
-@fila_bp.route('/pausar', methods=['POST'])
+@fila_bp.route('/concluir/<int:senha_id>', methods=['PUT'])
 @jwt_required()
-def pausar_atendimento():
+def concluir_atendimento(senha_id):
     """
-    Pausar atendimento do atendente
+    Concluir atendimento de uma senha
     
-    POST /api/filas/pausar
-    Authorization: Bearer <token>
+    PUT /api/filas/concluir/1
+    Headers: Authorization: Bearer <token>
     
     Response 200:
     {
-        "mensagem": "Atendimento pausado"
+        "mensagem": "Atendimento concluído com sucesso",
+        "senha": { ... }
     }
     """
     try:
-        atendente_id = get_jwt_identity()
-        # TODO: Implementar lógica de pausa
+        atendente_id = int(get_jwt_identity())
+        
+        print(f"[INFO] Concluindo atendimento - Senha ID: {senha_id}")
+        
+        senha = FilaService.concluir_atendimento(senha_id, atendente_id)
+        
+        if not senha:
+            return jsonify({'erro': 'Senha não encontrada'}), 404
+        
+        print(f"[SUCCESS] Atendimento concluído - Senha {senha.numero}")
         
         return jsonify({
-            'mensagem': 'Atendimento pausado'
+            'mensagem': 'Atendimento concluído com sucesso',
+            'senha': senha_schema.dump(senha)
         }), 200
         
+    except ValueError as e:
+        print(f"[ERROR] Validação: {e}")
+        return jsonify({'erro': str(e)}), 400
+        
     except Exception as e:
-        print(f"[ERROR] Erro ao pausar atendimento: {e}")
-        return jsonify({'erro': 'Erro ao pausar'}), 500
+        print(f"[ERROR] Erro ao concluir atendimento: {e}")
+        return jsonify({'erro': 'Erro ao concluir atendimento'}), 500
 
 
-@fila_bp.route('/retomar', methods=['POST'])
+@fila_bp.route('/cancelar/<int:senha_id>', methods=['PUT'])
 @jwt_required()
-def retomar_atendimento():
+def cancelar_senha(senha_id):
     """
-    Retomar atendimento do atendente
+    Cancelar uma senha
     
-    POST /api/filas/retomar
-    Authorization: Bearer <token>
+    PUT /api/filas/cancelar/1
+    Headers: Authorization: Bearer <token>
     
     Response 200:
     {
-        "mensagem": "Atendimento retomado"
+        "mensagem": "Senha cancelada com sucesso"
     }
     """
     try:
-        atendente_id = get_jwt_identity()
-        # TODO: Implementar lógica de retomada
+        print(f"[INFO] Cancelando senha - ID: {senha_id}")
+        
+        senha = FilaService.cancelar_senha(senha_id)
+        
+        if not senha:
+            return jsonify({'erro': 'Senha não encontrada'}), 404
+        
+        print(f"[SUCCESS] Senha cancelada - {senha.numero}")
         
         return jsonify({
-            'mensagem': 'Atendimento retomado'
+            'mensagem': 'Senha cancelada com sucesso',
+            'senha': senha_schema.dump(senha)
         }), 200
         
     except Exception as e:
-        print(f"[ERROR] Erro ao retomar atendimento: {e}")
-        return jsonify({'erro': 'Erro ao retomar'}), 500
-
-
-@fila_bp.route('/estatisticas', methods=['GET'])
-@jwt_required()
-def obter_estatisticas_fila():
-    """
-    Obter estatísticas da fila
-    
-    GET /api/filas/estatisticas
-    Authorization: Bearer <token>
-    
-    Response 200:
-    {
-        "total_aguardando": 10,
-        "total_atendendo": 3,
-        "tempo_medio_espera": 5.2
-    }
-    """
-    try:
-        stats = FilaService.obter_estatisticas_gerais()
-        
-        return jsonify(stats), 200
-        
-    except Exception as e:
-        print(f"[ERROR] Erro ao obter estatísticas: {e}")
-        return jsonify({'erro': 'Erro ao obter estatísticas'}), 500
+        print(f"[ERROR] Erro ao cancelar senha: {e}")
+        return jsonify({'erro': 'Erro ao cancelar senha'}), 500

@@ -1,15 +1,16 @@
 """
-Fila Service - SEM FILTRO DE DATA
+Fila Service - VERSÃO CORRIGIDA
 app/services/fila_service.py
 
-✅ FIX 1: Ordem correta dos parâmetros
-✅ FIX 2: REMOVER filtro de data (pegar TODAS aguardando)
+✅ CORREÇÃO CRÍTICA:
+- Finaliza senha anterior automaticamente ao chamar próxima
+- Garante que concluídas sejam contabilizadas
 """
 
 from app.models.senha import Senha
 from app.extensions import db
-from datetime import date, datetime
-from sqlalchemy import func
+from datetime import date
+from sqlalchemy import func, and_
 
 
 class FilaService:
@@ -18,14 +19,20 @@ class FilaService:
     @staticmethod
     def obter_fila(servico_id=None, tipo=None):
         """
-        ✅ FIX: SEM filtro de data - pega TODAS aguardando
+        Obtém senhas aguardando, ordenadas por prioridade e ordem
         
-        Obtém senhas aguardando, ordenadas por prioridade
+        Args:
+            servico_id: ID do serviço (opcional)
+            tipo: 'prioritaria' ou 'normal' (opcional)
+            
+        Returns:
+            List[Senha]: Lista de senhas aguardando
         """
-        # ✅ FIX CRÍTICO: SEM FILTRO DE DATA!
+        hoje = date.today()
+        
         query = Senha.query.filter(
-            Senha.status == 'aguardando'
-            # ✅ REMOVIDO: func.date(Senha.emitida_em) == hoje
+            Senha.status == 'aguardando',
+            func.date(Senha.emitida_em) == hoje
         )
         
         if servico_id:
@@ -40,32 +47,23 @@ class FilaService:
             Senha.emitida_em.asc()
         )
         
-        senhas = query.all()
-        
-        print(f"\n[DEBUG obter_fila]")
-        print(f"  Serviço: {servico_id}")
-        print(f"  Tipo: {tipo}")
-        print(f"  Senhas encontradas: {len(senhas)}")
-        for s in senhas[:5]:  # Mostrar só primeiras 5
-            print(f"    - {s.numero} (status={s.status}, emitida_em={s.emitida_em})")
-        
-        return senhas
+        return query.all()
 
     @staticmethod
-    def chamar_proxima(servico_id, atendente_id, numero_balcao):
+    def chamar_proxima(servico_id, numero_balcao, atendente_id):
         """
-        ✅ FIX: Ordem correta dos parâmetros!
+        ✅ CORRIGIDO - Chama próxima senha da fila
         
-        ANTES: chamar_proxima(servico_id, numero_balcao, atendente_id)
-        AGORA: chamar_proxima(servico_id, atendente_id, numero_balcao)
+        CORREÇÃO: Finaliza senha anterior ANTES de chamar nova
+        
+        Args:
+            servico_id: ID do serviço
+            numero_balcao: Número do balcão
+            atendente_id: ID do atendente
+            
+        Returns:
+            Senha: Próxima senha ou None se fila vazia
         """
-        print(f"\n{'='*60}")
-        print(f"[chamar_proxima] PARÂMETROS RECEBIDOS:")
-        print(f"  servico_id: {servico_id}")
-        print(f"  atendente_id: {atendente_id}")
-        print(f"  numero_balcao: {numero_balcao}")
-        print(f"{'='*60}\n")
-        
         # ✅ PASSO 1: FINALIZAR SENHA ANTERIOR DESTE ATENDENTE
         senha_anterior = Senha.query.filter(
             Senha.atendente_id == atendente_id,
@@ -73,19 +71,19 @@ class FilaService:
         ).first()
         
         if senha_anterior:
-            print(f"[INFO] Finalizando senha anterior: {senha_anterior.numero}")
+            # Marcar como concluída
             senha_anterior.finalizar()
             db.session.commit()
-            print(f"✅ Senha {senha_anterior.numero} finalizada automaticamente")
+            
+            print(f"✅ Senha anterior {senha_anterior.numero} finalizada automaticamente")
         
         # ✅ PASSO 2: BUSCAR PRÓXIMA SENHA NA FILA
-        print(f"\n[INFO] Buscando senhas prioritárias...")
+        # Priorizar prioritárias, depois normais
         fila_prioritaria = FilaService.obter_fila(
             servico_id=servico_id, 
             tipo='prioritaria'
         )
         
-        print(f"[INFO] Buscando senhas normais...")
         fila_normal = FilaService.obter_fila(
             servico_id=servico_id, 
             tipo='normal'
@@ -96,20 +94,13 @@ class FilaService:
         
         if fila_prioritaria:
             proxima_senha = fila_prioritaria[0]
-            print(f"[INFO] Senha prioritária encontrada: {proxima_senha.numero}")
         elif fila_normal:
             proxima_senha = fila_normal[0]
-            print(f"[INFO] Senha normal encontrada: {proxima_senha.numero}")
-        else:
-            print(f"[WARNING] Nenhuma senha encontrada na fila!")
+        
+        if not proxima_senha:
             return None
         
         # ✅ PASSO 3: INICIAR ATENDIMENTO DA NOVA SENHA
-        print(f"\n[INFO] Iniciando atendimento...")
-        print(f"  Senha: {proxima_senha.numero}")
-        print(f"  Atendente ID: {atendente_id}")
-        print(f"  Balcão: {numero_balcao}")
-        
         proxima_senha.iniciar_atendimento(
             atendente_id=atendente_id,
             numero_balcao=numero_balcao
@@ -118,16 +109,22 @@ class FilaService:
         db.session.commit()
         
         print(f"✅ Senha {proxima_senha.numero} chamada para balcão {numero_balcao}")
-        print(f"{'='*60}\n")
         
         return proxima_senha
 
     @staticmethod
     def obter_estatisticas_fila(servico_id=None):
-        """Estatísticas da fila"""
+        """
+        Estatísticas da fila
+        
+        Args:
+            servico_id: ID do serviço (opcional)
+            
+        Returns:
+            dict: Estatísticas
+        """
         hoje = date.today()
         
-        # ✅ FIX: Pegar senhas de hoje
         query_base = Senha.query.filter(
             func.date(Senha.emitida_em) == hoje
         )
@@ -163,7 +160,15 @@ class FilaService:
 
     @staticmethod
     def obter_posicao_fila(senha_id):
-        """Obtém posição de uma senha na fila"""
+        """
+        Obtém posição de uma senha na fila
+        
+        Args:
+            senha_id: ID da senha
+            
+        Returns:
+            int: Posição na fila (1-based) ou None se não estiver aguardando
+        """
         senha = Senha.query.get(senha_id)
         
         if not senha or senha.status != 'aguardando':

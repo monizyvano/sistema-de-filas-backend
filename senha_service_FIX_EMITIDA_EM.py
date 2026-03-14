@@ -1,9 +1,9 @@
 """
-Senha Service - FIX NOME DO MÉTODO
+Senha Service - FIX EMITIDA_EM
 app/services/senha_service.py
 
-✅ FIX: Renomear obter_estatisticas_atendente → obter_estatisticas_trabalhador
-✅ Manter emitida_em sempre preenchido
+✅ FIX: Garantir que emitida_em sempre seja preenchido
+✅ Preencher data_emissao também
 """
 
 from app.models.senha import Senha
@@ -22,6 +22,14 @@ class SenhaService:
         ✅ FIX: Sempre preenche emitida_em e data_emissao
         
         Emite uma nova senha
+        
+        Args:
+            servico_id: ID do serviço
+            tipo: 'normal' ou 'prioritaria'
+            usuario_contato: Contato do usuário (opcional)
+            
+        Returns:
+            Senha: Nova senha emitida
         """
         # Validar serviço
         servico = Servico.query.get(servico_id)
@@ -33,6 +41,7 @@ class SenhaService:
         agora = datetime.now()  # ✅ FIX: Pegar timestamp completo
         
         # Gerar número da senha
+        # Contar senhas emitidas hoje para este serviço
         contador = Senha.query.filter(
             func.date(Senha.emitida_em) == hoje,
             Senha.servico_id == servico_id
@@ -44,6 +53,7 @@ class SenhaService:
         
         print(f"\n[DEBUG emitir_senha]")
         print(f"  Serviço: {servico.nome} (ID: {servico_id})")
+        print(f"  Tipo: {tipo}")
         print(f"  Número gerado: {numero}")
         print(f"  Data: {hoje}")
         print(f"  Timestamp: {agora}")
@@ -64,13 +74,26 @@ class SenhaService:
         
         print(f"✅ Senha {numero} emitida com sucesso!")
         print(f"   ID: {senha.id}")
-        print(f"   Emitida em: {senha.emitida_em}\n")
+        print(f"   Status: {senha.status}")
+        print(f"   Emitida em: {senha.emitida_em}")
+        print(f"   Data emissão: {senha.data_emissao}\n")
         
         return senha
 
     @staticmethod
     def listar_senhas(status=None, servico_id=None, atendente_id=None, data_emissao=None):
-        """Lista senhas com filtros opcionais"""
+        """
+        Lista senhas com filtros opcionais
+        
+        Args:
+            status: Filtrar por status
+            servico_id: Filtrar por serviço
+            atendente_id: Filtrar por atendente
+            data_emissao: Filtrar por data de emissão
+            
+        Returns:
+            List[Senha]: Lista de senhas
+        """
         query = Senha.query
         
         if status:
@@ -89,7 +112,15 @@ class SenhaService:
 
     @staticmethod
     def obter_senha(senha_id):
-        """Obtém uma senha por ID"""
+        """
+        Obtém uma senha por ID
+        
+        Args:
+            senha_id: ID da senha
+            
+        Returns:
+            Senha: Senha encontrada
+        """
         senha = Senha.query.get(senha_id)
         if not senha:
             raise ValueError(f"Senha {senha_id} não encontrada")
@@ -97,7 +128,16 @@ class SenhaService:
 
     @staticmethod
     def cancelar_senha(senha_id, motivo=None):
-        """Cancela uma senha"""
+        """
+        Cancela uma senha
+        
+        Args:
+            senha_id: ID da senha
+            motivo: Motivo do cancelamento (opcional)
+            
+        Returns:
+            Senha: Senha cancelada
+        """
         senha = SenhaService.obter_senha(senha_id)
         
         if senha.status != 'aguardando':
@@ -113,11 +153,25 @@ class SenhaService:
 
     @staticmethod
     def obter_estatisticas_hoje():
-        """Obtém estatísticas do dia atual"""
-        hoje = date.today()
+        """
+        ✅ FIX: Filtro de data mais permissivo
         
+        Obtém estatísticas do dia atual
+        
+        Returns:
+            dict: Estatísticas
+        """
+        from datetime import timedelta
+        
+        hoje = date.today()
+        ontem = hoje - timedelta(days=1)
+        
+        # ✅ FIX: Aceita senhas de hoje OU com emitida_em NULL
         query_base = Senha.query.filter(
-            func.date(Senha.emitida_em) == hoje
+            db.or_(
+                func.date(Senha.emitida_em) == hoje,
+                Senha.emitida_em.is_(None)
+            )
         )
         
         # Total emitidas
@@ -170,18 +224,28 @@ class SenhaService:
         }
 
     @staticmethod
-    def obter_estatisticas_trabalhador(atendente_id):
+    def obter_estatisticas_atendente(atendente_id):
         """
-        ✅ FIX: Nome correto do método!
+        Estatísticas de um atendente no dia
         
-        Estatísticas de um trabalhador/atendente no dia
+        Args:
+            atendente_id: ID do atendente
+            
+        Returns:
+            dict: Estatísticas do atendente
         """
+        from datetime import timedelta
+        
         hoje = date.today()
+        ontem = hoje - timedelta(days=1)
         
         # Senhas atendidas hoje
         query_base = Senha.query.filter(
             Senha.atendente_id == atendente_id,
-            func.date(Senha.emitida_em) == hoje,
+            db.or_(
+                func.date(Senha.emitida_em) == hoje,
+                Senha.emitida_em.is_(None)
+            ),
             Senha.status.in_(['atendendo', 'concluida'])
         )
         
@@ -214,7 +278,10 @@ class SenhaService:
         
         # Aguardando no sistema
         aguardando = Senha.query.filter(
-            func.date(Senha.emitida_em) == hoje,
+            db.or_(
+                func.date(Senha.emitida_em) == hoje,
+                Senha.emitida_em.is_(None)
+            ),
             Senha.status == 'aguardando'
         ).count()
         
@@ -227,7 +294,9 @@ class SenhaService:
 
     @staticmethod
     def finalizar_atendimento_anterior(atendente_id):
-        """Finaliza automaticamente senha anterior do atendente"""
+        """
+        Finaliza automaticamente senha anterior do atendente
+        """
         # Buscar senha em atendimento deste trabalhador
         senha_anterior = Senha.query.filter(
             Senha.atendente_id == atendente_id,
