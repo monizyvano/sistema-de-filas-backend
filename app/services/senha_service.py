@@ -49,15 +49,17 @@ class SenhaService:
         print(f"  Timestamp: {agora}")
         
         # Criar senha
+        # OBS: o model Senha possui __init__ custom, então aceitamos apenas
+        # os argumentos declarados nele e ajustamos campos extras após instanciar.
         senha = Senha(
             numero=numero,
             tipo=tipo,
             servico_id=servico_id,
             usuario_contato=usuario_contato,
-            status='aguardando',
-            emitida_em=agora,        # ✅ FIX: SEMPRE PREENCHER!
-            data_emissao=hoje        # ✅ FIX: SEMPRE PREENCHER!
+            data_emissao=hoje,
         )
+        senha.status = 'aguardando'
+        senha.emitida_em = agora
         
         db.session.add(senha)
         db.session.commit()
