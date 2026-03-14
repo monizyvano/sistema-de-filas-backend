@@ -19,6 +19,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 senha_bp = Blueprint('senha', __name__)
 
 
+@senha_bp.route('/emitir', methods=['POST'])
 @senha_bp.route('/senhas', methods=['POST'])
 @rate_limit(limit=10, window=60)  # 10 emissões por minuto
 def emitir_senha():
