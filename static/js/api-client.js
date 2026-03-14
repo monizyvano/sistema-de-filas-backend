@@ -178,9 +178,15 @@
     },
 
     async getQueue(servicoId = null) {
-      const path = servicoId ? `/filas/${servicoId}` : "/senhas";
-      const result = await apiRequest(path);
-      return result.ok ? (result.data || []) : [];
+      const query = servicoId
+        ? `/senhas?status=aguardando&servico_id=${servicoId}`
+        : "/senhas?status=aguardando";
+
+      const result = await apiRequest(query);
+      if (!result.ok) return [];
+
+      if (Array.isArray(result.data)) return result.data;
+      return result.data?.senhas || [];
     },
 
     async callNext(dataFrontend) {
