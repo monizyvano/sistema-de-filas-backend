@@ -19,6 +19,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 senha_bp = Blueprint('senha', __name__)
 
 
+@senha_bp.route('/emitir', methods=['POST'])
 @senha_bp.route('/senhas', methods=['POST'])
 @rate_limit(limit=10, window=60)  # 10 emissões por minuto
 def emitir_senha():
@@ -50,7 +51,30 @@ def emitir_senha():
     except ValueError as e:
         return jsonify({'erro': str(e)}), 400
     except Exception as e:
+        print(f"[ERROR] Emitir senha: {e}")
         return jsonify({'erro': 'Erro interno ao emitir senha'}), 500
+
+
+@senha_bp.route('', methods=['GET'])
+@senha_bp.route('/', methods=['GET'])
+def listar_senhas():
+    """Lista senhas com filtros opcionais por query params."""
+    try:
+        status = request.args.get('status')
+        servico_id = request.args.get('servico_id', type=int)
+        atendente_id = request.args.get('atendente_id', type=int)
+
+        senhas = SenhaService.listar_senhas(
+            status=status,
+            servico_id=servico_id,
+            atendente_id=atendente_id,
+        )
+
+        schema = SenhaSchema(many=True)
+        return jsonify(schema.dump(senhas)), 200
+    except Exception as e:
+        print(f"[ERROR] Listar senhas: {e}")
+        return jsonify({'erro': 'Erro interno ao listar senhas'}), 500
 
 
 @senha_bp.route('/<int:senha_id>', methods=['GET'])

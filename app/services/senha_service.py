@@ -49,15 +49,17 @@ class SenhaService:
         print(f"  Timestamp: {agora}")
         
         # Criar senha
+        # OBS: o model Senha possui __init__ custom, então aceitamos apenas
+        # os argumentos declarados nele e ajustamos campos extras após instanciar.
         senha = Senha(
             numero=numero,
             tipo=tipo,
             servico_id=servico_id,
             usuario_contato=usuario_contato,
-            status='aguardando',
-            emitida_em=agora,        # ✅ FIX: SEMPRE PREENCHER!
-            data_emissao=hoje        # ✅ FIX: SEMPRE PREENCHER!
+            data_emissao=hoje,
         )
+        senha.status = 'aguardando'
+        senha.emitida_em = agora
         
         db.session.add(senha)
         db.session.commit()
@@ -67,6 +69,15 @@ class SenhaService:
         print(f"   Emitida em: {senha.emitida_em}\n")
         
         return senha
+
+    @staticmethod
+    def emitir(servico_id, tipo='normal', usuario_contato=None):
+        """Alias retrocompatível para emissão de senha."""
+        return SenhaService.emitir_senha(
+            servico_id=servico_id,
+            tipo=tipo,
+            usuario_contato=usuario_contato,
+        )
 
     @staticmethod
     def listar_senhas(status=None, servico_id=None, atendente_id=None, data_emissao=None):
@@ -96,6 +107,16 @@ class SenhaService:
         return senha
 
     @staticmethod
+    def obter_por_id(senha_id):
+        """Alias retrocompatível para busca por ID."""
+        return Senha.query.get(senha_id)
+
+    @staticmethod
+    def obter_por_numero(numero):
+        """Alias retrocompatível para busca por número."""
+        return Senha.query.filter(Senha.numero == numero).first()
+
+    @staticmethod
     def cancelar_senha(senha_id, motivo=None):
         """Cancela uma senha"""
         senha = SenhaService.obter_senha(senha_id)
@@ -108,8 +129,14 @@ class SenhaService:
             senha.observacoes = motivo
         
         db.session.commit()
-        
+
         return senha
+
+    @staticmethod
+    def cancelar(senha_id, motivo=None, atendente_id=None):
+        """Alias retrocompatível para cancelamento de senha."""
+        _ = atendente_id
+        return SenhaService.cancelar_senha(senha_id=senha_id, motivo=motivo)
 
     @staticmethod
     def obter_estatisticas_hoje():
