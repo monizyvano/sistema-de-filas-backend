@@ -115,6 +115,10 @@ def create_app(config_name=None):
     def painel_admin():
         return render_template('dashadm.html')
 
+    @app.route('/tv')
+    def painel_tv():
+        return render_template('tv.html')
+
     # ================= ROTA CATCH-ALL PARA HTML =================
 
     @app.route('/<path:filename>')

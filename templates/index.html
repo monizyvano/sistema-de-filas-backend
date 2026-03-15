@@ -91,6 +91,35 @@
                     <div class="call-label">Minha Senha</div>
                     <div class="call-number" id="currentTicket">---</div>
                     <div class="call-status" id="currentStatus" style="font-size:0.9rem;color:#666;">Aguardando</div>
+
+                <!-- Acompanhamento de posição — Sprint 3 -->
+                <div id="ticketTracker" style="margin-top:12px; padding:12px 16px;
+                     background:rgba(107,66,38,0.08); border-radius:12px;
+                     border:1px solid rgba(107,66,38,0.15); display:none;">
+                    <div style="display:flex; gap:24px; align-items:center;">
+                        <div style="text-align:center;">
+                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
+                                Posição
+                            </div>
+                            <div id="currentTicketPos"
+                                 style="font-size:1.8rem;font-weight:800;color:#6b4226;">–</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
+                                Espera est.
+                            </div>
+                            <div id="currentTicketTime"
+                                 style="font-size:1.1rem;font-weight:600;color:#6b4226;">–</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
+                                Estado
+                            </div>
+                            <div id="currentTicketStatus"
+                                 style="font-size:.9rem;font-weight:600;color:#6b4226;">–</div>
+                        </div>
+                    </div>
+                </div>
                 </div>
                 <div class="call-info-right">
                     <div class="call-label">Ultima Chamada</div>
@@ -207,6 +236,71 @@
     mostrarMensagem(`Serviço selecionado: ${servico.nome}`, "success");
   }
 
+
+
+  // ═══════════════════════════════════════════════════════════
+  // 📍 ACOMPANHAMENTO DE SENHA — SPRINT 3
+  // Mostra posição na fila e tempo estimado após emissão
+  // ═══════════════════════════════════════════════════════════
+
+  function iniciarAcompanhamento(numeroSenha) {
+    pararAcompanhamento();
+
+    // Mostrar o tracker
+    const tracker = document.getElementById('ticketTracker');
+    if (tracker) tracker.style.display = 'block';
+
+    // Executar imediatamente e depois a cada 10s
+    actualizarPosicao(numeroSenha);
+    acompanhamentoInterval = setInterval(
+      () => actualizarPosicao(numeroSenha),
+      10000
+    );
+  }
+
+  function pararAcompanhamento() {
+    if (acompanhamentoInterval) {
+      clearInterval(acompanhamentoInterval);
+      acompanhamentoInterval = null;
+    }
+  }
+
+  async function actualizarPosicao(numeroSenha) {
+    try {
+      const resp = await fetch(`/api/dashboard/public/senha/${numeroSenha}`);
+      if (!resp.ok) return;
+
+      const data = await resp.json();
+
+      const posEl    = document.getElementById('currentTicketPos');
+      const tempoEl  = document.getElementById('currentTicketTime');
+      const statusEl = document.getElementById('currentTicketStatus');
+
+      if (data.status === 'aguardando') {
+        if (posEl) posEl.textContent = data.posicao || '–';
+        if (tempoEl) {
+          tempoEl.textContent = data.tempo_espera_estimado > 0
+            ? `~${data.tempo_espera_estimado}min`
+            : '–';
+        }
+        if (statusEl) statusEl.textContent = 'Aguardando';
+
+      } else if (data.status === 'atendendo') {
+        if (posEl) posEl.textContent = '🔔';
+        if (tempoEl) tempoEl.textContent = 'É a sua vez!';
+        if (statusEl) statusEl.textContent = `Balcão ${data.balcao}`;
+        pararAcompanhamento();
+
+      } else if (data.status === 'concluida' || data.status === 'cancelada') {
+        pararAcompanhamento();
+        if (statusEl) statusEl.textContent = data.status;
+      }
+
+    } catch (e) {
+      console.error('Erro ao actualizar posição:', e);
+    }
+  }
+
   async function emitirSenha() {
     if (!servicoSelecionado) {
       mostrarMensagem("Por favor, selecione um serviço primeiro!", "error");
@@ -242,6 +336,10 @@
         mostrarMensagem(`✅ Senha emitida: ${numeroSenha}`, "success");
         
         atualizarMinhaSenha();
+
+        // Após mostrar o número da senha ao utente:
+        iniciarAcompanhamento(senha.numero);
+
         setTimeout(() => atualizarEstatisticas(), 500);
         
       } else {
@@ -278,6 +376,9 @@
     } else {
       currentTicket.textContent = '---';
       currentStatus.textContent = 'Aguardando';
+      const tracker = document.getElementById('ticketTracker');
+      if (tracker) tracker.style.display = 'none';
+      pararAcompanhamento();
     }
   }
 
@@ -330,6 +431,7 @@
   }
 
   let pollingInterval = null;
+  let acompanhamentoInterval = null;
 
   function iniciarPolling() {
     pararPolling();

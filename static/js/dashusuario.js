@@ -38,6 +38,7 @@
 
   let selectedService = "";
   let pollingInterval = null;
+  let acompanhamentoInterval = null;
 
   const serviceDocuments = {
     "Matricula": [
@@ -130,6 +131,76 @@
     return map[servicoId] || `Serviço ${servicoId}`;
   }
 
+
+
+  // ═══════════════════════════════════════════════════════════
+  // 📍 ACOMPANHAMENTO DE SENHA — SPRINT 3
+  // Mostra posição na fila e tempo estimado após emissão
+  // ═══════════════════════════════════════════════════════════
+
+  function iniciarAcompanhamento(numeroSenha) {
+    /**
+     * Inicia polling de 10s para actualizar posição na fila
+     * da senha emitida. Para automaticamente quando chamada.
+     */
+    pararAcompanhamento();
+
+    const tracker = document.getElementById('ticketTracker');
+    if (tracker) tracker.style.display = 'block';
+
+    // Executar imediatamente e depois a cada 10s
+    actualizarPosicao(numeroSenha);
+    acompanhamentoInterval = setInterval(
+      () => actualizarPosicao(numeroSenha),
+      10000
+    );
+  }
+
+  function pararAcompanhamento() {
+    if (acompanhamentoInterval) {
+      clearInterval(acompanhamentoInterval);
+      acompanhamentoInterval = null;
+    }
+  }
+
+  async function actualizarPosicao(numeroSenha) {
+    try {
+      const resp = await fetch(`/api/dashboard/public/senha/${numeroSenha}`);
+      if (!resp.ok) return;
+
+      const data = await resp.json();
+
+      // Elementos do ecrã do utente
+      const posEl = document.getElementById('currentTicketPos');
+      const tempoEl = document.getElementById('currentTicketTime');
+      const statusEl = document.getElementById('currentTicketStatus');
+
+      if (data.status === 'aguardando') {
+        if (posEl) posEl.textContent = data.posicao || '–';
+        if (tempoEl) {
+          tempoEl.textContent = data.tempo_espera_estimado > 0
+            ? `~${data.tempo_espera_estimado}min`
+            : '–';
+        }
+        if (statusEl) statusEl.textContent = 'Aguardando';
+
+      } else if (data.status === 'atendendo') {
+        if (posEl) posEl.textContent = '🔔';
+        if (tempoEl) tempoEl.textContent = 'É a sua vez!';
+        if (statusEl) statusEl.textContent = `Balcão ${data.balcao}`;
+        // Para o polling — já foi chamado
+        pararAcompanhamento();
+
+      } else if (data.status === 'concluida' || data.status === 'cancelada') {
+        pararAcompanhamento();
+        if (statusEl) statusEl.textContent = data.status;
+      }
+
+    } catch (e) {
+      console.error('Erro ao actualizar posição:', e);
+    }
+  }
+
   // =============================
   // BUSCAR DADOS DA API
   // =============================
@@ -187,6 +258,9 @@
   function renderTickets(tickets) {
     if (!tickets || tickets.length === 0) {
       if (currentTicketEl) currentTicketEl.textContent = "---";
+      const tracker = document.getElementById("ticketTracker");
+      if (tracker) tracker.style.display = "none";
+      pararAcompanhamento();
       if (ticketsList) ticketsList.innerHTML = "<p>Sem atendimentos.</p>";
       return;
     }
@@ -197,6 +271,10 @@
 
     if (currentTicketEl) {
       currentTicketEl.textContent = `${active.numero} (${statusLabel(active.status)})`;
+    }
+
+    if (active.numero) {
+      iniciarAcompanhamento(active.numero);
     }
 
     if (!ticketsList) return;
@@ -263,7 +341,13 @@
           return;
         }
 
-        showMessage(`✅ Senha emitida com sucesso: ${result.ticket.code}`, "ok");
+        const numeroSenha = result.ticket.code || result.ticket.numero;
+        showMessage(`✅ Senha emitida com sucesso: ${numeroSenha}`, "ok");
+
+        if (numeroSenha) {
+          iniciarAcompanhamento(numeroSenha);
+        }
+
         setTimeout(() => fetchMyTickets(), 500);
 
       } catch (error) {
