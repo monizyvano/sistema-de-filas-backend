@@ -1,114 +1,87 @@
 """
-Controller de Autenticação
-Rotas: /api/auth/*
+app/controllers/auth_controller.py
+═══════════════════════════════════════════════════════════════
+Controller de Autenticação — SPRINT 1 (corrigido)
+
+ALTERAÇÕES:
+  ✅ Resposta de login inclui `servico_id` do atendente.
+  ✅ JWT additional_claims inclui `servico_id`.
+═══════════════════════════════════════════════════════════════
 """
+
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import (
+    create_access_token,
+    jwt_required,
+    get_jwt_identity
+)
 from marshmallow import ValidationError
-from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 from datetime import timedelta
 
 from app.models.atendente import Atendente
-from app.schemas.auth_schema import LoginSchema, RegistrarAtendenteSchema
-from app.schemas.senha_schema import AtendenteSchema
-from app.utils.rate_limiter import rate_limit
+from app.schemas.auth_schema import (
+    LoginSchema,
+    RegistrarAtendenteSchema
+)
+from app.schemas.atendente_schema import AtendenteSchema
 
-
-# Criar Blueprint
 auth_bp = Blueprint('auth', __name__)
 
 
+# ═══════════════════════════════════════════════════════════════
+# POST /api/auth/login
+# ═══════════════════════════════════════════════════════════════
+
 @auth_bp.route('/login', methods=['POST'])
-@rate_limit(limit=5, window=300)  # 5 tentativas por 5 minutos
 def login():
-    """Login de atendente
-    ---
-    tags:
-      - Autenticação
-    parameters:
-      - in: body
-        name: credentials
-        required: true
-        schema:
-          type: object
-          required:
-            - email
-            - senha
-          properties:
-            email:
-              type: string
-              format: email
-              example: admin@imtsb.ao
-              description: Email do atendente
-            senha:
-              type: string
-              format: password
-              example: admin123
-              description: Senha do atendente
-    responses:
-      200:
-        description: Login bem-sucedido
-        schema:
-          type: object
-          properties:
-            access_token:
-              type: string
-              description: JWT token para autenticação
-              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-            atendente:
-              type: object
-              properties:
-                id:
-                  type: integer
-                  example: 1
-                nome:
-                  type: string
-                  example: Administrador
-                email:
-                  type: string
-                  example: admin@imtsb.ao
-                tipo:
-                  type: string
-                  example: admin
-                balcao:
-                  type: integer
-                  example: null
-      400:
-        description: Dados inválidos
-      401:
-        description: Email ou senha incorretos
-      429:
-        description: Muitas tentativas de login (rate limit)
     """
-    # Validar dados
+    POST /api/auth/login
+
+    Autentica um atendente ou administrador.
+
+    Corpo (JSON):
+        { "email": "admin@imtsb.ao", "senha": "admin123" }
+
+    Resposta (200):
+        {
+            "access_token": "<JWT>",
+            "atendente": {
+                "id": 1, "nome": "...", "email": "...",
+                "tipo": "admin", "ativo": true,
+                "balcao": null,
+                "servico_id": null   ← SPRINT 1: novo campo
+            }
+        }
+    """
     schema = LoginSchema()
     try:
-        dados = schema.load(request.json or {})
+        dados = schema.load(request.get_json() or {})
     except ValidationError as err:
-        return jsonify({
-            'erro': 'Dados inválidos',
-            'detalhes': err.messages
-        }), 400
-    
-    # Buscar atendente
-    email = dados['email']
-    senha = dados['senha']
-    
-    atendente = Atendente.query.filter_by(email=email).first()
-    
+        return jsonify({'erro': 'Dados inválidos', 'detalhes': err.messages}), 400
+
+    atendente = Atendente.query.filter_by(email=dados['email'].lower()).first()
+
     if not atendente:
-        return jsonify({'erro': 'Email ou senha incorretos'}), 401
-    
-    # Verificar senha com bcrypt
-    from app import bcrypt
-    if not bcrypt.check_password_hash(atendente.senha_hash, senha):
-        return jsonify({'erro': 'Email ou senha incorretos'}), 401
-    
-    # Gerar token JWT
+        return jsonify({'erro': 'Email ou senha incorrectos'}), 401
+
+    if not atendente.verificar_senha(dados['senha']):
+        return jsonify({'erro': 'Email ou senha incorrectos'}), 401
+
+    if not atendente.ativo:
+        return jsonify({'erro': 'Conta inactiva. Contacte o administrador.'}), 403
+
+    # SPRINT 1: servico_id incluído nos claims do JWT
     access_token = create_access_token(
         identity=str(atendente.id),
-        expires_delta=timedelta(hours=8)
+        expires_delta=timedelta(hours=8),
+        additional_claims={
+            'tipo': atendente.tipo,
+            'balcao': atendente.balcao,
+            'nome': atendente.nome,
+            'servico_id': atendente.servico_id  # ← novo
+        }
     )
-    
+
     return jsonify({
         'access_token': access_token,
         'atendente': {
@@ -117,237 +90,76 @@ def login():
             'email': atendente.email,
             'tipo': atendente.tipo,
             'ativo': atendente.ativo,
-            'balcao': atendente.balcao
+            'balcao': atendente.balcao,
+            'servico_id': atendente.servico_id  # ← novo
         }
     }), 200
 
 
+# ═══════════════════════════════════════════════════════════════
+# POST /api/auth/register
+# ═══════════════════════════════════════════════════════════════
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """
-    POST /api/auth/register
-    
-    Registrar novo atendente (cadastro público)
-    
-    Body:
-        {
-            "nome": "Ana Santos",
-            "email": "ana@imtsb.ao",
-            "senha": "senha123",
-            "tipo": "atendente",
-            "balcao": 4
-        }
-    
-    Response:
-        {
-            "mensagem": "Atendente criado com sucesso",
-            "atendente": {...}
-        }
-    """
+    """POST /api/auth/register — Regista novo atendente."""
     try:
-        # Validar dados
         schema = RegistrarAtendenteSchema()
-        data = schema.load(request.get_json())
-        
-        # Verificar se email já existe
-        if Atendente.query.filter_by(email=data['email']).first():
-            return jsonify({"erro": "Email já cadastrado"}), 400
-        
-        # Criar novo atendente
-        novo_atendente = Atendente(
-            nome=data['nome'],
-            email=data['email'],
-            senha=data['senha'],
-            tipo=data.get('tipo', 'atendente'),
-            balcao=data.get('balcao')
-        )
-        
-        from app import db
-        db.session.add(novo_atendente)
-        db.session.commit()
-        
-        # Serializar resposta
-        atendente_schema = AtendenteSchema()
-        
-        return jsonify({
-            "mensagem": "Atendente criado com sucesso",
-            "atendente": atendente_schema.dump(novo_atendente)
-        }), 201
-    
+        data = schema.load(request.get_json() or {})
     except ValidationError as e:
         return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
+
+    if Atendente.query.filter_by(email=data['email'].lower()).first():
+        return jsonify({"erro": "Email já registado"}), 400
+
+    try:
+        novo = Atendente(
+            nome=data['nome'],
+            email=data['email'].lower(),
+            senha=data['senha'],
+            tipo=data.get('tipo', 'atendente'),
+            balcao=data.get('balcao'),
+            servico_id=data.get('servico_id')  # SPRINT 1
+        )
+        from app import db
+        db.session.add(novo)
+        db.session.commit()
+
+        atendente_schema = AtendenteSchema()
+        return jsonify({
+            "mensagem": "Atendente criado com sucesso",
+            "atendente": atendente_schema.dump(novo)
+        }), 201
     except Exception:
         from app import db
         db.session.rollback()
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/auth/me
+# ═══════════════════════════════════════════════════════════════
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def me():
-    """
-    GET /api/auth/me
-    
-    Dados do usuário logado
-    
-    Response:
-        {
-            "id": 1,
-            "nome": "Administrador",
-            "email": "admin@imtsb.ao",
-            ...
-        }
-    """
+    """GET /api/auth/me — Dados do utilizador autenticado."""
     try:
-        # Pegar ID do atendente do token JWT
         atendente_id = int(get_jwt_identity())
-
-        # Buscar atendente
         atendente = Atendente.query.get(atendente_id)
-        
         if not atendente:
-            return jsonify({"erro": "Atendente não encontrado"}), 404
-        
+            return jsonify({"erro": "Utilizador não encontrado"}), 404
         schema = AtendenteSchema()
         return jsonify(schema.dump(atendente)), 200
-    
     except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
-from sqlalchemy import text
-from app import db
-from app.services.cache_service import get_cache
-
+# ═══════════════════════════════════════════════════════════════
+# GET /api/auth/health
+# ═══════════════════════════════════════════════════════════════
 
 @auth_bp.route('/health', methods=['GET'])
-def health():
-    # 🔎 Database check
-    try:
-        db.session.execute(text("SELECT 1"))
-        database_status = "ok"
-    except Exception:
-        database_status = "unavailable"
-
-    # 🔎 Cache check
-    try:
-        cache = get_cache()
-        cache.get_stats()
-        cache_status = "ok"
-    except Exception:
-        cache_status = "unavailable"
-
-    return jsonify({
-        "status": "running",
-        "checks": {
-            "database": database_status,
-            "cache": cache_status
-        }
-    })
-
-"""
-ADICIONAR AO ARQUIVO: app/controllers/auth_controller.py
-
-Adicionar este método na classe AuthController
-"""
-
-@staticmethod
-def register():
-    """
-    Endpoint de registro de usuário
-    POST /api/auth/register
-    
-    Body:
-    {
-        "nome": "Nome Completo",
-        "email": "email@exemplo.com",
-        "senha": "senha123",
-        "papel": "usuario"  # ou "atendente" ou "admin"
-    }
-    """
-    try:
-        data = request.get_json()
-        
-        # Validar campos obrigatórios
-        if not data or not data.get('nome') or not data.get('email') or not data.get('senha'):
-            return jsonify({
-                'erro': 'Nome, email e senha são obrigatórios'
-            }), 400
-        
-        nome = data.get('nome').strip()
-        email = data.get('email').strip().lower()
-        senha = data.get('senha')
-        papel = data.get('papel', 'usuario').strip().lower()
-        
-        # Validar papel
-        papeis_validos = ['usuario', 'atendente', 'admin']
-        if papel not in papeis_validos:
-            papel = 'usuario'
-        
-        # Validar formato de email
-        import re
-        email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_regex, email):
-            return jsonify({
-                'erro': 'Email inválido'
-            }), 400
-        
-        # Verificar se email já existe
-        from app.models.atendente import Atendente
-        atendente_existente = Atendente.buscar_por_email(email)
-        if atendente_existente:
-            return jsonify({
-                'erro': 'Email já cadastrado'
-            }), 409
-        
-        # Criar hash da senha
-        from app.services.auth_service import AuthService
-        senha_hash = AuthService.hash_senha(senha)
-        
-        # Mapear papel para tipo do backend
-        tipo_mapeamento = {
-            'usuario': 'atendente',  # Usuários são criados como atendentes
-            'atendente': 'atendente',
-            'admin': 'admin'
-        }
-        tipo = tipo_mapeamento.get(papel, 'atendente')
-        
-        # Criar atendente
-        novo_atendente = Atendente(
-            nome=nome,
-            email=email,
-            senha_hash=senha_hash,
-            tipo=tipo,
-            numero_balcao=None if tipo == 'admin' else 3,  # Balcão 3 para novos usuários
-            ativo=True
-        )
-        
-        from app import db
-        db.session.add(novo_atendente)
-        db.session.commit()
-        
-        return jsonify({
-            'mensagem': 'Usuário criado com sucesso',
-            'usuario': {
-                'id': novo_atendente.id,
-                'nome': novo_atendente.nome,
-                'email': novo_atendente.email,
-                'tipo': tipo
-            }
-        }), 201
-        
-    except Exception as e:
-        from app import db
-        db.session.rollback()
-        return jsonify({
-            'erro': 'Erro ao criar usuário',
-            'detalhes': str(e)
-        }), 500
-
-
-"""
-ADICIONAR AO ARQUIVO: app/__init__.py
-
-Na seção de rotas de autenticação, adicionar:
-"""
-
+def health_check():
+    """Health check público."""
+    return jsonify({'status': 'ok', 'servico': 'API Sistema de Filas IMTSB'}), 200

@@ -1,7 +1,15 @@
 """
-Controller de Senhas
-Rotas: /api/senhas/*
+app/controllers/senha_controller.py
+═══════════════════════════════════════════════════════════════
+Controller de Senhas — SPRINT 1 (corrigido)
+
+ALTERAÇÕES:
+  ✅ GET /api/senhas aceita `page` e `per_page`.
+  ✅ Resposta inclui metadados de paginação.
+  ✅ Sem paginação: limite de segurança de 500 registos.
+═══════════════════════════════════════════════════════════════
 """
+
 from flask import Blueprint, request, jsonify
 from app.services.senha_service import SenhaService
 from app.schemas.senha_schema import (
@@ -9,360 +17,254 @@ from app.schemas.senha_schema import (
     CancelarSenhaSchema,
     IniciarAtendimentoSchema,
     FinalizarAtendimentoSchema,
-    SenhaSchema 
+    SenhaSchema
 )
 from app.utils.rate_limiter import rate_limit
 from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-# Criar Blueprint
 senha_bp = Blueprint('senha', __name__)
 
 
-@senha_bp.route('/senhas', methods=['POST'])
-@rate_limit(limit=10, window=60)  # 10 emissões por minuto
+# ═══════════════════════════════════════════════════════════════
+# POST /api/senhas  (alias: /emitir)
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/emitir', methods=['POST'])
+@senha_bp.route('', methods=['POST'])
+@rate_limit(limit=10, window=60)
 def emitir_senha():
-    """Emite nova senha com validação"""
-    
-    # Validar dados de entrada
+    """
+    POST /api/senhas | POST /api/senhas/emitir
+    Emite nova senha de atendimento.
+    """
     schema = EmitirSenhaSchema()
     try:
-        dados = schema.load(request.json or {})
+        dados = schema.load(request.get_json() or {})
     except ValidationError as err:
-        return jsonify({
-            'erro': 'Dados inválidos',
-            'detalhes': err.messages
-        }), 400
-    
-    # Emitir senha (dados já validados)
+        return jsonify({'erro': 'Dados inválidos', 'detalhes': err.messages}), 400
+
     try:
         senha = SenhaService.emitir_senha(
             servico_id=dados['servico_id'],
             tipo=dados['tipo'],
             usuario_contato=dados.get('usuario_contato')
         )
-        
         return jsonify({
             'mensagem': 'Senha emitida com sucesso',
             'senha': senha.to_dict()
         }), 201
-        
     except ValueError as e:
         return jsonify({'erro': str(e)}), 400
     except Exception as e:
+        print(f"[ERROR] Emitir senha: {e}")
         return jsonify({'erro': 'Erro interno ao emitir senha'}), 500
 
 
-@senha_bp.route('/<int:senha_id>', methods=['GET'])
-def buscar(senha_id):
-    """Buscar senha por ID
-    ---
-    tags:
-      - Senhas
-    parameters:
-      - in: path
-        name: senha_id
-        required: true
-        type: integer
-        description: ID da senha
-        example: 1
-    responses:
-      200:
-        description: Senha encontrada
-        schema:
-          type: object
-          properties:
-            id:
-              type: integer
-              example: 1
-            numero:
-              type: string
-              example: N001
-            tipo:
-              type: string
-              example: normal
-            status:
-              type: string
-              example: aguardando
-            servico_id:
-              type: integer
-              example: 1
-            data_emissao:
-              type: string
-              format: date
-              example: "2026-02-21"
-      404:
-        description: Senha não encontrada
-      500:
-        description: Erro interno do servidor
+# ═══════════════════════════════════════════════════════════════
+# GET /api/senhas
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('', methods=['GET'])
+@senha_bp.route('/', methods=['GET'])
+def listar_senhas():
+    """
+    GET /api/senhas
+
+    Query params:
+        status      – aguardando | atendendo | concluida | cancelada
+        servico_id  – ID do serviço
+        atendente_id – ID do atendente
+        page        – Página (default: 0 = sem paginação)
+        per_page    – Registos por página (default: 15, máx: 100)
+
+    Resposta:
+        {
+            "senhas": [...],
+            "total": 120,
+            "page": 1,
+            "per_page": 15,
+            "total_pages": 8
+        }
     """
     try:
+        status       = request.args.get('status')
+        servico_id   = request.args.get('servico_id', type=int)
+        atendente_id = request.args.get('atendente_id', type=int)
+        page         = request.args.get('page', default=0, type=int)
+        per_page     = request.args.get('per_page', default=15, type=int)
+
+        per_page = min(max(per_page, 1), 100)
+
+        if page > 0:
+            resultado = SenhaService.listar_senhas_paginado(
+                status=status,
+                servico_id=servico_id,
+                atendente_id=atendente_id,
+                page=page,
+                per_page=per_page
+            )
+            schema  = SenhaSchema(many=True)
+            return jsonify({
+                'senhas':      schema.dump(resultado.items),
+                'total':       resultado.total,
+                'page':        resultado.page,
+                'per_page':    resultado.per_page,
+                'total_pages': resultado.pages
+            }), 200
+        else:
+            senhas  = SenhaService.listar_senhas(
+                status=status,
+                servico_id=servico_id,
+                atendente_id=atendente_id,
+                limite=500
+            )
+            schema  = SenhaSchema(many=True)
+            payload = schema.dump(senhas)
+            return jsonify({
+                'senhas':      payload,
+                'total':       len(payload),
+                'page':        1,
+                'per_page':    len(payload),
+                'total_pages': 1
+            }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Listar senhas: {e}")
+        return jsonify({'erro': 'Erro interno ao listar senhas'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/senhas/estatisticas
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/estatisticas', methods=['GET'])
+def estatisticas():
+    """GET /api/senhas/estatisticas — KPIs do dia (público)."""
+    try:
+        stats = SenhaService.obter_estatisticas_hoje()
+        return jsonify(stats), 200
+    except Exception as e:
+        print(f"[ERROR] Estatísticas: {e}")
+        return jsonify({'erro': 'Erro interno'}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/senhas/:id
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/<int:senha_id>', methods=['GET'])
+def buscar(senha_id):
+    """GET /api/senhas/:id — Busca senha por ID."""
+    try:
         senha = SenhaService.obter_por_id(senha_id)
-        
         if not senha:
             return jsonify({"erro": "Senha não encontrada"}), 404
-        
-        schema = SenhaSchema()
-        return jsonify(schema.dump(senha)), 200
-    
-    except Exception as e:
+        return jsonify(SenhaSchema().dump(senha)), 200
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/senhas/numero/:numero
+# ═══════════════════════════════════════════════════════════════
 
 @senha_bp.route('/numero/<string:numero>', methods=['GET'])
 def buscar_por_numero(numero):
-    """
-    GET /api/senhas/numero/:numero
-    
-    Buscar senha por número (ex: N042)
-    
-    Response:
-        {
-            "numero": "N042",
-            "status": "aguardando",
-            ...
-        }
-    """
+    """GET /api/senhas/numero/:numero — Busca senha de hoje pelo número."""
     try:
-        senha = SenhaService.obter_por_numero(numero.upper())
-        
+        senha = SenhaService.obter_por_numero(numero)
         if not senha:
-            return jsonify({"erro": f"Senha {numero} não encontrada"}), 404
-        
-        schema = SenhaSchema()
-        return jsonify(schema.dump(senha)), 200
-    
-    except Exception as e:
+            return jsonify({"erro": "Senha não encontrada"}), 404
+        return jsonify(SenhaSchema().dump(senha)), 200
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
-@senha_bp.route('/<int:senha_id>/cancelar', methods=['DELETE'])
-@jwt_required()
-def cancelar(senha_id):
-    """
-    DELETE /api/senhas/:id/cancelar
-    
-    Cancelar senha (requer autenticação)
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Body:
-        {
-            "motivo": "Desistência do utente"
-        }
-    
-    Response:
-        {
-            "mensagem": "Senha cancelada com sucesso",
-            "senha": {...}
-        }
-    """
-    try:
-        # Validar dados
-        schema = CancelarSenhaSchema()
-        data = schema.load(request.get_json())
-        
-        # Pegar atendente logado
-        atendente_id = get_jwt_identity()
-        
-        # Cancelar senha
-        senha = SenhaService.cancelar(
-            senha_id=senha_id,
-            motivo=data['motivo'],
-            atendente_id=atendente_id
-        )
-        
-        # Serializar resposta
-        senha_schema = SenhaSchema()
-        
-        return jsonify({
-            "mensagem": "Senha cancelada com sucesso",
-            "senha": senha_schema.dump(senha)
-        }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
-    except ValueError as e:
-        return jsonify({"erro": str(e)}), 400
-    except Exception as e:
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
+# ═══════════════════════════════════════════════════════════════
+# PUT /api/senhas/:id/iniciar
+# ═══════════════════════════════════════════════════════════════
 
 @senha_bp.route('/<int:senha_id>/iniciar', methods=['PUT'])
 @jwt_required()
 def iniciar_atendimento(senha_id):
-    """Iniciar atendimento de uma senha
-    ---
-    tags:
-      - Senhas
-    security:
-      - Bearer: []
-    parameters:
-      - in: path
-        name: senha_id
-        required: true
-        type: integer
-        description: ID da senha
-        example: 1
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - numero_balcao
-          properties:
-            numero_balcao:
-              type: integer
-              example: 1
-              description: Número do balcão de atendimento
-    responses:
-      200:
-        description: Atendimento iniciado com sucesso
-        schema:
-          type: object
-          properties:
-            mensagem:
-              type: string
-              example: Atendimento iniciado
-            senha:
-              type: object
-              description: Dados da senha atualizada
-      400:
-        description: Dados inválidos
-      401:
-        description: Não autorizado (JWT inválido)
-      404:
-        description: Senha não encontrada
-      500:
-        description: Erro interno do servidor
-    """
+    """PUT /api/senhas/:id/iniciar — Inicia atendimento."""
     try:
-        # Validar dados
-        schema = IniciarAtendimentoSchema()
-        data = schema.load(request.get_json())
-        
-        # Pegar atendente logado
-        atendente_id = get_jwt_identity()
-        atendente_id = int(atendente_id)  # ✅ CORRETO
-        
-        # Buscar senha
+        data = IniciarAtendimentoSchema().load(request.get_json() or {})
+    except ValidationError as e:
+        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
+
+    try:
+        atendente_id = int(get_jwt_identity())
         senha = SenhaService.obter_por_id(senha_id)
         if not senha:
             return jsonify({"erro": "Senha não encontrada"}), 404
-        
-        # Iniciar atendimento
+
         senha.iniciar_atendimento(
             atendente_id=atendente_id,
             numero_balcao=data['numero_balcao']
         )
-        
-        # Serializar resposta
-        senha_schema = SenhaSchema()
-        
         return jsonify({
             "mensagem": "Atendimento iniciado",
-            "senha": senha_schema.dump(senha)
+            "senha": SenhaSchema().dump(senha)
         }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
     except ValueError as e:
         return jsonify({"erro": str(e)}), 400
-    except Exception as e:
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
+
+# ═══════════════════════════════════════════════════════════════
+# PUT /api/senhas/:id/finalizar
+# ═══════════════════════════════════════════════════════════════
 
 @senha_bp.route('/<int:senha_id>/finalizar', methods=['PUT'])
 @jwt_required()
 def finalizar_atendimento(senha_id):
-    """
-    PUT /api/senhas/:id/finalizar
-    
-    Finalizar atendimento de uma senha
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Body:
-        {
-            "observacoes": "Atendimento realizado com sucesso"
-        }
-    
-    Response:
-        {
-            "mensagem": "Atendimento finalizado",
-            "senha": {...}
-        }
-    """
+    """PUT /api/senhas/:id/finalizar — Finaliza atendimento."""
     try:
-        # Validar dados
-        schema = FinalizarAtendimentoSchema()
-        data = schema.load(request.get_json())
-        
-        # Buscar senha
+        data = FinalizarAtendimentoSchema().load(request.get_json() or {})
+    except ValidationError as e:
+        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
+
+    try:
         senha = SenhaService.obter_por_id(senha_id)
         if not senha:
             return jsonify({"erro": "Senha não encontrada"}), 404
-        
-        # Finalizar atendimento
-        senha.finalizar(observacoes=data.get('observacoes'))
-        
-        # Serializar resposta
-        senha_schema = SenhaSchema()
-        
+
+        senha.finalizar_atendimento(observacoes=data.get('observacoes'))
         return jsonify({
             "mensagem": "Atendimento finalizado",
-            "senha": senha_schema.dump(senha)
+            "senha": SenhaSchema().dump(senha)
         }), 200
-    
-    except ValidationError as e:
-        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
     except ValueError as e:
         return jsonify({"erro": str(e)}), 400
-    except Exception as e:
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
-@senha_bp.route('/estatisticas', methods=['GET'])
-def estatisticas():
-    """Estatísticas de senhas do dia
-    ---
-    tags:
-      - Senhas
-    responses:
-      200:
-        description: Estatísticas retornadas com sucesso
-        schema:
-          type: object
-          properties:
-            total_emitidas:
-              type: integer
-              example: 42
-              description: Total de senhas emitidas hoje
-            aguardando:
-              type: integer
-              example: 5
-              description: Senhas aguardando atendimento
-            atendendo:
-              type: integer
-              example: 2
-              description: Senhas em atendimento
-            concluidas:
-              type: integer
-              example: 35
-              description: Senhas finalizadas
-            canceladas:
-              type: integer
-              example: 0
-              description: Senhas canceladas
-      500:
-        description: Erro interno do servidor
-    """
+# ═══════════════════════════════════════════════════════════════
+# DELETE /api/senhas/:id/cancelar
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/<int:senha_id>/cancelar', methods=['DELETE'])
+@jwt_required()
+def cancelar_senha(senha_id):
+    """DELETE /api/senhas/:id/cancelar — Cancela senha aguardando."""
     try:
-        stats = SenhaService.obter_estatisticas_hoje()
-        return jsonify(stats), 200
-    
-    except Exception as e:
+        data = CancelarSenhaSchema().load(request.get_json() or {})
+    except ValidationError as e:
+        return jsonify({"erro": "Dados inválidos", "detalhes": e.messages}), 400
+
+    try:
+        atendente_id = int(get_jwt_identity())
+        SenhaService.cancelar(
+            senha_id=senha_id,
+            motivo=data['motivo'],
+            atendente_id=atendente_id
+        )
+        return jsonify({"mensagem": "Senha cancelada com sucesso"}), 200
+    except ValueError as e:
+        return jsonify({"erro": str(e)}), 400
+    except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
