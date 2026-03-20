@@ -1,249 +1,349 @@
 """
-Atendente Controller - VERSÃO COMPLETA
-app/controllers/atendente_controller.py
+app/controllers/atendente_controller.py — SPRINT 2
+═══════════════════════════════════════════════════════════════
+CRUD completo de atendentes para o dashboard administrativo.
 
-✅ Listar todos os atendentes
-✅ Adicionar novo atendente
-✅ Remover atendente
-✅ Apenas admin pode acessar
+Rotas:
+  GET    /api/atendentes/        – lista todos
+  POST   /api/atendentes/        – criar novo
+  PUT    /api/atendentes/:id     – editar
+  DELETE /api/atendentes/:id     – remover (desactivar)
+
+CORRECÇÕES vs versão anterior:
+  ✅ Usa `atendente.tipo` (não `.role` que não existe no model)
+  ✅ Usa `atendente.balcao` (não `.numero_balcao`)
+  ✅ Inclui `servico_id` na criação e edição
+  ✅ DELETE desactiva conta (ativo=False) em vez de apagar
+     para preservar histórico de atendimentos
+═══════════════════════════════════════════════════════════════
 """
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.atendente import Atendente
-from app.extensions import db, bcrypt
-from marshmallow import ValidationError
+from app.models.servico import Servico
+from app.extensions import db
+from datetime import date
+from sqlalchemy import func
+from app.models.senha import Senha
 
 atendente_bp = Blueprint('atendente', __name__)
 
+
+def _verificar_admin():
+    """
+    Verifica se o utilizador autenticado é administrador.
+    Devolve (atendente, erro_json, codigo_http).
+    Se não for admin, erro_json não é None.
+    """
+    user_id = int(get_jwt_identity())
+    user    = Atendente.query.get(user_id)
+
+    if not user or user.tipo != 'admin':
+        return None, jsonify({"erro": "Acesso negado. Apenas administradores."}), 403
+
+    return user, None, None
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/atendentes/
+# ═══════════════════════════════════════════════════════════════
 
 @atendente_bp.route('/', methods=['GET'])
 @jwt_required()
 def listar_atendentes():
     """
-    ✅ Listar todos os atendentes
-    
-    GET /api/atendentes
-    
-    Returns:
+    GET /api/atendentes/
+
+    Lista todos os atendentes com estatísticas do dia.
+    Apenas administradores.
+
+    Resposta (200):
         [
             {
-                "id": int,
-                "nome": str,
-                "email": str,
-                "departamento": str,
-                "numero_balcao": int,
-                "atendimentos_hoje": int,
-                "tempo_medio": int
-            }
+                "id": 9, "nome": "Atendente Secretaria",
+                "email": "worker1@teste.com",
+                "tipo": "atendente", "ativo": true,
+                "balcao": 1, "servico_id": 1,
+                "departamento": "Secretaria Académica",
+                "atendimentos_hoje": 5, "tempo_medio": 8
+            },
+            ...
         ]
     """
+    _, erro, codigo = _verificar_admin()
+    if erro:
+        return erro, codigo
+
     try:
-        # Verificar se é admin
-        user_id = int(get_jwt_identity())
-        user = Atendente.query.get(user_id)
-        
-        if not user or user.role != 'admin':
-            return jsonify({"erro": "Acesso negado"}), 403
-        
-        # Buscar todos os atendentes (exceto admins)
-        atendentes = Atendente.query.filter(
-            Atendente.role.in_(['trabalhador', 'atendente'])
-        ).all()
-        
-        # Montar resposta com estatísticas
+        hoje       = date.today()
+        atendentes = Atendente.query.order_by(Atendente.nome).all()
+
         resultado = []
-        for atendente in atendentes:
-            # TODO: Buscar estatísticas reais do banco
+        for a in atendentes:
+            # Estatísticas do dia
+            senhas_c = Senha.query.filter(
+                Senha.atendente_id == a.id,
+                Senha.status       == 'concluida',
+                func.date(Senha.atendimento_concluido_em) == hoje
+            ).all()
+
+            tempos    = [s.tempo_atendimento_minutos for s in senhas_c
+                         if s.tempo_atendimento_minutos]
+            tempo_med = round(sum(tempos) / len(tempos)) if tempos else 0
+
             resultado.append({
-                'id': atendente.id,
-                'nome': atendente.nome,
-                'email': atendente.email,
-                'departamento': atendente.departamento,
-                'numero_balcao': atendente.numero_balcao,
-                'atendimentos_hoje': 0,  # TODO: Calcular do banco
-                'tempo_medio': 0  # TODO: Calcular do banco
+                "id":               a.id,
+                "nome":             a.nome,
+                "email":            a.email,
+                "tipo":             a.tipo,
+                "ativo":            a.ativo,
+                "balcao":           a.balcao,
+                "servico_id":       a.servico_id,
+                "departamento":     a.servico.nome if a.servico else "Geral",
+                "atendimentos_hoje": len(senhas_c),
+                "tempo_medio":      tempo_med
             })
-        
+
         return jsonify(resultado), 200
-        
+
     except Exception as e:
         print(f"❌ Erro ao listar atendentes: {e}")
         return jsonify({"erro": "Erro interno do servidor"}), 500
 
 
+# ═══════════════════════════════════════════════════════════════
+# POST /api/atendentes/
+# ═══════════════════════════════════════════════════════════════
+
 @atendente_bp.route('/', methods=['POST'])
 @jwt_required()
-def adicionar_atendente():
+def criar_atendente():
     """
-    ✅ Adicionar novo atendente
-    
-    POST /api/atendentes
-    Body: {
-        "nome": "João Silva",
-        "email": "joao@imtsb.ao",
-        "senha": "senha123",
-        "departamento": "Balcão 1 - Secretaria",
-        "numero_balcao": 1
-    }
-    
-    Returns:
+    POST /api/atendentes/
+
+    Cria novo atendente. Apenas administradores.
+
+    Corpo (JSON):
         {
-            "mensagem": "Atendente adicionado com sucesso",
-            "atendente": {...}
+            "nome":       "João Silva",
+            "email":      "joao@imtsb.ao",
+            "senha":      "senha123",
+            "tipo":       "atendente",   -- opcional, default "atendente"
+            "balcao":     1,             -- opcional
+            "servico_id": 1              -- opcional
         }
+
+    Resposta (201):
+        { "mensagem": "...", "atendente": {...} }
     """
+    _, erro, codigo = _verificar_admin()
+    if erro:
+        return erro, codigo
+
     try:
-        # Verificar se é admin
-        user_id = int(get_jwt_identity())
-        user = Atendente.query.get(user_id)
-        
-        if not user or user.role != 'admin':
-            return jsonify({"erro": "Acesso negado. Apenas administradores podem adicionar atendentes"}), 403
-        
-        # Validar dados
-        data = request.get_json()
-        
-        nome = data.get('nome')
-        email = data.get('email')
-        senha = data.get('senha')
-        departamento = data.get('departamento')
-        numero_balcao = data.get('numero_balcao', 1)
-        
-        if not nome or not email or not senha:
-            return jsonify({"erro": "Nome, email e senha são obrigatórios"}), 400
-        
-        # Verificar se email já existe
-        if Atendente.query.filter_by(email=email).first():
-            return jsonify({"erro": "Email já cadastrado"}), 400
-        
-        # Criar novo atendente
-        novo_atendente = Atendente(
-            nome=nome,
-            email=email,
-            departamento=departamento,
-            numero_balcao=numero_balcao,
-            role='trabalhador'
+        data = request.get_json() or {}
+
+        # Validações obrigatórias
+        campos_obrigatorios = ['nome', 'email', 'senha']
+        for campo in campos_obrigatorios:
+            if not data.get(campo):
+                return jsonify({"erro": f"Campo '{campo}' é obrigatório"}), 400
+
+        # Email duplicado
+        if Atendente.query.filter_by(email=data['email'].lower()).first():
+            return jsonify({"erro": "Este email já está registado"}), 400
+
+        # Balcão já em uso (se fornecido)
+        balcao = data.get('balcao')
+        if balcao:
+            balcao_usado = Atendente.query.filter_by(
+                balcao=balcao, ativo=True
+            ).first()
+            if balcao_usado:
+                return jsonify({
+                    "erro": f"Balcão {balcao} já está atribuído a {balcao_usado.nome}"
+                }), 400
+
+        # Serviço existe (se fornecido)
+        servico_id = data.get('servico_id')
+        if servico_id and not Servico.query.get(servico_id):
+            return jsonify({"erro": f"Serviço ID {servico_id} não encontrado"}), 400
+
+        novo = Atendente(
+            nome=data['nome'],
+            email=data['email'].lower(),
+            senha=data['senha'],
+            tipo=data.get('tipo', 'atendente'),
+            balcao=balcao,
+            servico_id=servico_id
         )
-        
-        # Hash da senha
-        novo_atendente.senha_hash = bcrypt.generate_password_hash(senha).decode('utf-8')
-        
-        # Salvar
-        db.session.add(novo_atendente)
+
+        db.session.add(novo)
         db.session.commit()
-        
+
         return jsonify({
-            "mensagem": "Atendente adicionado com sucesso",
+            "mensagem":  "Atendente criado com sucesso",
             "atendente": {
-                "id": novo_atendente.id,
-                "nome": novo_atendente.nome,
-                "email": novo_atendente.email,
-                "departamento": novo_atendente.departamento,
-                "numero_balcao": novo_atendente.numero_balcao
+                "id":         novo.id,
+                "nome":       novo.nome,
+                "email":      novo.email,
+                "tipo":       novo.tipo,
+                "balcao":     novo.balcao,
+                "servico_id": novo.servico_id
             }
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Erro ao adicionar atendente: {e}")
-        return jsonify({"erro": f"Erro ao adicionar atendente: {str(e)}"}), 500
+        print(f"❌ Erro ao criar atendente: {e}")
+        return jsonify({"erro": "Erro interno do servidor"}), 500
 
+
+# ═══════════════════════════════════════════════════════════════
+# PUT /api/atendentes/:id
+# ═══════════════════════════════════════════════════════════════
+
+@atendente_bp.route('/<int:atendente_id>', methods=['PUT'])
+@jwt_required()
+def editar_atendente(atendente_id):
+    """
+    PUT /api/atendentes/:id
+
+    Edita atendente existente. Apenas administradores.
+
+    Corpo (JSON — todos os campos opcionais):
+        {
+            "nome":       "Novo Nome",
+            "email":      "novo@email.com",
+            "senha":      "novaSenha",
+            "tipo":       "admin",
+            "balcao":     2,
+            "servico_id": 2,
+            "ativo":      true
+        }
+    """
+    _, erro, codigo = _verificar_admin()
+    if erro:
+        return erro, codigo
+
+    try:
+        atendente = Atendente.query.get(atendente_id)
+        if not atendente:
+            return jsonify({"erro": "Atendente não encontrado"}), 404
+
+        data = request.get_json() or {}
+
+        # Actualizar campos fornecidos
+        if 'nome' in data and data['nome']:
+            atendente.nome = data['nome']
+
+        if 'email' in data and data['email']:
+            email_novo = data['email'].lower()
+            # Verificar duplicado (excluindo o próprio)
+            existente = Atendente.query.filter_by(email=email_novo).first()
+            if existente and existente.id != atendente_id:
+                return jsonify({"erro": "Email já em uso por outro atendente"}), 400
+            atendente.email = email_novo
+
+        if 'senha' in data and data['senha']:
+            atendente.set_senha(data['senha'])
+
+        if 'tipo' in data and data['tipo'] in ['admin', 'atendente']:
+            atendente.tipo = data['tipo']
+
+        if 'balcao' in data:
+            balcao = data['balcao']
+            if balcao:
+                # Verificar se balcão está livre
+                outro = Atendente.query.filter(
+                    Atendente.balcao == balcao,
+                    Atendente.ativo  == True,
+                    Atendente.id     != atendente_id
+                ).first()
+                if outro:
+                    return jsonify({
+                        "erro": f"Balcão {balcao} já atribuído a {outro.nome}"
+                    }), 400
+            atendente.balcao = balcao
+
+        if 'servico_id' in data:
+            sid = data['servico_id']
+            if sid and not Servico.query.get(sid):
+                return jsonify({"erro": f"Serviço ID {sid} não encontrado"}), 400
+            atendente.servico_id = sid
+
+        if 'ativo' in data:
+            atendente.ativo = bool(data['ativo'])
+
+        db.session.commit()
+
+        return jsonify({
+            "mensagem":  "Atendente actualizado com sucesso",
+            "atendente": {
+                "id":         atendente.id,
+                "nome":       atendente.nome,
+                "email":      atendente.email,
+                "tipo":       atendente.tipo,
+                "ativo":      atendente.ativo,
+                "balcao":     atendente.balcao,
+                "servico_id": atendente.servico_id
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Erro ao editar atendente: {e}")
+        return jsonify({"erro": "Erro interno do servidor"}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# DELETE /api/atendentes/:id
+# ═══════════════════════════════════════════════════════════════
 
 @atendente_bp.route('/<int:atendente_id>', methods=['DELETE'])
 @jwt_required()
 def remover_atendente(atendente_id):
     """
-    ✅ Remover atendente
-    
     DELETE /api/atendentes/:id
-    
-    Returns:
-        {
-            "mensagem": "Atendente removido com sucesso"
-        }
+
+    Desactiva atendente (ativo=False).
+    Não apaga o registo para preservar histórico.
+    Apenas administradores.
     """
+    user, erro, codigo = _verificar_admin()
+    if erro:
+        return erro, codigo
+
     try:
-        # Verificar se é admin
-        user_id = int(get_jwt_identity())
-        user = Atendente.query.get(user_id)
-        
-        if not user or user.role != 'admin':
-            return jsonify({"erro": "Acesso negado"}), 403
-        
-        # Buscar atendente
         atendente = Atendente.query.get(atendente_id)
-        
         if not atendente:
             return jsonify({"erro": "Atendente não encontrado"}), 404
-        
-        # Não permitir remover admin
-        if atendente.role == 'admin':
-            return jsonify({"erro": "Não é possível remover administradores"}), 400
-        
-        # Remover
-        db.session.delete(atendente)
+
+        # Não pode remover a si próprio
+        if atendente.id == user.id:
+            return jsonify({"erro": "Não pode remover a sua própria conta"}), 400
+
+        # Não pode remover o único admin
+        if atendente.tipo == 'admin':
+            admins_ativos = Atendente.query.filter_by(
+                tipo='admin', ativo=True
+            ).count()
+            if admins_ativos <= 1:
+                return jsonify({
+                    "erro": "Não é possível remover o único administrador activo"
+                }), 400
+
+        atendente.ativo  = False
+        atendente.balcao = None  # Liberta o balcão
+
         db.session.commit()
-        
-        return jsonify({"mensagem": "Atendente removido com sucesso"}), 200
-        
+
+        return jsonify({
+            "mensagem": f"Atendente '{atendente.nome}' desactivado com sucesso"
+        }), 200
+
     except Exception as e:
         db.session.rollback()
         print(f"❌ Erro ao remover atendente: {e}")
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-@atendente_bp.route('/<int:atendente_id>', methods=['PUT'])
-@jwt_required()
-def atualizar_atendente(atendente_id):
-    """
-    ✅ Atualizar dados do atendente
-    
-    PUT /api/atendentes/:id
-    Body: {
-        "nome": "...",
-        "departamento": "...",
-        "numero_balcao": 2
-    }
-    """
-    try:
-        # Verificar se é admin
-        user_id = int(get_jwt_identity())
-        user = Atendente.query.get(user_id)
-        
-        if not user or user.role != 'admin':
-            return jsonify({"erro": "Acesso negado"}), 403
-        
-        # Buscar atendente
-        atendente = Atendente.query.get(atendente_id)
-        
-        if not atendente:
-            return jsonify({"erro": "Atendente não encontrado"}), 404
-        
-        # Atualizar dados
-        data = request.get_json()
-        
-        if 'nome' in data:
-            atendente.nome = data['nome']
-        if 'departamento' in data:
-            atendente.departamento = data['departamento']
-        if 'numero_balcao' in data:
-            atendente.numero_balcao = data['numero_balcao']
-        
-        db.session.commit()
-        
-        return jsonify({
-            "mensagem": "Atendente atualizado com sucesso",
-            "atendente": {
-                "id": atendente.id,
-                "nome": atendente.nome,
-                "email": atendente.email,
-                "departamento": atendente.departamento,
-                "numero_balcao": atendente.numero_balcao
-            }
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Erro ao atualizar atendente: {e}")
         return jsonify({"erro": "Erro interno do servidor"}), 500

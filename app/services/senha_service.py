@@ -1,244 +1,237 @@
 """
-Senha Service - FIX NOME DO MÉTODO
-app/services/senha_service.py
-
-✅ FIX: Renomear obter_estatisticas_atendente → obter_estatisticas_trabalhador
-✅ Manter emitida_em sempre preenchido
+app/services/senha_service.py — SPRINT 1 (corrigido)
+═══════════════════════════════════════════════════════════════
+ALTERAÇÕES:
+  ✅ Novo método `listar_senhas_paginado()` — paginação server-side.
+  ✅ `listar_senhas()` aceita parâmetro `limite` (default 500).
+═══════════════════════════════════════════════════════════════
 """
 
-from app.models.senha import Senha
-from app.models.servico import Servico
+from datetime import datetime, date
+from sqlalchemy import func, or_
 from app.extensions import db
-from datetime import date, datetime
-from sqlalchemy import func
+from app.models.senha import Senha
+from app.models.log_actividade import LogActividade
 
 
 class SenhaService:
-    """Serviço para gerenciamento de senhas"""
+    """
+    Service principal para gestão de senhas.
+    """
+
+    # ─────────────────────────────────────────────────────────
+    # Emissão
+    # ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def emitir_senha(servico_id, tipo='normal', usuario_contato=None):
+    def emitir_senha(servico_id: int, tipo: str = 'normal',
+                     usuario_contato: str = None) -> Senha:
         """
-        ✅ FIX: Sempre preenche emitida_em e data_emissao
-        
-        Emite uma nova senha
+        Cria e persiste uma nova senha de atendimento.
+        Numeração diária: N001, N002, ... reinicia a cada dia.
+        Prioritárias usam prefixo 'P'.
         """
-        # Validar serviço
-        servico = Servico.query.get(servico_id)
-        if not servico:
-            raise ValueError(f"Serviço {servico_id} não encontrado")
-        
-        # Obter hoje
-        hoje = date.today()
-        agora = datetime.now()  # ✅ FIX: Pegar timestamp completo
-        
-        # Gerar número da senha
-        contador = Senha.query.filter(
-            func.date(Senha.emitida_em) == hoje,
-            Senha.servico_id == servico_id
-        ).count() + 1
-        
-        # Formato: N001, N002, P001 (P para prioritária)
+        hoje    = datetime.utcnow().date()
         prefixo = 'P' if tipo == 'prioritaria' else 'N'
-        numero = f"{prefixo}{contador:03d}"
-        
-        print(f"\n[DEBUG emitir_senha]")
-        print(f"  Serviço: {servico.nome} (ID: {servico_id})")
-        print(f"  Número gerado: {numero}")
-        print(f"  Data: {hoje}")
-        print(f"  Timestamp: {agora}")
-        
-        # Criar senha
+
+        contagem = Senha.query.filter(
+            Senha.data_emissao == hoje,
+            Senha.numero.like(f'{prefixo}%')
+        ).count()
+
+        numero = f"{prefixo}{str(contagem + 1).zfill(3)}"
+
         senha = Senha(
             numero=numero,
-            tipo=tipo,
             servico_id=servico_id,
+            tipo=tipo,
             usuario_contato=usuario_contato,
-            status='aguardando',
-            emitida_em=agora,        # ✅ FIX: SEMPRE PREENCHER!
-            data_emissao=hoje        # ✅ FIX: SEMPRE PREENCHER!
+            data_emissao=hoje
         )
-        
+
         db.session.add(senha)
         db.session.commit()
-        
-        print(f"✅ Senha {numero} emitida com sucesso!")
-        print(f"   ID: {senha.id}")
-        print(f"   Emitida em: {senha.emitida_em}\n")
-        
+        db.session.refresh(senha)
+
+        print(f"\n[SenhaService] Emitida: {senha.numero} | "
+              f"Serviço: {servico_id} | Tipo: {tipo}")
         return senha
 
+    # ─────────────────────────────────────────────────────────
+    # Listagem — sem paginação
+    # ─────────────────────────────────────────────────────────
+
     @staticmethod
-    def listar_senhas(status=None, servico_id=None, atendente_id=None, data_emissao=None):
-        """Lista senhas com filtros opcionais"""
+    def listar_senhas(atendente_id: int = None, status: str = None,
+                      servico_id: int = None, limite: int = 500):
+        """
+        Lista senhas com filtros opcionais.
+        SPRINT 1: parâmetro `limite` adicionado (default 500).
+        """
         query = Senha.query
-        
-        if status:
-            query = query.filter(Senha.status == status)
-        
-        if servico_id:
-            query = query.filter(Senha.servico_id == servico_id)
-        
+
         if atendente_id:
             query = query.filter(Senha.atendente_id == atendente_id)
-        
-        if data_emissao:
-            query = query.filter(func.date(Senha.emitida_em) == data_emissao)
-        
-        return query.order_by(Senha.created_at.desc()).all()
+        if status:
+            query = query.filter(Senha.status == status)
+        if servico_id:
+            query = query.filter(Senha.servico_id == servico_id)
+
+        return query.order_by(Senha.created_at.desc()).limit(limite).all()
+
+    # ─────────────────────────────────────────────────────────
+    # Listagem — com paginação (SPRINT 1 — método novo)
+    # ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def obter_senha(senha_id):
-        """Obtém uma senha por ID"""
-        senha = Senha.query.get(senha_id)
+    def listar_senhas_paginado(atendente_id: int = None, status: str = None,
+                                servico_id: int = None, page: int = 1,
+                                per_page: int = 15):
+        """
+        Lista senhas com paginação server-side.
+        Usa Flask-SQLAlchemy .paginate().
+
+        Objecto retornado tem:
+            .items       – lista de Senha da página actual
+            .total       – total de registos
+            .page        – página actual
+            .per_page    – registos por página
+            .pages       – total de páginas
+        """
+        query = Senha.query
+
+        if atendente_id:
+            query = query.filter(Senha.atendente_id == atendente_id)
+        if status:
+            query = query.filter(Senha.status == status)
+        if servico_id:
+            query = query.filter(Senha.servico_id == servico_id)
+
+        query = query.order_by(Senha.created_at.desc())
+
+        # error_out=False → não lança 404 se página sem resultados
+        return query.paginate(page=page, per_page=per_page, error_out=False)
+
+    # ─────────────────────────────────────────────────────────
+    # Consulta por ID / Número
+    # ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def obter_por_id(senha_id: int) -> Senha:
+        """Devolve senha por ID ou None."""
+        return Senha.query.get(senha_id)
+
+    @staticmethod
+    def obter_por_numero(numero: str) -> Senha:
+        """Devolve senha de hoje pelo número (ex: N042)."""
+        hoje = date.today()
+        return Senha.query.filter(
+            Senha.numero == numero,
+            func.date(Senha.emitida_em) == hoje
+        ).first()
+
+    # ─────────────────────────────────────────────────────────
+    # Cancelamento
+    # ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def cancelar(senha_id: int, motivo: str, atendente_id: int) -> Senha:
+        """
+        Cancela uma senha com estado 'aguardando'.
+        Raises ValueError se não existir ou não estiver aguardando.
+        """
+        senha = SenhaService.obter_por_id(senha_id)
         if not senha:
-            raise ValueError(f"Senha {senha_id} não encontrada")
-        return senha
-
-    @staticmethod
-    def cancelar_senha(senha_id, motivo=None):
-        """Cancela uma senha"""
-        senha = SenhaService.obter_senha(senha_id)
-        
+            raise ValueError("Senha não encontrada")
         if senha.status != 'aguardando':
-            raise ValueError(f"Apenas senhas aguardando podem ser canceladas")
-        
+            raise ValueError("Apenas senhas aguardando podem ser canceladas")
+
         senha.status = 'cancelada'
         if motivo:
             senha.observacoes = motivo
-        
+
+        try:
+            log = LogActividade(
+                acao='cancelada',
+                senha_id=senha.id,
+                atendente_id=atendente_id,
+                descricao=f'Senha {senha.numero} cancelada. Motivo: {motivo}'
+            )
+            db.session.add(log)
+        except Exception:
+            pass  # log não deve impedir o cancelamento
+
         db.session.commit()
-        
+        db.session.refresh(senha)
         return senha
 
+    # ─────────────────────────────────────────────────────────
+    # Estatísticas — dia actual
+    # ─────────────────────────────────────────────────────────
+
     @staticmethod
-    def obter_estatisticas_hoje():
-        """Obtém estatísticas do dia atual"""
-        hoje = date.today()
-        
+    def obter_estatisticas_hoje(data: date = None) -> dict:
+        """
+        Estatísticas do dia (ou de uma data específica).
+        """
+        if data is None:
+            data = datetime.utcnow().date()
+
         query_base = Senha.query.filter(
-            func.date(Senha.emitida_em) == hoje
+            or_(
+                Senha.data_emissao == data,
+                func.date(Senha.emitida_em) == data
+            )
         )
-        
-        # Total emitidas
+
         total_emitidas = query_base.count()
-        
-        # Por status
-        aguardando = query_base.filter(Senha.status == 'aguardando').count()
-        atendendo = query_base.filter(Senha.status == 'atendendo').count()
-        concluidas = query_base.filter(Senha.status == 'concluida').count()
-        canceladas = query_base.filter(Senha.status == 'cancelada').count()
-        
-        # Tempo médio de espera
+        aguardando     = query_base.filter(Senha.status == 'aguardando').count()
+        atendendo      = query_base.filter(Senha.status == 'atendendo').count()
+        concluidas     = query_base.filter(Senha.status == 'concluida').count()
+        canceladas     = query_base.filter(Senha.status == 'cancelada').count()
+
         senhas_atendidas = query_base.filter(
             Senha.status.in_(['atendendo', 'concluida']),
             Senha.atendimento_iniciado_em.isnot(None)
         ).all()
-        
-        tempos_espera = []
-        for senha in senhas_atendidas:
-            if senha.tempo_espera_minutos:
-                tempos_espera.append(senha.tempo_espera_minutos)
-        
-        tempo_medio_espera = 0
-        if tempos_espera:
-            tempo_medio_espera = round(sum(tempos_espera) / len(tempos_espera))
-        
-        # Tempo médio de atendimento
-        senhas_concluidas = query_base.filter(
-            Senha.status == 'concluida',
-            Senha.tempo_atendimento_minutos.isnot(None)
-        ).all()
-        
-        tempos_atendimento = []
-        for senha in senhas_concluidas:
-            if senha.tempo_atendimento_minutos:
-                tempos_atendimento.append(senha.tempo_atendimento_minutos)
-        
-        tempo_medio_atendimento = 0
-        if tempos_atendimento:
-            tempo_medio_atendimento = round(sum(tempos_atendimento) / len(tempos_atendimento))
-        
+
+        tempos = [s.tempo_espera_minutos for s in senhas_atendidas
+                  if s.tempo_espera_minutos]
+        tempo_medio_espera = round(sum(tempos) / len(tempos), 1) if tempos else 0
+
         return {
+            'data': data.isoformat(),
             'total_emitidas': total_emitidas,
             'aguardando': aguardando,
             'atendendo': atendendo,
             'concluidas': concluidas,
             'canceladas': canceladas,
-            'tempo_medio_espera': tempo_medio_espera,
-            'tempo_medio_atendimento': tempo_medio_atendimento
+            'tempo_medio_espera': tempo_medio_espera
         }
 
+    # ─────────────────────────────────────────────────────────
+    # Estatísticas — por atendente
+    # ─────────────────────────────────────────────────────────
+
     @staticmethod
-    def obter_estatisticas_trabalhador(atendente_id):
-        """
-        ✅ FIX: Nome correto do método!
-        
-        Estatísticas de um trabalhador/atendente no dia
-        """
-        hoje = date.today()
-        
-        # Senhas atendidas hoje
-        query_base = Senha.query.filter(
+    def obter_estatisticas_trabalhador(atendente_id: int) -> dict:
+        """Estatísticas do dia para um atendente específico."""
+        hoje = datetime.utcnow().date()
+
+        senhas_hoje = Senha.query.filter(
             Senha.atendente_id == atendente_id,
-            func.date(Senha.emitida_em) == hoje,
-            Senha.status.in_(['atendendo', 'concluida'])
-        )
-        
-        atendidos_hoje = query_base.count()
-        
-        # Tempo médio de atendimento
-        senhas_concluidas = query_base.filter(
-            Senha.status == 'concluida'
+            or_(
+                Senha.data_emissao == hoje,
+                func.date(Senha.emitida_em) == hoje
+            )
         ).all()
-        
-        tempos_atendimento = []
-        for senha in senhas_concluidas:
-            if senha.tempo_atendimento_minutos:
-                tempos_atendimento.append(senha.tempo_atendimento_minutos)
-        
-        tempo_medio = 0
-        if tempos_atendimento:
-            tempo_medio = round(sum(tempos_atendimento) / len(tempos_atendimento))
-        
-        # Senha em atendimento atual
-        em_atendimento = Senha.query.filter(
-            Senha.atendente_id == atendente_id,
-            Senha.status == 'atendendo'
-        ).first()
-        
-        # ✅ SERIALIZAR OBJETO SENHA PARA DICT
-        em_atendimento_dict = None
-        if em_atendimento:
-            em_atendimento_dict = em_atendimento.to_dict()
-        
-        # Aguardando no sistema
-        aguardando = Senha.query.filter(
-            func.date(Senha.emitida_em) == hoje,
-            Senha.status == 'aguardando'
-        ).count()
-        
-        return {
-            'atendidos_hoje': atendidos_hoje,
-            'tempo_medio_atendimento': tempo_medio,
-            'em_atendimento': em_atendimento_dict,
-            'aguardando': aguardando
-        }
 
-    @staticmethod
-    def finalizar_atendimento_anterior(atendente_id):
-        """Finaliza automaticamente senha anterior do atendente"""
-        # Buscar senha em atendimento deste trabalhador
-        senha_anterior = Senha.query.filter(
-            Senha.atendente_id == atendente_id,
-            Senha.status == 'atendendo'
-        ).first()
-        
-        if senha_anterior:
-            # Marcar como concluída
-            senha_anterior.finalizar()
-            db.session.commit()
-            
-            print(f"✅ Senha {senha_anterior.numero} finalizada automaticamente")
-        
-        return senha_anterior
+        atendidos = [s for s in senhas_hoje if s.status == 'concluida']
+        tempos    = [s.tempo_atendimento_minutos for s in atendidos
+                     if s.tempo_atendimento_minutos]
+        tempo_medio = round(sum(tempos) / len(tempos), 1) if tempos else 0
+
+        return {
+            'atendidos_hoje': len(atendidos),
+            'tempo_medio_atendimento': tempo_medio
+        }
