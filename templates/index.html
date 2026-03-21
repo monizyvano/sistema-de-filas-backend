@@ -3,553 +3,182 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel do Usuario</title>
+    <title>Painel do Utente — IMTSB</title>
     <link rel="stylesheet" href="/static/css/dashusuario.css">
     <link rel="stylesheet" href="/static/css/dashusuariomediaq.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons"/>
 </head>
 <body>
+
+<!-- ── HEADER ──────────────────────────────────────────────── -->
 <header class="header">
     <div class="header-content">
         <div class="header-top">
             <div class="logo-section">
                 <div class="logo">SB</div>
-                <span class="site-title">Instituto Medio Tecnico Sao Benedito</span>
+                <span class="site-title">Instituto Médio Técnico São Benedito</span>
             </div>
             <div class="header-buttons-vertical">
-                <button type="button" class="btn-profile" id="btnMeusDadosDesktop">Meus dados</button>
-                <button type="button" class="btn-logout" id="btnSairUserDesktop">Sair</button>
+                <button type="button" class="btn-profile" id="btnMeusDados">
+                    Meus dados
+                </button>
+                <button type="button" class="btn-logout" id="btnSair">
+                    Sair
+                </button>
             </div>
         </div>
-
-        <div class="institute-name" id="userProfileName">Painel do Usuario</div>
+        <div class="institute-name" id="userProfileName">Painel do Utente</div>
     </div>
 </header>
 
+<!-- ── PAINEL MEUS DADOS ────────────────────────────────────── -->
 <section id="meusDadosPanel" class="dados-panel">
     <div class="dados-card">
         <h3>Meus dados</h3>
-        <p><strong>Nome:</strong> <span id="dadoNome">Visitante</span></p>
-        <p><strong>Email:</strong> <span id="dadoEmail">-</span></p>
-        <p><strong>Perfil:</strong> <span id="dadoPerfil">Público</span></p>
-        <p><strong>Ultimo acesso:</strong> <span id="dadoLogin">-</span></p>
-        <button type="button" class="btn-fechar-dados" id="btnFecharDados">Fechar</button>
+        <p><strong>Nome:</strong>   <span id="dadoNome">-</span></p>
+        <p><strong>Email:</strong>  <span id="dadoEmail">-</span></p>
+        <p><strong>Perfil:</strong> <span id="dadoPerfil">-</span></p>
+        <button type="button" class="btn-fechar-dados" id="btnFecharDados">
+            Fechar
+        </button>
     </div>
 </section>
 
+<!-- ── LAYOUT PRINCIPAL ─────────────────────────────────────── -->
 <div class="page-layout">
+
+    <!-- Sidebar desktop -->
     <aside class="sidebar">
-        <nav class="nav-item active" aria-label="Inicio">
+        <nav class="nav-item active" aria-label="Início">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             </svg>
         </nav>
-
-        <nav class="nav-item" aria-label="Calendario Anual" id="btnOpenCalendarNav">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-        </nav>
     </aside>
 
+    <!-- Conteúdo principal -->
     <main class="main-content">
+
+        <!-- HERO: estatísticas + botão emitir -->
         <section class="hero">
-            <h1 class="hero-title">Sistema de Gerenciamento de Filas</h1>
-            <p class="hero-subtitle">Emita sua senha e acompanhe o atendimento em tempo real</p>
+            <h1 class="hero-title">Sistema de Gestão de Filas</h1>
+            <p class="hero-subtitle">
+                Emita a sua senha e acompanhe o atendimento em tempo real
+            </p>
 
             <div class="stats-grid">
-                <article class="stat-card"><div class="stat-label">Na Fila</div><div class="stat-value" id="statFila">0</div></article>
-                <article class="stat-card"><div class="stat-label">Tempo Medio</div><div class="stat-value" id="statTempo">~0min</div></article>
-                <article class="stat-card"><div class="stat-label">Concluidos</div><div class="stat-value" id="statDone">0</div></article>
-                <article class="stat-card"><div class="stat-label">Satisfacao</div><div class="stat-value" id="statSat">95%</div></article>
+                <article class="stat-card">
+                    <div class="stat-label">Na Fila</div>
+                    <div class="stat-value" id="statFila">0</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-label">Tempo Médio</div>
+                    <div class="stat-value" id="statTempo">~0min</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-label">Concluídos</div>
+                    <div class="stat-value" id="statDone">0</div>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-label">Taxa Conclusão</div>
+                    <div class="stat-value" id="statSat">—</div>
+                </article>
             </div>
 
             <div class="cta-buttons">
-                <button class="btn btn-normal" id="btnAtendimento" type="button">Emitir Senha</button>
+                <button class="btn btn-normal" id="btnEmitirSenha" type="button">
+                    Emitir Senha
+                </button>
                 <div id="ticketMessage" class="ticket-message"></div>
             </div>
         </section>
 
+        <!-- LISTA DE SERVIÇOS -->
         <section class="services-section">
-            <h2 class="section-title">Tipos de servicos</h2>
+            <h2 class="section-title">Serviços disponíveis</h2>
             <div class="services-list" id="servicesList">
-                <!-- SERVIÇOS CARREGADOS DINAMICAMENTE -->
+                <!-- preenchido pelo JS via /api/servicos -->
+                <p style="color: var(--text-muted); padding: 1rem;">
+                    A carregar serviços...
+                </p>
             </div>
         </section>
 
+        <!-- DISPLAY AO VIVO -->
         <section class="live-display">
             <div class="live-header">
-                <h3 class="section-title" style="margin: 0;">Atendimento ao Vivo</h3>
-                <div class="live-badge"><span class="live-dot"></span>AO VIVO</div>
+                <h3 class="section-title" style="margin: 0;">A Minha Senha</h3>
+                <div class="live-badge">
+                    <span class="live-dot"></span>AO VIVO
+                </div>
             </div>
 
             <div class="call-display">
                 <div class="call-info-left">
-                    <div class="call-label">Minha Senha</div>
+                    <div class="call-label">Número da senha</div>
                     <div class="call-number" id="currentTicket">---</div>
-                    <div class="call-status" id="currentStatus" style="font-size:0.9rem;color:#666;">Aguardando</div>
+                    <div id="currentStatus"
+                         style="font-size: 0.9rem; color: var(--text-muted); margin-top: 4px;">
+                        Aguardando
+                    </div>
 
-                <!-- Acompanhamento de posição — Sprint 3 -->
-                <div id="ticketTracker" style="margin-top:12px; padding:12px 16px;
-                     background:rgba(107,66,38,0.08); border-radius:12px;
-                     border:1px solid rgba(107,66,38,0.15); display:none;">
-                    <div style="display:flex; gap:24px; align-items:center;">
-                        <div style="text-align:center;">
-                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
-                                Posição
+                    <!-- Acompanhamento de posição na fila -->
+                    <div id="ticketTracker"
+                         style="display: none; margin-top: 12px; padding: 12px 16px;
+                                background: rgba(107,66,38,0.08); border-radius: 12px;
+                                border: 1px solid rgba(107,66,38,0.15);">
+                        <div style="display: flex; gap: 24px; align-items: center;">
+                            <div style="text-align: center;">
+                                <div style="font-size: .75rem; color: #7c6a5e; margin-bottom: 4px;">
+                                    Posição
+                                </div>
+                                <div id="trackerPosicao"
+                                     style="font-size: 1.8rem; font-weight: 800; color: #6b4226;">
+                                    –
+                                </div>
                             </div>
-                            <div id="currentTicketPos"
-                                 style="font-size:1.8rem;font-weight:800;color:#6b4226;">–</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
-                                Espera est.
+                            <div style="text-align: center;">
+                                <div style="font-size: .75rem; color: #7c6a5e; margin-bottom: 4px;">
+                                    Espera est.
+                                </div>
+                                <div id="trackerTempo"
+                                     style="font-size: 1.1rem; font-weight: 600; color: #6b4226;">
+                                    –
+                                </div>
                             </div>
-                            <div id="currentTicketTime"
-                                 style="font-size:1.1rem;font-weight:600;color:#6b4226;">–</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div style="font-size:.75rem;color:#7c6a5e;margin-bottom:4px;">
-                                Estado
+                            <div style="text-align: center;">
+                                <div style="font-size: .75rem; color: #7c6a5e; margin-bottom: 4px;">
+                                    Estado
+                                </div>
+                                <div id="trackerEstado"
+                                     style="font-size: .9rem; font-weight: 600; color: #6b4226;">
+                                    –
+                                </div>
                             </div>
-                            <div id="currentTicketStatus"
-                                 style="font-size:.9rem;font-weight:600;color:#6b4226;">–</div>
                         </div>
                     </div>
                 </div>
-                </div>
+
                 <div class="call-info-right">
-                    <div class="call-label">Ultima Chamada</div>
+                    <div class="call-label">Última chamada geral</div>
                     <div class="call-location" id="ultimaChamada">---</div>
-                    <div class="call-counter" id="ultimoBalcao" style="font-size:0.9rem;color:#666;">-</div>
+                    <div id="ultimoBalcao"
+                         style="font-size: 0.9rem; color: var(--text-muted);">
+                        —
+                    </div>
                 </div>
             </div>
         </section>
+
     </main>
 </div>
 
-<section id="calendarPanel" class="calendar-panel">
-    <div class="calendar-card">
-        <div class="calendar-head">
-            <h3>Calendario Anual</h3>
-            <button type="button" class="btn-fechar-dados" id="btnCloseCalendar">Fechar</button>
-        </div>
-        <p style="padding:1rem;">Calendario em desenvolvimento</p>
-    </div>
-</section>
-
+<!-- ── SCRIPTS — apenas externos, sem lógica inline ────────── -->
 <script src="/static/js/api-config.js"></script>
 <script src="/static/js/api-adapter.js"></script>
 <script src="/static/js/api-client.js"></script>
 <script src="/static/js/realtime-store.js"></script>
-
-<script>
-/**
- * INDEX.HTML - VERSÃO FINAL
- * 
- * CORREÇÕES:
- * - Fix "Minha senha" usando localStorage
- * - Live display com última chamada correta
- */
-
-(function() {
-  "use strict";
-
-  const store = window.IMTSBStore;
-
-  let servicoSelecionado = null;
-  let servicosList = [];
-  let minhaSenhaAtual = null;
-
-  document.addEventListener('DOMContentLoaded', async () => {
-    console.log("✅ Index.html FINAL carregado");
-    
-    await carregarServicos();
-    await atualizarEstatisticas();
-    configurarBotoes();
-    iniciarPolling();
-    carregarDadosUsuario();
-    
-    // Restaurar minha senha do localStorage
-    const saved = localStorage.getItem('minhaSenhaAtual');
-    if (saved) {
-      minhaSenhaAtual = JSON.parse(saved);
-      atualizarMinhaSenha();
-    }
-  });
-
-  async function carregarServicos() {
-    try {
-      const response = await fetch('/api/servicos');
-      const data = await response.json();
-      
-      servicosList = Array.isArray(data) ? data : (data.servicos || []);
-      
-      const container = document.getElementById('servicesList');
-      if (!container) return;
-      
-      container.innerHTML = '';
-      
-      servicosList.forEach(servico => {
-        const card = document.createElement('article');
-        card.className = 'service-card';
-        card.dataset.servicoId = servico.id;
-        
-        card.innerHTML = `
-          <div class="service-icon">${servico.icone || 'DOC'}</div>
-          <div class="service-info">
-            <div class="service-name">${servico.nome}</div>
-            <div class="service-status">
-              <span class="status-dot"></span>
-              ${servico.descricao || 'Serviço disponível'}
-            </div>
-          </div>
-          <span class="arrow-icon">→</span>
-        `;
-        
-        card.addEventListener('click', () => selecionarServico(servico));
-        container.appendChild(card);
-      });
-      
-      console.log(`✅ ${servicosList.length} serviços carregados`);
-      
-    } catch (error) {
-      console.error("❌ Erro ao carregar serviços:", error);
-    }
-  }
-
-  function selecionarServico(servico) {
-    servicoSelecionado = servico;
-    
-    document.querySelectorAll('.service-card').forEach(card => {
-      card.classList.remove('selected');
-    });
-    
-    const selectedCard = document.querySelector(`[data-servico-id="${servico.id}"]`);
-    if (selectedCard) {
-      selectedCard.classList.add('selected');
-    }
-    
-    mostrarMensagem(`Serviço selecionado: ${servico.nome}`, "success");
-  }
-
-
-
-  // ═══════════════════════════════════════════════════════════
-  // 📍 ACOMPANHAMENTO DE SENHA — SPRINT 3
-  // Mostra posição na fila e tempo estimado após emissão
-  // ═══════════════════════════════════════════════════════════
-
-  function iniciarAcompanhamento(numeroSenha) {
-    pararAcompanhamento();
-
-    // Mostrar o tracker
-    const tracker = document.getElementById('ticketTracker');
-    if (tracker) tracker.style.display = 'block';
-
-    // Executar imediatamente e depois a cada 10s
-    actualizarPosicao(numeroSenha);
-    acompanhamentoInterval = setInterval(
-      () => actualizarPosicao(numeroSenha),
-      10000
-    );
-  }
-
-  function pararAcompanhamento() {
-    if (acompanhamentoInterval) {
-      clearInterval(acompanhamentoInterval);
-      acompanhamentoInterval = null;
-    }
-  }
-
-  async function actualizarPosicao(numeroSenha) {
-    try {
-      const resp = await fetch(`/api/dashboard/public/senha/${numeroSenha}`);
-      if (!resp.ok) return;
-
-      const data = await resp.json();
-
-      const posEl    = document.getElementById('currentTicketPos');
-      const tempoEl  = document.getElementById('currentTicketTime');
-      const statusEl = document.getElementById('currentTicketStatus');
-
-      if (data.status === 'aguardando') {
-        if (posEl) posEl.textContent = data.posicao || '–';
-        if (tempoEl) {
-          tempoEl.textContent = data.tempo_espera_estimado > 0
-            ? `~${data.tempo_espera_estimado}min`
-            : '–';
-        }
-        if (statusEl) statusEl.textContent = 'Aguardando';
-
-      } else if (data.status === 'atendendo') {
-        if (posEl) posEl.textContent = '🔔';
-        if (tempoEl) tempoEl.textContent = 'É a sua vez!';
-        if (statusEl) statusEl.textContent = `Balcão ${data.balcao}`;
-        pararAcompanhamento();
-
-      } else if (data.status === 'concluida' || data.status === 'cancelada') {
-        pararAcompanhamento();
-        if (statusEl) statusEl.textContent = data.status;
-      }
-
-    } catch (e) {
-      console.error('Erro ao actualizar posição:', e);
-    }
-  }
-
-  async function emitirSenha() {
-    if (!servicoSelecionado) {
-      mostrarMensagem("Por favor, selecione um serviço primeiro!", "error");
-      return;
-    }
-    
-    const btnEmitir = document.getElementById('btnAtendimento');
-    if (!btnEmitir) return;
-    
-    btnEmitir.disabled = true;
-    btnEmitir.textContent = 'Emitindo...';
-    
-    try {
-      const response = await fetch('/api/senhas/emitir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servico_id: servicoSelecionado.id,
-          tipo: 'normal'
-        })
-      });
-      
-      const result = await response.json();
-      
-      if (response.ok && result.senha) {
-        const senha = result.senha;
-        const numeroSenha = senha.numero || 'N/A';
-        
-        // ✅ SALVAR NO LOCALSTORAGE
-        minhaSenhaAtual = senha;
-        localStorage.setItem('minhaSenhaAtual', JSON.stringify(senha));
-        
-        mostrarMensagem(`✅ Senha emitida: ${numeroSenha}`, "success");
-        
-        atualizarMinhaSenha();
-
-        // Após mostrar o número da senha ao utente:
-        iniciarAcompanhamento(senha.numero);
-
-        setTimeout(() => atualizarEstatisticas(), 500);
-        
-      } else {
-        mostrarMensagem(result.erro || "Erro ao emitir senha", "error");
-      }
-      
-    } catch (error) {
-      console.error("❌ Erro:", error);
-      mostrarMensagem("Erro ao conectar com servidor", "error");
-    } finally {
-      btnEmitir.disabled = false;
-      btnEmitir.textContent = 'Emitir Senha';
-    }
-  }
-
-  function atualizarMinhaSenha() {
-    const currentTicket = document.getElementById('currentTicket');
-    const currentStatus = document.getElementById('currentStatus');
-    
-    if (!currentTicket) return;
-    
-    if (minhaSenhaAtual) {
-      currentTicket.textContent = minhaSenhaAtual.numero;
-      currentStatus.textContent = traduzirStatus(minhaSenhaAtual.status);
-      
-      if (minhaSenhaAtual.status === 'concluida') {
-        setTimeout(() => {
-          currentTicket.textContent = '---';
-          currentStatus.textContent = 'Aguardando';
-          localStorage.removeItem('minhaSenhaAtual');
-          minhaSenhaAtual = null;
-        }, 5000);
-      }
-    } else {
-      currentTicket.textContent = '---';
-      currentStatus.textContent = 'Aguardando';
-      const tracker = document.getElementById('ticketTracker');
-      if (tracker) tracker.style.display = 'none';
-      pararAcompanhamento();
-    }
-  }
-
-  async function atualizarEstatisticas() {
-    try {
-      const response = await fetch('/api/senhas/estatisticas');
-      const stats = await response.json();
-      
-      const statFila = document.getElementById('statFila');
-      const statTempo = document.getElementById('statTempo');
-      const statDone = document.getElementById('statDone');
-      
-      if (statFila) statFila.textContent = stats.aguardando || 0;
-      if (statTempo) statTempo.textContent = `~${stats.tempo_medio_espera || 0}min`;
-      if (statDone) statDone.textContent = stats.concluidas || 0;
-      
-    } catch (error) {
-      console.error("❌ Erro ao atualizar stats:", error);
-    }
-  }
-
-  async function atualizarUltimaChamada() {
-    try {
-      const response = await fetch('/api/senhas/?status=atendendo');
-      const data = await response.json();
-      
-      const senhas = data.senhas || [];
-      const ultimaChamadaEl = document.getElementById('ultimaChamada');
-      const ultimoBalcaoEl = document.getElementById('ultimoBalcao');
-      
-      if (!ultimaChamadaEl) return;
-      
-      if (senhas.length > 0) {
-        const ultima = senhas[0];
-        ultimaChamadaEl.textContent = ultima.numero || '---';
-        
-        if (ultimoBalcaoEl) {
-          ultimoBalcaoEl.textContent = ultima.numero_balcao 
-            ? `Balcão ${ultima.numero_balcao}` 
-            : 'Aguardando balcão';
-        }
-      } else {
-        ultimaChamadaEl.textContent = '---';
-        if (ultimoBalcaoEl) ultimoBalcaoEl.textContent = '-';
-      }
-      
-    } catch (error) {
-      console.error("❌ Erro ao atualizar última chamada:", error);
-    }
-  }
-
-  let pollingInterval = null;
-  let acompanhamentoInterval = null;
-
-  function iniciarPolling() {
-    pararPolling();
-    
-    pollingInterval = setInterval(async () => {
-      await atualizarEstatisticas();
-      await atualizarUltimaChamada();
-      atualizarMinhaSenha();
-    }, 5000);
-  }
-
-  function pararPolling() {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      pollingInterval = null;
-    }
-  }
-
-  function configurarBotoes() {
-    const btnEmitir = document.getElementById('btnAtendimento');
-    if (btnEmitir) btnEmitir.addEventListener('click', emitirSenha);
-    
-    const btnDados = document.getElementById('btnMeusDadosDesktop');
-    const painelDados = document.getElementById('meusDadosPanel');
-    const btnFechar = document.getElementById('btnFecharDados');
-    
-    if (btnDados && painelDados) {
-      btnDados.addEventListener('click', () => {
-        painelDados.style.display = 'flex';
-        carregarMeusDados();
-      });
-    }
-    
-    if (btnFechar && painelDados) {
-      btnFechar.addEventListener('click', () => {
-        painelDados.style.display = 'none';
-      });
-    }
-    
-    const btnSair = document.getElementById('btnSairUserDesktop');
-    if (btnSair) {
-      btnSair.addEventListener('click', () => {
-        if (confirm("Deseja sair?")) {
-          pararPolling();
-          localStorage.removeItem('minhaSenhaAtual');
-          window.location.href = '/';
-        }
-      });
-    }
-    
-    const btnCalendar = document.getElementById('btnOpenCalendarNav');
-    const painelCalendar = document.getElementById('calendarPanel');
-    const btnCloseCalendar = document.getElementById('btnCloseCalendar');
-    
-    if (btnCalendar && painelCalendar) {
-      btnCalendar.addEventListener('click', () => {
-        painelCalendar.style.display = 'flex';
-      });
-    }
-    
-    if (btnCloseCalendar && painelCalendar) {
-      btnCloseCalendar.addEventListener('click', () => {
-        painelCalendar.style.display = 'none';
-      });
-    }
-  }
-
-  function carregarDadosUsuario() {
-    const user = store.getUser();
-    const profileName = document.getElementById('userProfileName');
-    
-    if (user && profileName) {
-      profileName.textContent = `Bem-vindo, ${user.name || 'Usuário'}`;
-    }
-  }
-
-  function carregarMeusDados() {
-    const user = store.getUser();
-    
-    const dadoNome = document.getElementById('dadoNome');
-    const dadoEmail = document.getElementById('dadoEmail');
-    const dadoPerfil = document.getElementById('dadoPerfil');
-    const dadoLogin = document.getElementById('dadoLogin');
-    
-    if (user) {
-      if (dadoNome) dadoNome.textContent = user.name || 'Visitante';
-      if (dadoEmail) dadoEmail.textContent = user.email || '-';
-      if (dadoPerfil) dadoPerfil.textContent = user.role || 'Público';
-      if (dadoLogin) dadoLogin.textContent = new Date().toLocaleString('pt-PT');
-    }
-  }
-
-  function mostrarMensagem(msg, type) {
-    const ticketMsg = document.getElementById('ticketMessage');
-    if (!ticketMsg) return;
-    
-    ticketMsg.textContent = msg;
-    ticketMsg.style.color = type === 'success' ? '#4CAF50' : '#f44336';
-    ticketMsg.style.display = 'block';
-    
-    setTimeout(() => {
-      ticketMsg.style.display = 'none';
-    }, 5000);
-  }
-
-  function traduzirStatus(status) {
-    const map = {
-      'aguardando': 'Aguardando',
-      'chamada': 'Chamada',
-      'atendendo': 'Em Atendimento',
-      'concluida': 'Concluída',
-      'cancelada': 'Cancelada'
-    };
-    return map[status] || status;
-  }
-
-})();
-</script>
+<script src="/static/js/dashusuario.js"></script>
 
 </body>
 </html>
