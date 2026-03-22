@@ -1,4 +1,4 @@
-﻿/**
+/**
  * static/js/dashusuario.js — Sprint 3
  * ═══════════════════════════════════════════════════════════════
  * FONTE ÚNICA de lógica do painel do utente.
@@ -251,6 +251,7 @@
             if (tracker)  tracker.style.display = 'none';
             return;
         }
+    }
 
         if (numEl)    numEl.textContent    = minhaSenha.numero;
         if (statusEl) statusEl.textContent = traduzirStatus(minhaSenha.status);
