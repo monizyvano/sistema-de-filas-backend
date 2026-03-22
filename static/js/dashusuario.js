@@ -251,6 +251,7 @@
             if (tracker)  tracker.style.display = 'none';
             return;
         }
+    }
 
         if (numEl)    numEl.textContent    = minhaSenha.numero;
         if (statusEl) statusEl.textContent = traduzirStatus(minhaSenha.status);
