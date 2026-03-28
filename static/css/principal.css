@@ -125,15 +125,94 @@ body {
   font-size: 1.6rem;
 }
 
+.carousel-shell {
+  position: relative;
+}
+
+.carousel-shell::before,
+.carousel-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0.85rem;
+  width: 72px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.carousel-shell::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(245, 241, 237, 0.95), rgba(245, 241, 237, 0));
+}
+
+.carousel-shell::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(245, 241, 237, 0.95), rgba(245, 241, 237, 0));
+}
+
+.carousel-track {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 0.35rem 2.8rem 0.85rem 0.2rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-beige) transparent;
+}
+
+.carousel-track::-webkit-scrollbar {
+  height: 8px;
+}
+
+.carousel-track::-webkit-scrollbar-thumb {
+  background: var(--accent-beige);
+  border-radius: 999px;
+}
+
+.carousel-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .cards-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
-.courses-list {
+.carousel-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(64, 25, 3, 0.84);
+  color: #fff;
   display: grid;
-  gap: 1.25rem;
+  place-items: center;
+  font-size: 1.7rem;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 14px 28px rgba(64, 25, 3, 0.22);
+  transition: opacity 0.25s ease, transform 0.25s ease, background 0.25s ease;
+}
+
+.carousel-nav:hover {
+  background: rgba(64, 25, 3, 0.96);
+  transform: translateY(calc(-50% - 2px));
+}
+
+.carousel-nav.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.carousel-prev {
+  left: 0.55rem;
+}
+
+.carousel-next {
+  right: 0.55rem;
 }
 
 .course-item {
@@ -146,8 +225,10 @@ body {
   padding: 1rem;
   box-shadow: 0 2px 8px rgba(64, 25, 3, 0.1);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  min-width: min(540px, 82vw);
+  flex: 0 0 min(540px, 82vw);
+  scroll-snap-align: start;
 }
-
 
 .course-item:hover {
   transform: translateY(-3px);
@@ -156,9 +237,10 @@ body {
 
 .course-media {
   border-radius: 12px;
-  min-height: 220px;
+  min-height: 320px;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
 }
@@ -167,50 +249,63 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, rgba(64, 25, 3, 0.12), rgba(191, 167, 153, 0.25));
+  background:
+    linear-gradient(180deg, rgba(23, 15, 10, 0.12), rgba(64, 25, 3, 0.38)),
+    linear-gradient(120deg, rgba(64, 25, 3, 0.1), rgba(191, 167, 153, 0.22));
 }
 
 .course-media-informatica {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("https://src.nappy.co/photo/9GNRq5nuWCAsuyc2A47uR");
+  background-size: 118%;
+  background-position: center 38%;
 }
 
 .course-media-contabilidade {
-  background-image: url("../image/classroom_-_Copia.jpg");
+  background-image: url("https://images.pexels.com/photos/5668879/pexels-photo-5668879.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 112%;
+  background-position: center 34%;
 }
 
 .course-media-eletrotecnia {
-  background-image: url("../image/classroom.jpg");
-  background-position: center top;
+  background-image: url("https://images.pexels.com/photos/8487797/pexels-photo-8487797.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 108%;
+  background-position: center 22%;
 }
 
 .course-media-gestao {
-  background-image: url("../image/classroom_-_Copia.jpg");
-  background-position: center bottom;
+  background-image: url("https://images.pexels.com/photos/30677714/pexels-photo-30677714.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 115%;
+  background-position: center 42%;
 }
 
 .course-media-desenho {
-  background-image: url("../image/classroom.jpg");
-  background-position: right center;
+  background-image: url("https://images.pexels.com/photos/6925397/pexels-photo-6925397.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 108%;
+  background-position: center 30%;
 }
 
 .course-media-petro {
-  background-image: url("../image/classroom_-_Copia.jpg");
-  background-position: left center;
+  background-image: url("https://images.pexels.com/photos/5726709/pexels-photo-5726709.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 112%;
+  background-position: center 18%;
 }
 
 .course-media-eletronica {
-  background-image: url("../image/classroom.jpg");
-  background-position: center;
+  background-image: url("https://images.pexels.com/photos/30690402/pexels-photo-30690402.jpeg?auto=compress&cs=tinysrgb&w=1200");
+  background-size: 122%;
+  background-position: center 36%;
 }
 
 .course-media-ambiente {
-  background-image: url("../image/classroom_-_Copia.jpg");
-  background-position: center;
+  background-image: url("https://src.nappy.co/photo/aNIVnHiOR_joeGEzUDbF_");
+  background-size: 114%;
+  background-position: center 40%;
 }
 
 .course-media-estatistica {
-  background-image: url("../image/classroom.jpg");
-  background-position: center bottom;
+  background-image: url("https://src.nappy.co/photo/9eJ64SoiJH4AFSVDYRmhJ");
+  background-size: 112%;
+  background-position: center 24%;
 }
 
 .course-body {
@@ -235,6 +330,9 @@ body {
   border-radius: 12px;
   padding: 1.2rem;
   box-shadow: 0 2px 8px rgba(64, 25, 3, 0.1);
+  min-width: min(280px, 72vw);
+  flex: 0 0 min(280px, 72vw);
+  scroll-snap-align: start;
 }
 
 .card h3 {
@@ -332,19 +430,49 @@ body.reveal-ready .reveal-item.is-visible {
 }
 
 @media (max-width: 900px) {
-  .cards-grid,
   .footer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .carousel-shell::before,
+  .carousel-shell::after {
+    width: 44px;
+  }
+
+  .carousel-nav {
+    width: 40px;
+    height: 40px;
+    font-size: 1.4rem;
   }
 
   .course-item {
     grid-template-columns: 1fr;
     gap: 0.9rem;
     padding: 0.8rem;
+    min-width: 84vw;
+    flex-basis: 84vw;
   }
 
   .course-media {
-    min-height: 180px;
+    min-height: 260px;
+    background-size: cover;
+  }
+
+  .course-media-informatica,
+  .course-media-contabilidade,
+  .course-media-eletrotecnia,
+  .course-media-gestao,
+  .course-media-desenho,
+  .course-media-petro,
+  .course-media-eletronica,
+  .course-media-ambiente,
+  .course-media-estatistica {
+    background-size: cover;
+  }
+
+  .card {
+    min-width: 74vw;
+    flex-basis: 74vw;
   }
 
   .mission-layout {
