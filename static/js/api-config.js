@@ -1,9 +1,18 @@
-﻿(function () {
+(function () {
   "use strict";
 
+  function resolveBaseUrl() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    const port = String(window.location.port || "");
+    const isFlaskHost = (host === "localhost" || host === "127.0.0.1") && port === "5000";
+    if (isFlaskHost) return "/api";
+    if (host === "127.0.0.1") return "http://127.0.0.1:5000/api";
+    return "http://localhost:5000/api";
+  }
+
   window.IMTSBApiConfig = {
-    enabled: true, // 🔥 Ativar integração
-    baseUrl: "/api",
+    enabled: true,
+    baseUrl: resolveBaseUrl(),
     timeoutMs: 15000,
 
     tokenStorageKey: "imtsb_api_token",
@@ -14,14 +23,10 @@
     refreshSkewSec: 30,
 
     endpoints: {
-
-      // 🔐 AUTENTICAÇÃO
       health: { method: "GET", path: "/auth/health" },
       login: { method: "POST", path: "/auth/login" },
       register: { method: "POST", path: "/auth/register" },
       me: { method: "GET", path: "/auth/me" },
-
-      // 🎟 SENHAS
       emitirSenha: { method: "POST", path: "/senhas" },
       buscarSenha: { method: "GET", path: "/senhas/{id}" },
       buscarSenhaNumero: { method: "GET", path: "/senhas/numero/{numero}" },
@@ -29,14 +34,10 @@
       iniciarAtendimento: { method: "PUT", path: "/senhas/{id}/iniciar" },
       finalizarAtendimento: { method: "PUT", path: "/senhas/{id}/finalizar" },
       estatisticasSenhas: { method: "GET", path: "/senhas/estatisticas" },
-
-      // 📋 FILAS
       listarFilas: { method: "GET", path: "/filas" },
       buscarFilaServico: { method: "GET", path: "/filas/{servico_id}" },
       chamarProxima: { method: "POST", path: "/filas/chamar" },
       estatisticasFilaServico: { method: "GET", path: "/filas/{servico_id}/estatisticas" },
-
-      // 📊 DASHBOARD
       dashboardEstatisticas: { method: "GET", path: "/dashboard/estatisticas" },
       dashboardAtendentes: { method: "GET", path: "/dashboard/atendentes" },
       dashboardLogs: { method: "GET", path: "/dashboard/logs" }

@@ -1,0 +1,189 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Administrador</title>
+    <link rel="stylesheet" href="css/dashadm.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+     <header class="dashboard-header">
+        <div class="header-left">
+            <div class="logo-admin">SB</div>
+            <div class="header-title">
+                <h1>IMTSB Dashboard</h1>
+                <p>Instituto Medio Técnico São Benedito</p>
+                <p id="adminProfileName">Administrador</p>
+            </div>
+        </div>
+        
+        <div class="header-actions">
+            <div class="date-selector">
+                <span id="currentDate">-</span>
+            </div>
+            <select id="exportFormat" class="export-format">
+                <option value="excel">Excel</option>
+                <option value="pdf">PDF</option>
+            </select>
+            <button class="export-btn" onclick="exportData()">Exportar</button>
+            <button class="export-btn danger-btn" type="button" id="btnResetDayAdmin">Guardar Dia e Reiniciar</button>
+            <button class="export-btn logout-btn" type="button" id="btnSairAdmin">Sair</button>
+            <div class="admin-profile" id="adminInitials">AD</div>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <section class="kpi-grid">
+            <article class="kpi-card">
+                <div class="kpi-header"><div class="kpi-icon brown"></div><div class="kpi-trend" id="trendAttend">0%</div></div>
+                <div class="kpi-label">Atendimentos Hoje</div>
+                <div class="kpi-value" id="kpiAttend">0</div>
+                <div class="kpi-subtitle">Concluídos no dia atual</div>
+            </article>
+
+            <article class="kpi-card">
+                <div class="kpi-header"><div class="kpi-icon green"></div><div class="kpi-trend negative">Tempo</div></div>
+                <div class="kpi-label">Tempo Médio Espera</div>
+                <div class="kpi-value" id="kpiWait">0min</div>
+                <div class="kpi-subtitle">Media da fila ativa</div>
+            </article>
+
+            <article class="kpi-card">
+                <div class="kpi-header"><div class="kpi-icon beige"></div><div class="kpi-trend" id="kpiOccTrend">0%</div></div>
+                <div class="kpi-label">Taxa de Ocupacao</div>
+                <div class="kpi-value" id="kpiOcc">0%</div>
+                <div class="kpi-subtitle">Balcao de atendimento</div>
+            </article>
+
+            <article class="kpi-card">
+                <div class="kpi-header"><div class="kpi-icon bordeaux"></div><div class="kpi-trend">Avaliacao</div></div>
+                <div class="kpi-label">Satisfacao</div>
+                <div class="kpi-value" id="kpiSat">0%</div>
+                <div class="kpi-subtitle">Media das avaliacoes</div>
+            </article>
+        </section>
+
+        <section class="realtime-grid">
+            <article class="monitor-card">
+                <h3 class="monitor-title">Filas em Tempo Real</h3>
+                <div class="queue-list" id="queueList"></div>
+            </article>
+
+            <article class="monitor-card">
+                <h3 class="monitor-title">Distribuicao por Tipo</h3>
+                <div class="chart-container">
+                    <canvas id="pieChart"></canvas>
+                </div>
+            </article>
+        </section>
+
+        <section class="charts-grid">
+            <article class="chart-card">
+                <div class="chart-header">
+                    <h3 class="chart-title">Fluxo de Atendimentos</h3>
+                    <div class="chart-filter">
+                        <button class="filter-btn" onclick="changeChartPeriod('day')">Dia</button>
+                        <button class="filter-btn active" onclick="changeChartPeriod('week')">Semana</button>
+                        <button class="filter-btn" onclick="changeChartPeriod('month')">Mes</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="lineChart"></canvas>
+                </div>
+            </article>
+
+            <article class="chart-card">
+                <div class="chart-header">
+                    <h3 class="chart-title">Pico de Atendimentos</h3>
+                </div>
+                <div class="chart-container">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </article>
+        </section>
+
+        <section class="performance-section">
+            <div class="performance-header">
+                <h3 class="performance-title">Produtividade por Funcionario</h3>
+            </div>
+            
+            <table class="performance-table">
+                <thead>
+                    <tr>
+                        <th>Funcionario</th>
+                        <th>Atendimentos</th>
+                        <th>Tempo Medio</th>
+                        <th>Taxa Conclusao</th>
+                        <th>Desempenho</th>
+                    </tr>
+                </thead>
+                <tbody id="performanceBody"></tbody>
+            </table>
+        </section>
+
+        <section class="performance-section">
+            <div class="performance-header">
+                <h3 class="performance-title">Historico Completo</h3>
+            </div>
+            <table class="performance-table">
+                <thead>
+                    <tr>
+                        <th>Senha</th>
+                        <th>Servico</th>
+                        <th>Atendido por</th>
+                        <th>Duracao</th>
+                        <th>Avaliacao</th>
+                        <th>Documentos</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+            </table>
+        </section>
+
+        <section class="performance-section">
+            <div class="performance-header">
+                <h3 class="performance-title">Adicionar Trabalhador</h3>
+            </div>
+            <div class="worker-form-grid">
+                <input id="newWorkerName" type="text" placeholder="Nome do trabalhador">
+                <input id="newWorkerEmail" type="email" placeholder="Email">
+                <input id="newWorkerPass" type="password" placeholder="Senha">
+                <select id="newWorkerDept">
+                    <option value="Secretaria Academica">Balcao 1 - Secretaria Academica</option>
+                    <option value="Contabilidade">Balcao 2 - Contabilidade</option>
+                    <option value="Apoio ao Cliente">Balcao 3 - Apoio ao Cliente</option>
+                </select>
+                <button class="export-btn" type="button" id="btnAddWorker">Adicionar Trabalhador</button>
+            </div>
+            <p id="workerFormMsg"></p>
+            <table class="performance-table" style="margin-top: 1rem;">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Setor</th>
+                        <th>Acao</th>
+                    </tr>
+                </thead>
+                <tbody id="workersBody"></tbody>
+            </table>
+        </section>
+    </main>
+
+ <script src="js/api-config.js"></script>
+ <script src="js/api-client.js"></script>
+ <script src="js/realtime-store.js"></script>
+ <script src="js/dashadm.js"></script>
+</body>
+</html>
+
+
+
+
+
