@@ -490,3 +490,28 @@
 
 
 
+
+
+/* Botão Concluir — verde escuro, destaque positivo */
+.btn-conclude {
+    background: linear-gradient(135deg, var(--success-green, #10B981), #059669);
+    color: white;
+    opacity: 0.5;
+    cursor: not-allowed;
+    transition: opacity 0.3s ease, transform 0.2s ease;
+}
+
+/* Estado activo — quando há senha em atendimento */
+.btn-conclude:not(:disabled) {
+    opacity: 1;
+    cursor: pointer;
+}
+
+.btn-conclude:not(:disabled):hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+}
+
+.btn-conclude:not(:disabled):active {
+    transform: translateY(-2px);
+}
