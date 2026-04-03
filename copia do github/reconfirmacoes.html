@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formulario - Reconfirmacao</title>
+  <link rel="stylesheet" href="css/service-form.css">
+</head>
+<body data-service="Reconfirmacao">
+  <main class="page">
+    <div class="top">
+      <a class="back" href="visitante.html">Voltar</a>
+      <strong>Visitante</strong>
+    </div>
+    <section class="card">
+      <h1 id="serviceTitle">Reconfirmacao</h1>
+      <p class="hint">Preencha o formulario e envie para o trabalhador.</p>
+      <form id="serviceForm" class="form-grid">
+        <div id="dynamicFields"></div>
+        <div>
+          <label for="notificationEmail">Email real para notificacoes</label>
+          <input id="notificationEmail" type="email" required>
+        </div>
+        <div>
+          <label for="attachments">Anexar ficheiro (opcional)</label>
+          <input id="attachments" type="file" multiple>
+        </div>
+        <div class="docs-box">
+          <strong>Documentos recomendados:</strong>
+          <ul id="requiredDocs"></ul>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Enviar Formulario e Emitir Senha</button>
+        </div>
+        <div id="formMsg" class="msg"></div>
+      </form>
+    </section>
+  </main>
+  <script src="js/realtime-store.js"></script>
+  <script src="js/service-form.js"></script>
+</body>
+</html>
+
+

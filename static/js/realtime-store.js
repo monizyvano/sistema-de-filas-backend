@@ -10,8 +10,152 @@
 
   const ApiClient = window.ApiClient;
 
+<<<<<<< Updated upstream
   if (!ApiClient) {
     console.warn("⚠ ApiClient não carregado!");
+=======
+  if (apiEnabled) {
+    console.log("✅ API real ativada - Mock desabilitado");
+
+    const ACCESS_KEY = "imtsb_access_token";
+    const REFRESH_KEY = "imtsb_refresh_token";
+    const USER_KEY = "imtsb_user";
+
+    function saveSession(data) {
+      if (!data || typeof data !== "object") return;
+      const access = data.access_token || data.accessToken || null;
+      const refresh = data.refresh_token || data.refreshToken || null;
+      const user = data.user || null;
+
+      if (access) localStorage.setItem(ACCESS_KEY, access);
+      if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+      if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    }
+
+    function clearSession() {
+      localStorage.removeItem(ACCESS_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
+
+    function getUser() {
+      const raw = localStorage.getItem(USER_KEY);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+
+    const store = {
+      apiEnabled: true,
+      apiClient: window.ApiClient || null,
+
+      // ===============================
+      // 🔐 AUTH
+      // ===============================
+
+      async login(email, senha, selectedRole) {
+        if (!this.apiClient) {
+          return { ok: false, message: "API indisponível." };
+        }
+
+        const result = await this.apiClient.login(email, senha);
+
+        if (!result.ok) return result;
+
+        saveSession(result);
+
+        return {
+          ok: true,
+          user: result.user,
+          redirect: result.redirect || "index.html"
+        };
+      },
+
+      async logout() {
+        try {
+          if (this.apiClient) {
+            await this.apiClient.logout();
+          }
+        } catch (_) {}
+
+        clearSession();
+        window.location.href = "logintcc.html";
+      },
+
+      getSession() {
+        const token = localStorage.getItem(ACCESS_KEY);
+        if (!token) return null;
+
+        return getUser();
+      },
+
+      requireRole(roles) {
+        const user = getUser();
+
+        if (!user || (roles && !roles.includes(user.role))) {
+          window.location.href = "logintcc.html";
+          return null;
+        }
+
+        return user;
+      },
+
+      // ===============================
+      // 🎫 SENHAS
+      // ===============================
+
+      async issueTicket(payload) {
+        return this.apiClient.issueTicket(payload);
+      },
+
+      async callNext(payload) {
+        return this.apiClient.callNext(payload);
+      },
+
+      async concludeCurrent(payload) {
+        return this.apiClient.finishAttendance(payload);
+      },
+
+      async startAttendance(id) {
+        return this.apiClient.startAttendance(id);
+      },
+
+      async getQueue(servicoId) {
+        return this.apiClient.getQueue(servicoId);
+      },
+
+      async getStats() {
+        return this.apiClient.getStats();
+      },
+
+      async healthCheck() {
+        return this.apiClient.healthCheck();
+      },
+
+      // Compatibilidade UI
+      onChange() {
+        return function () {};
+      },
+
+      getSnapshot() {
+        return {
+          updatedAt: new Date().toISOString(),
+          users: [],
+          queue: [],
+          history: [],
+          dailyArchives: [],
+          lastCalled: null
+        };
+      },
+
+      ensureSeed() {}
+    };
+
+    window.IMTSBStore = store;
+>>>>>>> Stashed changes
     return;
   }
 
@@ -307,8 +451,13 @@
     }
   };
 
+<<<<<<< Updated upstream
   window.IMTSBStore = IMTSBStore;
 
   console.log("✅ IMTSBStore carregado (FIX callNext aplicado)");
 
 })();
+=======
+  window.IMTSBStore = store;
+})();
+>>>>>>> Stashed changes
