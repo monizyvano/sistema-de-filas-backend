@@ -40,6 +40,10 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
+> **Nota (Windows):** o projeto usa `PyMySQL` como driver MySQL em `config.py`.
+> Se aparecer erro de compilação C/C++ relacionado a `mysqlclient`, mantenha apenas o
+> ambiente com `PyMySQL` (já incluído em `requirements.txt`).
+
 ### 4. Configurar variáveis de ambiente
 
 ```bash
