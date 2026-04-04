@@ -251,6 +251,28 @@
       };
     },
 
+    async getSnapshot() {
+      const snapshot = await apiRequest("/realtime/snapshot");
+      if (snapshot.ok) return { ok: true, data: snapshot.data };
+
+      // Fallback gradual: monta snapshot mínimo com endpoints já existentes.
+      const [queue, stats] = await Promise.all([
+        this.getQueue(),
+        this.getStats()
+      ]);
+
+      return {
+        ok: true,
+        data: {
+          queue: Array.isArray(queue) ? queue : [],
+          history: [],
+          users: [],
+          lastCalled: null,
+          stats: stats || {}
+        }
+      };
+    },
+
     async healthCheck() {
       const result = await apiRequest("/auth/health", { skipAuth: true });
       return result.ok ? result.data : { status: "offline" };

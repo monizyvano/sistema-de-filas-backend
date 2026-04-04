@@ -9,6 +9,7 @@
   "use strict";
 
   const ApiClient = window.ApiClient;
+  const apiConfig = window.IMTSBApiConfig || {};
 
 <<<<<<< Updated upstream
   if (!ApiClient) {
@@ -157,6 +158,7 @@
     window.IMTSBStore = store;
 >>>>>>> Stashed changes
     return;
+    console.warn("⚠ ApiClient não carregado! Algumas funções ficarão indisponíveis.");
   }
 
   const IMTSBStore = {
@@ -197,9 +199,35 @@
       return {
         queue: [...this._state.queue],
         history: [...this._state.history],
-        users: [],
-        stats: { ...this._state.stats }
+        users: [...(this._state.users || [])],
+        lastCalled: this._state.lastCall || null,
+        stats: { ...this._state.stats },
+        updatedAt: this._state.updatedAt || null
       };
+    },
+
+    async refreshSnapshot() {
+      if (!apiConfig.enabled || !ApiClient?.getSnapshot) {
+        return this.getSnapshot();
+      }
+
+      try {
+        const result = await ApiClient.getSnapshot();
+        if (!result.ok) return this.getSnapshot();
+
+        const data = result.data || {};
+        this._state.queue = Array.isArray(data.queue) ? data.queue : [];
+        this._state.history = Array.isArray(data.history) ? data.history : [];
+        this._state.users = Array.isArray(data.users) ? data.users : [];
+        this._state.lastCall = data.lastCalled || data.lastCall || null;
+        this._state.stats = data.stats || this._state.stats;
+        this._state.updatedAt = data.updatedAt || null;
+        this._notify();
+        return this.getSnapshot();
+      } catch (error) {
+        console.error("❌ Erro ao atualizar snapshot:", error);
+        return this.getSnapshot();
+      }
     },
 
     getUser() {
@@ -219,6 +247,9 @@
     },
 
     async login(email, password) {
+      if (!ApiClient?.login) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
       try {
         const result = await ApiClient.login(email, password);
 
@@ -251,6 +282,9 @@
     },
 
     async register(payload) {
+      if (!ApiClient?.register) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
       try {
         const result = await ApiClient.register(payload);
 
@@ -316,6 +350,9 @@
     },
 
     async issueTicket(serviceId, tipo = "normal", contato = null) {
+      if (!ApiClient?.issueTicket) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
       try {
         const result = await ApiClient.issueTicket({
           servico_id: serviceId,
@@ -328,6 +365,7 @@
         }
 
         this._state.currentTicket = result.ticket;
+        await this.refreshSnapshot();
         this._notify();
 
         return { ok: true, ticket: result.ticket };
@@ -339,7 +377,13 @@
     },
 
     async refreshQueue(servicoId = null) {
+      if (apiConfig.enabled && ApiClient?.getSnapshot) {
+        await this.refreshSnapshot();
+        return this._state.queue;
+      }
+
       try {
+        if (!ApiClient?.getQueue) return [];
         const queue = await ApiClient.getQueue(servicoId);
         this._state.queue = Array.isArray(queue) ? queue : [];
         this._notify();
@@ -351,7 +395,13 @@
     },
 
     async refreshStats() {
+      if (apiConfig.enabled && ApiClient?.getSnapshot) {
+        await this.refreshSnapshot();
+        return this._state.stats;
+      }
+
       try {
+        if (!ApiClient?.getStats) return this._state.stats;
         const stats = await ApiClient.getStats();
         this._state.stats = stats;
         this._notify();
@@ -372,6 +422,10 @@
         console.log("  Serviço ID:", serviceId);
         console.log("  Balcão:", balcao);
 
+        if (!ApiClient?.callNext) {
+          return { ok: false, message: "API indisponível no modo atual" };
+        }
+
         const result = await ApiClient.callNext({
           servico_id: serviceId,
           numero_balcao: balcao
@@ -388,9 +442,12 @@
           
           console.log("[SUCCESS] Senha chamada:", senha.numero);
           return { ok: true, senha };
+          console.log("[SUCCESS] Senha chamada:", senha.numero);
+          return { ok: true, senha };
         }
 
         // Se não houver senha
+        const message = result?.data?.mensagem || result?.mensagem || result?.message || "Nenhuma senha disponível";
         const message = result?.data?.mensagem || result?.mensagem || result?.message || "Nenhuma senha disponível";
         console.log("[INFO]", message);
         
@@ -403,10 +460,13 @@
     },
 
     async startAttendance(senhaId, balcao) {
+      if (!ApiClient?.startAttendance) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
       try {
         const result = await ApiClient.startAttendance(senhaId, balcao);
         if (result.ok) {
-          await this.refreshQueue();
+          await this.refreshSnapshot();
           this._notify();
         }
         return result;
@@ -417,11 +477,13 @@
     },
 
     async finishAttendance(senhaId, observacoes = "") {
+      if (!ApiClient?.finishAttendance) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
       try {
         const result = await ApiClient.finishAttendance(senhaId, observacoes);
         if (result.ok) {
-          await this.refreshQueue();
-          await this.refreshStats();
+          await this.refreshSnapshot();
           this._notify();
         }
         return result;
@@ -436,8 +498,12 @@
     startPolling(intervalMs = 5000) {
       this.stopPolling();
       this._pollingInterval = setInterval(async () => {
-        await this.refreshQueue();
-        await this.refreshStats();
+        if (apiConfig.enabled && ApiClient?.getSnapshot) {
+          await this.refreshSnapshot();
+        } else {
+          await this.refreshQueue();
+          await this.refreshStats();
+        }
       }, intervalMs);
       console.log("✅ Polling iniciado:", intervalMs + "ms");
     },
@@ -461,3 +527,4 @@
   window.IMTSBStore = store;
 })();
 >>>>>>> Stashed changes
+
