@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - IMTSB</title>
-  <link rel="stylesheet" href="/static/css/logintcc.css">
+  <link rel="stylesheet" href="css/logintcc.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
 </head>
 <body>
@@ -21,23 +21,30 @@
         </div>
 
         <div id="authMessage" class="auth-message"></div>
-<<<<<<< Updated upstream
-        <p class="helper-text">Admin: admin@imtsb.ao/  senha: Admin123 / | trabalhador: joao@imtsb.ao / senha: Admin123 | utilizador: reginaldaA@imtsb.ao / senha: regi123 </p>
-=======
-        <p class="helper-text">Use as credenciais cadastradas no backend (ex.: admin@imtsb.ao / admin123).</p>
->>>>>>> Stashed changes
+        <p class="helper-text">Admins padrao: admin1@sb.com / Admin1234 e admin2@sb.com / Admin2234</p>
 
         <form id="loginForm" autocomplete="on">
           <label class="field-label" for="loginTipo">Perfil</label>
           <select id="loginTipo" required>
-            <option value="usuario">Utilizador</option>
+            <option value="usuario">Visitante</option>
             <option value="trabalhador">Trabalhador</option>
             <option value="admin">Administrador</option>
           </select>
 
-          <div class="campo">
+          <label class="field-label" for="loginMetodo">Entrar com</label>
+          <select id="loginMetodo" required>
+            <option value="email">E-mail</option>
+            <option value="telefone">Telefone</option>
+          </select>
+
+          <div class="campo" id="loginEmailField">
             <i class="material-icons">mail</i>
             <input type="email" id="iemail" placeholder="Seu e-mail" required autocomplete="email" maxlength="60">
+          </div>
+
+          <div class="campo hidden" id="loginPhoneField">
+            <i class="material-icons">phone</i>
+            <input type="tel" id="itel" placeholder="Seu telefone" autocomplete="tel" maxlength="20">
           </div>
 
           <div class="campo">
@@ -52,6 +59,7 @@
 
           <input type="submit" value="Entrar" id="botao-enviar">
           <button type="button" class="btn-voltar" onclick="voltarprincipal()">Voltar</button>
+          <button type="button" class="btn-guest" id="btnGuestAccess">Continuar sem conta</button>
         </form>
 
         <form id="registerForm" autocomplete="on" class="hidden">
@@ -60,11 +68,16 @@
             <input type="text" id="rnome" placeholder="Nome completo" required minlength="3" maxlength="80" autocomplete="name">
           </div>
 
-          <p class="field-label">Perfil: Utilizador</p>
+          <p class="field-label">Perfil: Visitante</p>
 
           <div class="campo">
             <i class="material-icons">mail</i>
             <input type="email" id="remail" placeholder="E-mail" required autocomplete="email" maxlength="60">
+          </div>
+
+          <div class="campo">
+            <i class="material-icons">phone</i>
+            <input type="tel" id="rtelefone" placeholder="Telefone (opcional)" autocomplete="tel" maxlength="20">
           </div>
 
           <div class="campo">
@@ -83,14 +96,12 @@
     </section>
   </main>
 
-  <script src="/static/js/api-config.js"></script>
-  <script src="/static/js/api-adapter.js"></script>
-  <script src="/static/js/api-client.js"></script>
-  <script src="/static/js/realtime-store.js"></script>
-  <script src="/static/js/logintcc.js"></script>
+  <script src="js/api-config.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/realtime-store.js"></script>
+  <script src="js/logintcc.js"></script>
 </body>
 </html>
-
 
 
 
