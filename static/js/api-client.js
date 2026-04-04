@@ -102,7 +102,15 @@
 
   const ApiClient = {
 
-    async login(email, senha) {
+    async login(emailOrPayload, senhaParam) {
+      // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
+      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.email || "")
+        : (emailOrPayload || "");
+      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.password || emailOrPayload.senha || "")
+        : (senhaParam || "");
+
       const result = await apiRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, senha }),
@@ -178,9 +186,15 @@
     },
 
     async getQueue(servicoId = null) {
-      const path = servicoId ? `/filas/${servicoId}` : "/senhas";
-      const result = await apiRequest(path);
-      return result.ok ? (result.data || []) : [];
+      const query = servicoId
+        ? `/senhas?status=aguardando&servico_id=${servicoId}&page=1&per_page=100`
+        : "/senhas?status=aguardando&page=1&per_page=100";
+
+      const result = await apiRequest(query);
+      if (!result.ok) return [];
+
+      if (Array.isArray(result.data)) return result.data;
+      return result.data?.senhas || [];
     },
 
     async callNext(dataFrontend) {
