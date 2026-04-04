@@ -13,6 +13,7 @@ from flasgger import Swagger
 from flask import Flask, render_template, send_from_directory, request, jsonify
 from flask_cors import CORS
 from config import get_config
+from app.routes.compat import registar_blueprints_compat
 import os
 
 
@@ -81,9 +82,10 @@ def create_app(config_name=None):
 
     CORS(app, origins=app.config['CORS_ORIGINS'])
 
-    from app.models import BaseModel, Servico, Senha, Atendente, LogActividade, Configuracao
+    from app.models import BaseModel, Servico, Utente, Senha, Atendente, LogActividade, Configuracao
 
     register_blueprints(app)
+    registar_blueprints_compat(app)
 
     # ================= ROTAS DO FRONTEND =================
 
@@ -114,6 +116,10 @@ def create_app(config_name=None):
     @app.route('/painel-admin')
     def painel_admin():
         return render_template('dashadm.html')
+
+    @app.route('/tv')
+    def painel_tv():
+        return render_template('tv.html')
 
     # ================= ROTA CATCH-ALL PARA HTML =================
 
@@ -150,6 +156,7 @@ def register_blueprints(app):
     from app.controllers.dashboard_controller import dashboard_bp
     from app.controllers.config_controller import config_bp
     from app.controllers.atendente_controller import atendente_bp
+    from app.controllers.utente_controller import utente_bp
 
     # ✅ REGISTRO CORRETO COM PREFIXOS
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -159,6 +166,7 @@ def register_blueprints(app):
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
     app.register_blueprint(config_bp, url_prefix='/api/configuracoes')
     app.register_blueprint(atendente_bp, url_prefix='/api/atendentes')
+    app.register_blueprint(utente_bp, url_prefix='/api/utentes')
 
     print("\n" + "="*60)
     print("✅ BLUEPRINTS REGISTRADOS:")
@@ -169,6 +177,7 @@ def register_blueprints(app):
     print("  - /api/dashboard")
     print("  - /api/configuracoes")
     print("  - /api/atendentes")
+    print("  - /api/utentes")
     print("="*60 + "\n")
 
 
