@@ -147,6 +147,7 @@
       // ✅ CORRIGIDO: Usar ApiClient.register via store
       showMessage("🔄 Criando conta...", "info");
 
+<<<<<<< Updated upstream
       const result = await store.register({
         name: nome,
         email: email,
@@ -182,3 +183,8 @@
   console.log("✅ logintcc.js carregado");
 
 })();
+=======
+function voltarprincipal() {
+  window.location.href = "/principal.html";
+}
+>>>>>>> Stashed changes

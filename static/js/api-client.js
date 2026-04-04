@@ -14,7 +14,7 @@
   const adapter = window.ApiAdapter;
 
   if (!config || !config.enabled) {
-    console.warn("⚠ API desativada no api-config.js");
+    console.warn("API desativada no api-config.js");
     return;
   }
 
@@ -31,18 +31,11 @@
   }
 
   function setTokens(data) {
-    if (!data) return;
-
-    const access = data.access_token || data.accessToken || null;
+    if (!data || typeof data !== "object") return;
+    const access = data.access_token || data.accessToken || data.token || null;
     const refresh = data.refresh_token || data.refreshToken || null;
-
-    if (access) {
-      localStorage.setItem(config.accessTokenStorageKey, access);
-    }
-
-    if (refresh) {
-      localStorage.setItem(config.refreshTokenStorageKey, refresh);
-    }
+    if (access) localStorage.setItem(config.accessTokenStorageKey, access);
+    if (refresh) localStorage.setItem(config.refreshTokenStorageKey, refresh);
   }
 
   function clearSession() {
@@ -51,9 +44,25 @@
     localStorage.removeItem("imtsb_user");
   }
 
-  function redirectToLogin() {
-    clearSession();
-    window.location.href = "/login";
+  function resolveBaseCandidates() {
+    const configured = String(config.baseUrl || "/api").replace(/\/$/, "");
+    const host = String(window.location.hostname || "").toLowerCase();
+    const list = [configured];
+
+    if (configured.includes("localhost:5000")) {
+      list.push(configured.replace("localhost:5000", "127.0.0.1:5000"));
+    } else if (configured.includes("127.0.0.1:5000")) {
+      list.push(configured.replace("127.0.0.1:5000", "localhost:5000"));
+    } else if (host === "localhost") {
+      list.push("http://127.0.0.1:5000/api");
+    } else if (host === "127.0.0.1") {
+      list.push("http://localhost:5000/api");
+    } else {
+      list.push("http://localhost:5000/api");
+      list.push("http://127.0.0.1:5000/api");
+    }
+
+    return Array.from(new Set(list));
   }
 
   // ===============================
@@ -101,6 +110,17 @@
   // ===============================
 
   const ApiClient = {
+    getAccessToken,
+    getRefreshToken,
+    clearSession,
+
+    async login(emailOrPayload, senhaMaybe) {
+      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? String(emailOrPayload.email || "")
+        : String(emailOrPayload || "");
+      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? String(emailOrPayload.senha || "")
+        : String(senhaMaybe || "");
 
     async login(emailOrPayload, senhaParam) {
       // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
@@ -118,7 +138,7 @@
       });
 
       if (!result.ok) {
-        return { ok: false, message: "Email ou senha inválidos" };
+        return { ok: false, message: result.message || "Email ou senha invalidos" };
       }
 
       setTokens(result.data);
@@ -127,7 +147,7 @@
         ? adapter.adaptLoginResponse(result.data, email)
         : result.data;
 
-      return { ok: true, ...adapted };
+      return { ok: true, user: adapted.user, redirect: adapted.redirect || "/index.html", raw: result.data };
     },
 
     async register(payload) {
@@ -165,8 +185,12 @@
     },
 
     async issueTicket(frontendData) {
-      const backendData = adapter?.adaptIssueTicket
-        ? adapter.adaptIssueTicket(frontendData)
+      const backendData = adapter && typeof adapter.mapService === "function"
+        ? {
+            servico_id: adapter.mapService(frontendData.service).servico_id,
+            tipo: adapter.mapService(frontendData.service).tipo,
+            usuario_contato: frontendData.userEmail || ""
+          }
         : frontendData;
 
       const result = await apiRequest("/senhas", {
@@ -178,8 +202,8 @@
         return { ok: false, message: result.message || "Erro ao emitir senha" };
       }
 
-      const ticket = adapter?.adaptTicketResponse
-        ? adapter.adaptTicketResponse(result.data.senha)
+      const ticket = adapter && typeof adapter.adaptTicketResponse === "function"
+        ? adapter.adaptTicketResponse(result.data.senha || result.data)
         : result.data;
 
       return { ok: true, ticket };
@@ -198,13 +222,9 @@
     },
 
     async callNext(dataFrontend) {
-      const backendData = adapter?.adaptCallNext
-        ? adapter.adaptCallNext(dataFrontend)
-        : dataFrontend;
-
       return apiRequest("/filas/chamar", {
         method: "POST",
-        body: JSON.stringify(backendData)
+        body: JSON.stringify(dataFrontend || {})
       });
     },
 
@@ -215,11 +235,10 @@
       });
     },
 
-    async finishAttendance(id, observacoes = "") {
-      return apiRequest(`/senhas/${id}/finalizar`, {
-        method: "PUT",
-        body: JSON.stringify({ observacoes })
-      });
+    async getQueue(servicoId) {
+      const path = servicoId ? `/filas/${servicoId}` : "/filas";
+      const result = await apiRequest(path);
+      return result.ok ? result.data : [];
     },
 
     async getStats() {
@@ -233,9 +252,7 @@
     },
 
     async healthCheck() {
-      const result = await apiRequest("/auth/health", {
-        skipAuth: true
-      });
+      const result = await apiRequest("/auth/health", { skipAuth: true });
       return result.ok ? result.data : { status: "offline" };
     }
   };

@@ -1,23 +1,23 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Instituto Medio Tecnico Sao Benedito</title>
-  <link rel="stylesheet" href="/static/css/principal.css">
+  <link rel="stylesheet" href="css/principal.css">
 </head>
 <body>
   <header class="header">
     <div class="header-top">
       <div class="logo">IMTSB</div>
       <span class="site-title">INSTITUTO MEDIO TECNICO SAO BENEDITO</span>
-      <a href="/logintcc.html" class="btn-login" id="btnLoginPrincipal">Login</a>
+      <a href="index.html" class="btn-login" id="principalAuthAction">Login</a>
     </div>
   </header>
 
   <main class="main-content">
     <section class="hero-strip">
-      <img src="/static/image/classroom.jpg" alt="Campus do Instituto Medio Tecnico Sao Benedito">
+      <img src="image/classroom.jpg" alt="Campus do Instituto Medio Tecnico Sao Benedito">
       <div class="hero-overlay">
         <h1>O Futuro Comeca Aqui: Formacao Tecnica de Excelencia</h1>
         <p>
@@ -29,11 +29,7 @@
 
     <section class="content-section">
       <h2>Cursos da Escola</h2>
-      <div class="carousel-shell">
-        <button class="carousel-nav carousel-prev" type="button" data-carousel-target="courses-list" aria-label="Voltar cursos">
-          <span aria-hidden="true">&#8249;</span>
-        </button>
-        <div class="courses-list carousel-track" id="courses-list">
+      <div class="courses-list">
         <article class="course-item">
           <div class="course-media course-media-informatica" aria-hidden="true"></div>
           <div class="course-body">
@@ -105,28 +101,17 @@
             <p>Curso voltado a analise de dados, interpretacao estatistica e planeamento estrategico institucional.</p>
           </div>
         </article>
-        </div>
-        <button class="carousel-nav carousel-next" type="button" data-carousel-target="courses-list" aria-label="Ver mais cursos">
-          <span aria-hidden="true">&#8250;</span>
-        </button>
+
       </div>
     </section>
 
     <section class="content-section">
       <h2>Professores</h2>
-      <div class="carousel-shell">
-        <button class="carousel-nav carousel-prev" type="button" data-carousel-target="teachers-list" aria-label="Voltar professores">
-          <span aria-hidden="true">&#8249;</span>
-        </button>
-        <div class="cards-grid carousel-track teachers-track" id="teachers-list">
+      <div class="cards-grid">
         <article class="card"><h3>Prof. Gregorio</h3><p>Professor de Programacao.</p></article>
-        <article class="card"><h3>Prof. Sergio</h3><p>Professor de Redes.</p></article>
+        <article class="card"><h3>Prof. Sérgio</h3><p>Professor de Redes.</p></article>
         <article class="card"><h3>Prof. Valdemar</h3><p>Professor de Projeto Tecnologico.</p></article>
         <article class="card"><h3>Prof. Wagner</h3><p>Professor de Oratoria.</p></article>
-        </div>
-        <button class="carousel-nav carousel-next" type="button" data-carousel-target="teachers-list" aria-label="Ver mais professores">
-          <span aria-hidden="true">&#8250;</span>
-        </button>
       </div>
     </section>
 
@@ -169,58 +154,30 @@
     </div>
   </footer>
 
-  <script src="/static/js/principal.js"></script>
+  <script src="js/api-config.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/realtime-store.js"></script>
+  <script>
+    (function () {
+      const authAction = document.getElementById("principalAuthAction");
+      if (!authAction || !window.IMTSBStore) return;
+
+      const session = window.IMTSBStore.getSession();
+      if (!session) return;
+
+      let panelHref = "visitante.html";
+      if (session.role === "admin") panelHref = "dashadm.html";
+      else if (session.role === "trabalhador") panelHref = "dashtrabalho.html";
+
+      authAction.textContent = "Meu Painel";
+      authAction.href = panelHref;
+    })();
+  </script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       const revealEls = Array.from(
         document.querySelectorAll(".hero-strip, .content-section, .course-item, .card, .footer article")
       );
-      const carouselTracks = Array.from(document.querySelectorAll(".carousel-track"));
-      const carouselButtons = Array.from(document.querySelectorAll(".carousel-nav"));
-
-      function updateCarouselButtons(track) {
-        const prevButton = document.querySelector('.carousel-prev[data-carousel-target="' + track.id + '"]');
-        const nextButton = document.querySelector('.carousel-next[data-carousel-target="' + track.id + '"]');
-        const maxScroll = track.scrollWidth - track.clientWidth - 4;
-
-        if (prevButton) {
-          prevButton.classList.toggle("is-hidden", track.scrollLeft <= 8);
-        }
-
-        if (nextButton) {
-          nextButton.classList.toggle("is-hidden", track.scrollLeft >= maxScroll);
-        }
-      }
-
-      carouselTracks.forEach(function (track) {
-        track.addEventListener("scroll", function () {
-          updateCarouselButtons(track);
-        }, { passive: true });
-
-        window.addEventListener("resize", function () {
-          updateCarouselButtons(track);
-        });
-
-        updateCarouselButtons(track);
-      });
-
-      carouselButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-          const track = document.getElementById(button.getAttribute("data-carousel-target"));
-
-          if (!track) return;
-
-          const firstCard = track.querySelector(".course-item, .card");
-          const gap = parseFloat(window.getComputedStyle(track).gap || 0);
-          const cardWidth = firstCard ? firstCard.getBoundingClientRect().width + gap : track.clientWidth * 0.9;
-          const direction = button.classList.contains("carousel-next") ? 1 : -1;
-
-          track.scrollBy({
-            left: direction * cardWidth,
-            behavior: "smooth"
-          });
-        });
-      });
 
       if (!revealEls.length) return;
 
@@ -250,7 +207,6 @@
   </script>
 </body>
 </html>
-
 
 
 
