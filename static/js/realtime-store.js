@@ -235,18 +235,19 @@
 
         console.log("[CALL NEXT] Resultado:", result);
 
-        // ✅ FIX: Backend retorna { senha } diretamente
-        if (result.ok && result.senha) {
-          this._state.lastCall = result.senha;
+        const senha = result?.senha || result?.data?.senha;
+
+        if (result.ok && senha) {
+          this._state.lastCall = senha;
           await this.refreshQueue(serviceId);
           this._notify();
           
-          console.log("[SUCCESS] Senha chamada:", result.senha.numero);
-          return { ok: true, senha: result.senha };
+          console.log("[SUCCESS] Senha chamada:", senha.numero);
+          return { ok: true, senha };
         }
 
         // Se não houver senha
-        const message = result.mensagem || result.message || "Nenhuma senha disponível";
+        const message = result?.data?.mensagem || result?.mensagem || result?.message || "Nenhuma senha disponível";
         console.log("[INFO]", message);
         
         return { ok: false, message };

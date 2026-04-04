@@ -6,7 +6,9 @@ Werkzeug==3.0.1
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.0.5
 PyMySQL==1.1.0
-mysqlclient==2.2.0
+# mysqlclient exige toolchain C/C++ no Windows (erro comum em Python 3.13).
+# O projeto já usa URI `mysql+pymysql://` em `config.py`, então o driver
+# oficial deste setup é o PyMySQL.
 
 # Autenticação
 Flask-JWT-Extended==4.6.0
