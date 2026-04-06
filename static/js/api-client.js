@@ -1,7 +1,7 @@
 ﻿/**
  * API CLIENT - VERSÃO CORRIGIDA
  * static/js/api-client.js
- * 
+ *
  * ✅ Fetch com sintaxe correta
  * ✅ Cadastro funcionando
  * ✅ Login integrado
@@ -14,7 +14,7 @@
   const adapter = window.ApiAdapter;
 
   if (!config || !config.enabled) {
-    console.warn("API desativada no api-config.js");
+    console.warn("⚠ API desativada no api-config.js");
     return;
   }
 
@@ -32,8 +32,10 @@
 
   function setTokens(data) {
     if (!data || typeof data !== "object") return;
+
     const access = data.access_token || data.accessToken || data.token || null;
     const refresh = data.refresh_token || data.refreshToken || null;
+
     if (access) localStorage.setItem(config.accessTokenStorageKey, access);
     if (refresh) localStorage.setItem(config.refreshTokenStorageKey, refresh);
   }
@@ -44,29 +46,8 @@
     localStorage.removeItem("imtsb_user");
   }
 
-  function resolveBaseCandidates() {
-    const configured = String(config.baseUrl || "/api").replace(/\/$/, "");
-    const host = String(window.location.hostname || "").toLowerCase();
-    const list = [configured];
-
-    if (configured.includes("localhost:5000")) {
-      list.push(configured.replace("localhost:5000", "127.0.0.1:5000"));
-    } else if (configured.includes("127.0.0.1:5000")) {
-      list.push(configured.replace("127.0.0.1:5000", "localhost:5000"));
-    } else if (host === "localhost") {
-      list.push("http://127.0.0.1:5000/api");
-    } else if (host === "127.0.0.1") {
-      list.push("http://localhost:5000/api");
-    } else {
-      list.push("http://localhost:5000/api");
-      list.push("http://127.0.0.1:5000/api");
-    }
-
-    return Array.from(new Set(list));
-  }
-
   // ===============================
-  // 🌐 BASE REQUEST (CORRIGIDO)
+  // 🌐 BASE REQUEST
   // ===============================
 
   async function apiRequest(path, options = {}) {
@@ -81,7 +62,6 @@
     }
 
     try {
-      // ✅ CORRIGIDO: Sintaxe correta do fetch
       const response = await fetch(`${config.baseUrl}${path}`, {
         ...options,
         headers
@@ -98,7 +78,6 @@
       }
 
       return { ok: true, data };
-
     } catch (error) {
       console.error("❌ Erro de conexão:", error);
       return { ok: false, message: "Erro de conexão com servidor" };
@@ -114,19 +93,12 @@
     getRefreshToken,
     clearSession,
 
-    async login(emailOrPayload, senhaMaybe) {
-      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
-        ? String(emailOrPayload.email || "")
-        : String(emailOrPayload || "");
-      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
-        ? String(emailOrPayload.senha || "")
-        : String(senhaMaybe || "");
-
     async login(emailOrPayload, senhaParam) {
-      // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
+      // Compat: aceita login(email, senha) e login({ email, password|senha })
       const email = typeof emailOrPayload === "object" && emailOrPayload !== null
         ? (emailOrPayload.email || "")
         : (emailOrPayload || "");
+
       const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
         ? (emailOrPayload.password || emailOrPayload.senha || "")
         : (senhaParam || "");
@@ -138,7 +110,7 @@
       });
 
       if (!result.ok) {
-        return { ok: false, message: result.message || "Email ou senha invalidos" };
+        return { ok: false, message: result.message || "Email ou senha inválidos" };
       }
 
       setTokens(result.data);
@@ -147,7 +119,7 @@
         ? adapter.adaptLoginResponse(result.data, email)
         : result.data;
 
-      return { ok: true, user: adapted.user, redirect: adapted.redirect || "/index.html", raw: result.data };
+      return { ok: true, ...adapted };
     },
 
     async register(payload) {
@@ -165,9 +137,9 @@
       });
 
       if (!result.ok) {
-        return { 
-          ok: false, 
-          message: result.message || "Erro no cadastro" 
+        return {
+          ok: false,
+          message: result.message || "Erro no cadastro"
         };
       }
 
@@ -185,12 +157,8 @@
     },
 
     async issueTicket(frontendData) {
-      const backendData = adapter && typeof adapter.mapService === "function"
-        ? {
-            servico_id: adapter.mapService(frontendData.service).servico_id,
-            tipo: adapter.mapService(frontendData.service).tipo,
-            usuario_contato: frontendData.userEmail || ""
-          }
+      const backendData = adapter?.adaptIssueTicket
+        ? adapter.adaptIssueTicket(frontendData)
         : frontendData;
 
       const result = await apiRequest("/senhas", {
@@ -202,8 +170,8 @@
         return { ok: false, message: result.message || "Erro ao emitir senha" };
       }
 
-      const ticket = adapter && typeof adapter.adaptTicketResponse === "function"
-        ? adapter.adaptTicketResponse(result.data.senha || result.data)
+      const ticket = adapter?.adaptTicketResponse
+        ? adapter.adaptTicketResponse(result.data?.senha || result.data)
         : result.data;
 
       return { ok: true, ticket };
@@ -222,9 +190,13 @@
     },
 
     async callNext(dataFrontend) {
+      const backendData = adapter?.adaptCallNext
+        ? adapter.adaptCallNext(dataFrontend)
+        : dataFrontend;
+
       return apiRequest("/filas/chamar", {
         method: "POST",
-        body: JSON.stringify(dataFrontend || {})
+        body: JSON.stringify(backendData)
       });
     },
 
@@ -235,10 +207,11 @@
       });
     },
 
-    async getQueue(servicoId) {
-      const path = servicoId ? `/filas/${servicoId}` : "/filas";
-      const result = await apiRequest(path);
-      return result.ok ? result.data : [];
+    async finishAttendance(id, observacoes = "") {
+      return apiRequest(`/senhas/${id}/finalizar`, {
+        method: "PUT",
+        body: JSON.stringify({ observacoes })
+      });
     },
 
     async getStats() {
@@ -255,7 +228,7 @@
       const snapshot = await apiRequest("/realtime/snapshot");
       if (snapshot.ok) return { ok: true, data: snapshot.data };
 
-      // Fallback gradual: monta snapshot mínimo com endpoints já existentes.
+      // Fallback gradual: snapshot mínimo com endpoints existentes
       const [queue, stats] = await Promise.all([
         this.getQueue(),
         this.getStats()
@@ -274,7 +247,9 @@
     },
 
     async healthCheck() {
-      const result = await apiRequest("/auth/health", { skipAuth: true });
+      const result = await apiRequest("/auth/health", {
+        skipAuth: true
+      });
       return result.ok ? result.data : { status: "offline" };
     }
   };
@@ -287,5 +262,4 @@
   ApiClient.healthCheck().then(status => {
     console.log("🏥 Backend status:", status.status || "offline");
   });
-
 })();
