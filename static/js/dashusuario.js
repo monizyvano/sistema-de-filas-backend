@@ -255,6 +255,169 @@
         if (numEl)    numEl.textContent    = minhaSenha.numero;
         if (statusEl) statusEl.textContent = traduzirStatus(minhaSenha.status);
         if (tracker)  tracker.style.display = 'block';
+
+        // Se a senha foi concluida e ainda nao foi avaliada, mostrar formulario
+        if (minhaSenha.status === 'concluida') {
+            mostrarFormularioAvaliacao();
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       AVALIAÇÃO ★★★★★
+    ══════════════════════════════════════════════════════════════ */
+
+    function mostrarFormularioAvaliacao() {
+        const panel = document.getElementById('avaliacaoPanel');
+        if (!panel) return;
+
+        // Se já foi avaliada, nao mostrar de novo
+        if (minhaSenha.nota_avaliacao) {
+            panel.innerHTML =
+                '<div style="text-align:center; padding:16px;">' +
+                '<p style="font-size:1.1rem; color: var(--text-muted); margin:0;">' +
+                'Obrigado pela sua avaliação! ★ ' + minhaSenha.nota_avaliacao + '/5' +
+                '</p></div>';
+            return;
+        }
+
+        panel.style.display = 'block';
+        panel.innerHTML =
+            '<div style="text-align:center; padding:20px;">' +
+                '<h3 style="margin:0 0 8px; color:var(--text-primary);">Avalie o atendimento</h3>' +
+                '<p style="margin:0 0 12px; color:var(--text-muted); font-size:.9rem;">Como foi o seu atendimento?</p>' +
+                '<div id="starRating" class="star-rating">' +
+                    '<span class="star" data-value="1">&#9733;</span>' +
+                    '<span class="star" data-value="2">&#9733;</span>' +
+                    '<span class="star" data-value="3">&#9733;</span>' +
+                    '<span class="star" data-value="4">&#9733;</span>' +
+                    '<span class="star" data-value="5">&#9733;</span>' +
+                '</div>' +
+                '<p id="ratingText" style="margin:4px 0;font-size:.85rem;color:var(--text-muted);">-</p>' +
+                '<button id="btnSubmitAvaliacao" class="btn btn-normal" style="margin-top:12px;" disabled>' +
+                    'Enviar Avaliação' +
+                '</button>' +
+            '</div>';
+
+        configurarEstrelas();
+    }
+
+    function configurarEstrelas() {
+        let notaSelecionada = 0;
+        const rotulos = ['Péssimo', 'Ruim', 'Regular', 'Bom', 'Excelente'];
+
+        document.querySelectorAll('.star').forEach(function(star) {
+            star.addEventListener('click', function() {
+                notaSelecionada = parseInt(this.dataset.value);
+                const btn = document.getElementById('btnSubmitAvaliacao');
+                if (btn) btn.disabled = false;
+
+                // Destacar estrelas até a selecionada
+                document.querySelectorAll('.star').forEach(function(s, i) {
+                    s.style.color = i < notaSelecionada ? '#f59e0b' : '#ccc';
+                    s.style.transform = i < notaSelecionada ? 'scale(1.2)' : 'scale(1)';
+                });
+
+                const texto = document.getElementById('ratingText');
+                if (texto) texto.textContent = rotulos[notaSelecionada - 1];
+            });
+
+            star.addEventListener('mouseenter', function() {
+                const valor = parseInt(this.dataset.value);
+                document.querySelectorAll('.star').forEach(function(s, i) {
+                    s.style.fontSize = i < valor ? '2rem' : '1.5rem';
+                });
+            });
+
+            star.addEventListener('mouseleave', function() {
+                document.querySelectorAll('.star').forEach(function(s) {
+                    s.style.fontSize = '1.5rem';
+                });
+            });
+        });
+
+        const btn = document.getElementById('btnSubmitAvaliacao');
+        if (btn) {
+            btn.addEventListener('click', async function() {
+                if (!notaSelecionada) return;
+                enviarAvaliacao(notaSelecionada);
+                btn.disabled = true;
+                btn.textContent = 'Enviada!';
+            });
+        }
+    }
+
+    async function enviarAvaliacao(nota) {
+        if (!minhaSenha) return;
+
+        const senhaId = minhaSenha.id;
+        if (!senhaId) {
+            // Tenta buscar por numero
+            await buscarSenhaEEnviarNota(nota);
+            return;
+        }
+
+        try {
+            const resp = await fetch(`/api/senhas/${senhaId}/avaliar`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nota: nota })
+            });
+
+            const dados = await resp.json();
+
+            if (resp.ok) {
+                minhaSenha.nota_avaliacao = nota;
+                mostrarMensagem('✅ Avaliação registada! Obrigado pela sua opinião.', 'ok');
+                atualizarDisplaySenha();
+            } else {
+                mostrarMensagem('❌ ' + (dados.erro || 'Erro ao avaliar'), 'warn');
+            }
+        } catch (erro) {
+            console.error('[avaliacao] Erro:', erro);
+            mostrarMensagem('❌ Erro de ligação ao avaliar.', 'warn');
+        }
+    }
+
+    async function buscarSenhaEEnviarNota(nota) {
+        if (!minhaSenha) return;
+
+        try {
+            const resp = await fetch(
+                `/api/senhas/numero/${encodeURIComponent(minhaSenha.numero)}`
+            );
+
+            if (!resp.ok) {
+                mostrarMensagem('❌ Não foi possível encontrar a senha para avaliar.', 'warn');
+                return;
+            }
+
+            const dados = await resp.json();
+            const senha = dados;
+
+            if (!senha || !senha.id) {
+                mostrarMensagem('❌ Senha não encontrada.', 'warn');
+                return;
+            }
+
+            const respAv = await fetch(`/api/senhas/${senha.id}/avaliar`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nota: nota })
+            });
+
+            const dadosAv = await respAv.json();
+
+            if (respAv.ok) {
+                minhaSenha.nota_avaliacao = nota;
+                mostrarMensagem('✅ Avaliação registada! Obrigado pela sua opinião.', 'ok');
+                atualizarDisplaySenha();
+            } else {
+                mostrarMensagem('❌ ' + (dadosAv.erro || 'Erro ao avaliar'), 'warn');
+            }
+        } catch (erro) {
+            console.error('[avaliacao/buscar] Erro:', erro);
+            mostrarMensagem('❌ Erro de ligação ao avaliar.', 'warn');
+        }
     }
 
     /* ══════════════════════════════════════════════════════════════

@@ -269,3 +269,41 @@ def cancelar_senha(senha_id):
         return jsonify({"erro": str(e)}), 400
     except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# PUT /api/senhas/:id/avaliar
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/<int:senha_id>/avaliar', methods=['PUT'])
+def avaliar_senha(senha_id):
+    """PUT /api/senhas/:id/avaliar — Utente avalia atendimento (1-5 estrelas)."""
+    try:
+        data = request.get_json() or {}
+        nota = data.get('nota')
+        comentario = data.get('comentario', '')
+
+        if nota is None or not isinstance(nota, int) or nota < 1 or nota > 5:
+            return jsonify({"erro": "Nota deve ser um inteiro entre 1 e 5"}), 400
+
+        if comentario and len(comentario) > 500:
+            return jsonify({"erro": "Comentario muito longo (max 500 caracteres)"}), 400
+
+        senha = SenhaService.obter_por_id(senha_id)
+        if not senha:
+            return jsonify({"erro": "Senha nao encontrada"}), 404
+
+        if senha.status != 'concluida':
+            return jsonify({"erro": "Apenas senhas concluidas podem ser avaliadas"}), 400
+
+        senha.avaliar(nota=nota, comentario=comentario if comentario else None)
+
+        return jsonify({
+            "mensagem": "Avaliacao registada com sucesso",
+            "senha": SenhaSchema().dump(senha)
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"erro": str(e)}), 400
+    except Exception:
+        return jsonify({"erro": "Erro interno do servidor"}), 500

@@ -12,6 +12,7 @@ ALTERAÇÕES:
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
+    create_refresh_token,
     jwt_required,
     get_jwt_identity
 )
@@ -82,8 +83,20 @@ def login():
         }
     )
 
+    # Criar refresh token (P5)
+    refresh_token = create_refresh_token(
+        identity=str(atendente.id),
+        additional_claims={
+            "tipo": atendente.tipo,
+            "nome": atendente.nome,
+            "balcao": atendente.balcao,
+            "servico_id": atendente.servico_id,
+        }
+    )
+
     return jsonify({
         'access_token': access_token,
+        'refresh_token': refresh_token,
         'atendente': {
             'id': atendente.id,
             'nome': atendente.nome,
@@ -91,7 +104,7 @@ def login():
             'tipo': atendente.tipo,
             'ativo': atendente.ativo,
             'balcao': atendente.balcao,
-            'servico_id': atendente.servico_id  # ← novo
+            'servico_id': atendente.servico_id
         }
     }), 200
 

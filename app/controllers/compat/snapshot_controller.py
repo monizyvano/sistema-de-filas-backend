@@ -1,246 +1,327 @@
-"""Controller: Snapshot em Tempo Real."""
+"""
+Controlador de snapshot em tempo real — Sistema de Filas IMTSB
+Serve o endpoint GET /api/realtime/snapshot
 
-import logging
+Correcções aplicadas:
+  P1 — Mapeamento de status ("atendendo"/"chamada" → "em_atendimento", "concluida" → "concluido")
+  P2 — ticket id serializado como string
+  P3 — counterName completo ("Balcão 1 - Secretaria Académica")
+  P4 — satisfacao_pct calculada + tempo_medio_espera (sem sufixo _min)
+"""
+
 from datetime import date, datetime
-
+from sqlalchemy import func
+from app.extensions import db
 from app.models.atendente import Atendente
-from app.models.log_actividade import LogActividade
 from app.models.senha import Senha
 from app.models.servico import Servico
 
-logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# MAPEAMENTO DE STATUS  (P1)
+# ──────────────────────────────────────────────
+
+_STATUS_MAP = {
+    "aguardando": "aguardando",
+    "chamada":    "em_atendimento",
+    "chamando":   "em_atendimento",
+    "atendendo":  "em_atendimento",
+    "iniciada":   "em_atendimento",
+    "concluida":  "concluido",
+    "concluída":  "concluido",
+    "cancelada":  "cancelada",
+}
 
 
-def obter_snapshot(servico_id=None, data_str=None):
-    try:
-        data_ref = _parse_data(data_str)
-
-        fila_q = Senha.query.filter(
-            Senha.status.in_(["aguardando", "chamada", "chamando"]),
-            Senha.data_emissao == data_ref,
-        )
-        if servico_id:
-            fila_q = fila_q.filter_by(servico_id=servico_id)
-        fila = fila_q.order_by(Senha.emitida_em.asc()).all()
-
-        historico = Senha.query.filter(
-            Senha.status.in_(["concluida", "cancelada"]),
-            Senha.data_emissao == data_ref,
-        ).order_by(Senha.atendimento_concluido_em.desc()).limit(50).all()
-
-        ultimo_log = LogActividade.query.filter_by(acao="chamada").order_by(LogActividade.created_at.desc()).first()
-        last_called = None
-        if ultimo_log:
-            senha_l = Senha.query.get(ultimo_log.senha_id) if ultimo_log.senha_id else None
-            if senha_l:
-                last_called = {
-                    "code": senha_l.numero,
-                    "service": senha_l.servico.nome if senha_l.servico else "",
-                    "counterName": f"Balcão {senha_l.numero_balcao}" if senha_l.numero_balcao else "Balcão",
-                    "at": ultimo_log.created_at.isoformat() if ultimo_log.created_at else None,
-                }
-
-        atendentes = Atendente.query.filter(
-            Atendente.ativo.is_(True),
-            Atendente.tipo.in_(["atendente", "admin"]),
-        ).all()
-
-        return {
-            "ok": True,
-            "updatedAt": datetime.utcnow().isoformat() + "Z",
-            "queue": [_senha_para_ticket(s) for s in fila],
-            "history": [_senha_para_ticket(s) for s in historico],
-            "lastCalled": last_called,
-            "stats": _calcular_stats(data_ref),
-            "users": [_atendente_dict(a) for a in atendentes],
-        }, 200
-    except Exception as exc:
-        logger.error("Erro snapshot: %s", exc)
-        return {
-            "ok": False,
-            "message": "Erro ao gerar snapshot.",
-            "updatedAt": datetime.utcnow().isoformat() + "Z",
-            "queue": [],
-            "history": [],
-            "lastCalled": None,
-            "stats": {},
-            "users": [],
-        }, 500
+def _mapear_status(status_bd):
+    """Converte o status da BD para o valor que o frontend espera."""
+    return _STATUS_MAP.get(str(status_bd or "").lower(), str(status_bd or ""))
 
 
-def obter_fila_activa(servico_id=None, balcao=None):
-    try:
-        query = Senha.query.filter(
-            Senha.status.in_(["aguardando", "chamada", "chamando"]),
-            Senha.data_emissao == date.today(),
-        )
-        if servico_id:
-            query = query.filter_by(servico_id=servico_id)
-        if balcao:
-            query = query.filter_by(numero_balcao=balcao)
+# ──────────────────────────────────────────────
+# MAPEAMENTO DE COUNTER NAME  (P3)
+# ──────────────────────────────────────────────
 
-        senhas = query.order_by(Senha.emitida_em.asc()).all()
-        return {"ok": True, "queue": [_senha_para_ticket(s) for s in senhas], "total": len(senhas)}, 200
-    except Exception as exc:
-        logger.error("Erro fila: %s", exc)
-        return {"ok": False, "message": "Erro.", "queue": [], "total": 0}, 500
+_SERVICO_BALCAO = {
+    1: "Secretaria Académica",
+    2: "Tesouraria",
+    3: "Direcção Pedagógica",
+    4: "Biblioteca",
+    5: "Apoio ao Cliente",
+}
 
 
-def obter_estatisticas(data_str=None):
-    try:
-        data_ref = _parse_data(data_str)
-        stats = _calcular_stats(data_ref)
-        stats.update({"ok": True, "data": data_ref.isoformat()})
-        return stats, 200
-    except Exception as exc:
-        logger.error("Erro stats: %s", exc)
-        return {"ok": False, "message": "Erro."}, 500
+def _counter_name(numero_balcao, servico_id=None, servico_nome=None):
+    """
+    Constrói o nome completo do balcão.
+    Exemplos:
+      _counter_name(1, 1)  → "Balcão 1 - Secretaria Académica"
+      _counter_name(None)  → "Balcão"
+    """
+    if not numero_balcao:
+        return "Balcão"
+    nome_servico = servico_nome or _SERVICO_BALCAO.get(servico_id, "")
+    if nome_servico:
+        return f"Balcão {numero_balcao} - {nome_servico}"
+    return f"Balcão {numero_balcao}"
 
 
-def _parse_data(data_str):
-    if not data_str:
-        return date.today()
-    try:
-        return date.fromisoformat(data_str)
-    except ValueError:
-        return date.today()
-
+# ──────────────────────────────────────────────
+# SERIALIZADOR DE SENHA  (P1 P2 P3)
+# ──────────────────────────────────────────────
 
 def _senha_para_ticket(s):
-    servico_nome = s.servico.nome if s.servico else ""
-    atendente_nome = s.atendente.nome if s.atendente else None
+    """
+    Converte um objecto Senha para o formato que o frontend espera.
+    """
+    # Nome do serviço
+    servico_nome = ""
+    servico_id   = getattr(s, "servico_id", None)
+    if hasattr(s, "servico") and s.servico:
+        servico_nome = s.servico.nome
+    elif servico_id:
+        servico_nome = _SERVICO_BALCAO.get(servico_id, "")
+
+    # Atendente
+    atendido_por = None
+    if getattr(s, "atendente_id", None):
+        at = db.session.get(Atendente, s.atendente_id)
+        atendido_por = at.nome if at else None
+
+    # Avaliação
+    rating = None
+    if getattr(s, "avaliacao_nota", None) is not None:
+        rating = {
+            "score":   s.avaliacao_nota,
+            "comment": getattr(s, "avaliacao_comentario", "") or "",
+            "at":      s.avaliacao_em.isoformat() if getattr(s, "avaliacao_em", None) else None,
+        }
+
     return {
-        "id": s.id,
-        "code": s.numero,
-        "service": servico_nome,
-        "type": s.tipo,
-        "status": {
-            "aguardando": "aguardando",
-            "chamada": "em_atendimento",
-            "chamando": "em_atendimento",
-            "atendendo": "em_atendimento",
-            "concluida": "concluido",
-            "cancelada": "cancelado",
-        }.get(s.status, s.status),
-        "department": _servico_departamento(servico_nome),
-        "counterNumber": s.numero_balcao,
-        "counterName": f"Balcão {s.numero_balcao}" if s.numero_balcao else "Balcão",
-        "userName": s.usuario_contato or "Visitante",
-        "userEmail": s.usuario_contato or "",
-        "attendedBy": atendente_nome,
-        "notes": s.observacoes or "",
-        "rating": _rating(s),
-        "attachments": [],
-        "createdAt": s.emitida_em.isoformat() if s.emitida_em else None,
-        "calledAt": s.chamada_em.isoformat() if s.chamada_em else None,
-        "completedAt": s.atendimento_concluido_em.isoformat() if s.atendimento_concluido_em else None,
-        "tempo_espera_minutos": s.tempo_espera_minutos,
-        "serviceDurationSec": (s.tempo_atendimento_minutos or 0) * 60,
-        "receipt": _recibo(s) if s.status == "concluida" else None,
+        "id":               str(s.id),                          # P2 — string
+        "code":             s.numero,
+        "service":          servico_nome,
+        "userName":         getattr(s, "usuario_contato", "") or "",
+        "userEmail":        getattr(s, "usuario_contato", "") or "",
+        "notificationEmail": getattr(s, "usuario_contato", "") or "",
+        "serviceForm":      {},
+        "status":           _mapear_status(s.status),           # P1 — mapeado
+        "type":             s.tipo if s.tipo else "normal",
+        "counterName":      _counter_name(                      # P3 — completo
+                                getattr(s, "numero_balcao", None),
+                                servico_id,
+                                servico_nome,
+                            ),
+        "createdAt":        s.emitida_em.isoformat() if s.emitida_em else s.created_at.isoformat(),
+        "calledAt":         s.chamada_em.isoformat() if getattr(s, "chamada_em", None) else None,
+        "completedAt":      s.atendimento_concluido_em.isoformat() if getattr(s, "atendimento_concluido_em", None) else None,
+        "attendedBy":       atendido_por,
+        "notes":            getattr(s, "observacoes", "") or "",
+        "rating":           rating,
+        "attachments":      [],
+        "serviceDurationSec": getattr(s, "tempo_atendimento_minutos", 0) or 0,
     }
 
 
-def _rating(s):
-    nota = getattr(s, "avaliacao_nota", None)
-    if nota is None:
-        return None
-    aval_em = getattr(s, "avaliacao_em", None)
-    return {
-        "score": nota,
-        "comment": getattr(s, "avaliacao_comentario", "") or "",
-        "at": aval_em.isoformat() if aval_em else None,
-    }
-
-
-def _recibo(s):
-    atendente = s.atendente.nome if s.atendente else "Atendente"
-    servico = s.servico.nome if s.servico else ""
-    return {
-        "fileName": f"recibo_{s.numero}.txt",
-        "format": "txt",
-        "mimeType": "text/plain;charset=utf-8",
-        "content": (
-            "Instituto Médio Técnico São Benedito\nRecibo de Atendimento\n"
-            f"Senha: {s.numero}\nServiço: {servico}\nAtendido por: {atendente}\n"
-            f"Emissão: {s.emitida_em}\nConclusão: {s.atendimento_concluido_em}\n"
-            f"Observações: {s.observacoes or 'Sem observações'}\n"
-        ),
-    }
-
-
-def _servico_departamento(nome):
-    n = (nome or "").lower()
-    if any(k in n for k in ("matr", "reconf", "declar", "secretar")):
-        return "Secretaria Académica"
-    if any(k in n for k in ("tesour", "propina", "pagam", "contabil")):
-        return "Tesouraria"
-    return "Apoio ao Cliente"
-
+# ──────────────────────────────────────────────
+# ATENDENTE DICT
+# ──────────────────────────────────────────────
 
 def _atendente_dict(a):
-    mapa = {1: "Secretaria Académica", 2: "Tesouraria", 3: "Apoio ao Cliente"}
+    """Serializa um Atendente para o formato que o frontend espera."""
+    dept = _SERVICO_BALCAO.get(getattr(a, "balcao", None), "Não atribuído")
+    # Mapear tipo BD → role frontend
+    role = "admin" if a.tipo == "admin" else "trabalhador"
     return {
-        "id": str(a.id),
-        "name": a.nome,
-        "email": a.email,
-        "role": a.tipo,
-        "balcao": a.balcao,
-        "department": mapa.get(a.balcao, "Não atribuído"),
+        "id":         str(a.id),
+        "name":       a.nome,
+        "email":      a.email,
+        "role":       role,
+        "department": dept,
+        "balcao":     getattr(a, "balcao", None),
     }
 
 
-def _calcular_stats(data_ref):
+# ──────────────────────────────────────────────
+# CÁLCULO DE ESTATÍSTICAS  (P4)
+# ──────────────────────────────────────────────
+
+def _calcular_stats(hoje):
+    """
+    Devolve dicionário de estatísticas do dia para o frontend.
+    Campos:
+      total_emitidas, em_espera, em_atendimento, concluidas, canceladas,
+      tempo_medio_espera, satisfacao_pct,
+      por_servico, por_atendente
+    """
+    # Totais do dia
+    total = Senha.query.filter(Senha.data_emissao == hoje).count()
+
+    em_espera = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status == "aguardando"
+    ).count()
+
+    # Status activos de "atendendo"
+    em_atend = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status.in_(["atendendo", "chamada", "chamando", "iniciada"])
+    ).count()
+
+    concluidas = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status == "concluida"
+    ).count()
+
+    canceladas = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status == "cancelada"
+    ).count()
+
+    # Tempo médio de espera (em minutos)
+    tempo_medio_espera = 0
     try:
-        base = Senha.query.filter_by(data_emissao=data_ref)
-        total = base.count()
-        aguardando = base.filter(Senha.status == "aguardando").count()
-        em_atend = base.filter(Senha.status.in_(["chamada", "chamando", "atendendo"])).count()
-        concluidas = base.filter(Senha.status == "concluida").count()
-        canceladas = base.filter(Senha.status == "cancelada").count()
+        resultado = db.session.query(
+            func.avg(Senha.tempo_espera_minutos)
+        ).filter(
+            Senha.data_emissao == hoje,
+            Senha.tempo_espera_minutos.isnot(None)
+        ).scalar()
+        tempo_medio_espera = round(float(resultado or 0), 1)
+    except Exception:
+        pass
 
-        def media(vals):
-            return round(sum(vals) / len(vals), 1) if vals else 0
+    # Satisfação — P4
+    satisfacao_pct = 0
+    try:
+        avg_nota = db.session.query(
+            func.avg(Senha.avaliacao_nota)
+        ).filter(
+            Senha.data_emissao == hoje,
+            Senha.avaliacao_nota.isnot(None)
+        ).scalar()
+        if avg_nota:
+            satisfacao_pct = round((float(avg_nota) / 5.0) * 100)
+    except Exception:
+        pass
 
-        te = [s.tempo_espera_minutos for s in base.filter(
-            Senha.status == "concluida", Senha.tempo_espera_minutos.isnot(None)).all()]
-        ta = [s.tempo_atendimento_minutos for s in base.filter(
-            Senha.status == "concluida", Senha.tempo_atendimento_minutos.isnot(None)).all()]
+    # Por serviço
+    por_servico = []
+    try:
+        servicos = Servico.query.filter_by(ativo=True).all()
+        for sv in servicos:
+            total_sv = Senha.query.filter(
+                Senha.data_emissao == hoje,
+                Senha.servico_id == sv.id
+            ).count()
+            if total_sv == 0:
+                continue
+            concl_sv = Senha.query.filter(
+                Senha.data_emissao == hoje,
+                Senha.servico_id == sv.id,
+                Senha.status == "concluida"
+            ).count()
+            por_servico.append({
+                "servico":    sv.nome,
+                "total":      total_sv,
+                "concluidas": concl_sv,
+            })
+    except Exception:
+        pass
 
-        por_servico = []
-        for sv in Servico.query.filter_by(ativo=True).all():
-            t = base.filter_by(servico_id=sv.id).count()
-            c = base.filter(Senha.servico_id == sv.id, Senha.status == "concluida").count()
-            if t > 0:
-                por_servico.append({"servico": sv.nome, "total": t, "concluidas": c})
+    return {
+        "total_emitidas":     total,
+        "em_espera":          em_espera,
+        "em_atendimento":     em_atend,     # nome usado pelo frontend
+        "concluidas":         concluidas,
+        "canceladas":         canceladas,
+        "tempo_medio_espera": tempo_medio_espera,   # P4 — sem sufixo _min
+        "satisfacao_pct":     satisfacao_pct,        # P4 — novo campo
+        "por_servico":        por_servico,
+        "por_atendente":      [],
+    }
 
-        por_atendente = []
-        for at in Atendente.query.filter(Atendente.ativo.is_(True), Atendente.tipo == "atendente").all():
-            senhas_at = base.filter(Senha.atendente_id == at.id, Senha.status == "concluida").all()
-            if senhas_at:
-                tms = [s.tempo_atendimento_minutos for s in senhas_at if s.tempo_atendimento_minutos]
-                por_atendente.append({"nome": at.nome, "atendidos": len(senhas_at), "tempo_medio_min": media(tms)})
 
-        return {
-            "total_emitidas": total,
-            "em_espera": aguardando,
-            "em_atendimento": em_atend,
-            "concluidas": concluidas,
-            "canceladas": canceladas,
-            "tempo_medio_espera_min": media(te),
-            "tempo_medio_atendimento_min": media(ta),
-            "por_servico": por_servico,
-            "por_atendente": por_atendente,
+# ──────────────────────────────────────────────
+# FUNÇÕES PÚBLICAS
+# ──────────────────────────────────────────────
+
+def obter_snapshot():
+    """
+    Devolve snapshot completo: fila activa, histórico, users, lastCalled, stats.
+    Chamado por GET /api/realtime/snapshot
+    """
+    hoje = date.today()
+
+    # Fila activa — aguardando + em atendimento
+    senhas_activas = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status.in_(["aguardando", "atendendo", "chamada", "chamando", "iniciada"])
+    ).order_by(Senha.emitida_em.asc()).all()
+
+    # Histórico do dia — concluídas
+    historico = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status == "concluida"
+    ).order_by(Senha.atendimento_concluido_em.desc()).limit(50).all()
+
+    # Última senha chamada
+    ultima = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.chamada_em.isnot(None)
+    ).order_by(Senha.chamada_em.desc()).first()
+
+    last_called = None
+    if ultima:
+        servico_nome = ""
+        if hasattr(ultima, "servico") and ultima.servico:
+            servico_nome = ultima.servico.nome
+        elif ultima.servico_id:
+            servico_nome = _SERVICO_BALCAO.get(ultima.servico_id, "")
+
+        last_called = {
+            "code":        ultima.numero,
+            "service":     servico_nome,
+            "counterName": _counter_name(
+                               getattr(ultima, "numero_balcao", None),
+                               ultima.servico_id,
+                               servico_nome,
+                           ),
+            "at":          ultima.chamada_em.isoformat(),
         }
-    except Exception as exc:
-        logger.error("Erro stats: %s", exc)
-        return {
-            "total_emitidas": 0,
-            "em_espera": 0,
-            "em_atendimento": 0,
-            "concluidas": 0,
-            "canceladas": 0,
-            "tempo_medio_espera_min": 0,
-            "tempo_medio_atendimento_min": 0,
-            "por_servico": [],
-            "por_atendente": [],
-        }
+
+    # Atendentes activos
+    atendentes = Atendente.query.filter_by(ativo=True).all()
+
+    return {
+        "queue":      [_senha_para_ticket(s) for s in senhas_activas],
+        "history":    [_senha_para_ticket(s) for s in historico],
+        "users":      [_atendente_dict(a) for a in atendentes],
+        "lastCalled": last_called,
+        "stats":      _calcular_stats(hoje),
+    }
+
+
+def obter_fila_activa(servico_id=None):
+    """
+    Devolve só a fila activa, com filtro opcional por serviço.
+    Chamado por GET /api/queue
+    """
+    hoje = date.today()
+    q = Senha.query.filter(
+        Senha.data_emissao == hoje,
+        Senha.status.in_(["aguardando", "atendendo", "chamada", "chamando", "iniciada"])
+    )
+    if servico_id:
+        q = q.filter(Senha.servico_id == servico_id)
+    senhas = q.order_by(Senha.emitida_em.asc()).all()
+    return [_senha_para_ticket(s) for s in senhas]
+
+
+def obter_estatisticas():
+    """
+    Devolve só as estatísticas do dia.
+    Chamado por GET /api/stats
+    """
+    hoje = date.today()
+    return _calcular_stats(hoje)

@@ -1,65 +1,99 @@
-"""Rotas Auth (Compatibilidade)."""
+"""
+Rotas de autenticação — camada de compatibilidade frontend
+Sistema de Filas IMTSB
 
-import logging
-from datetime import datetime, timedelta
+Rotas:
+  GET  /api/auth/health
+  POST /api/auth/refresh
+  POST /api/auth/logout
 
-import jwt as pyjwt
-from flask import Blueprint, request, jsonify, current_app
+Correcção P5:
+  POST /api/auth/refresh aceita { "refreshToken": "..." }
+  e devolve { "access_token": "..." }
+"""
 
-logger = logging.getLogger(__name__)
+from datetime import datetime, timezone
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import (
+    create_access_token,
+    decode_token,
+    jwt_required,
+)
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+
 auth_compat_bp = Blueprint("auth_compat", __name__)
 
 
-@auth_compat_bp.route("/auth/health", methods=["GET"])
+@auth_compat_bp.get("/auth/health")
 def health():
+    """GET /api/auth/health — verifica se o servidor está activo."""
     return jsonify({
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "version": "1.0",
-        "servico": "IMTSB Sistema de Filas",
+        "status":  "ok",
+        "servico": "API Sistema de Filas IMTSB",
+        "hora":    datetime.now(timezone.utc).isoformat(),
     }), 200
 
 
-@auth_compat_bp.route("/auth/refresh", methods=["POST"])
-def refresh_token():
-    dados = request.get_json(silent=True) or {}
-    refresh_tk = dados.get("refreshToken", "")
+@auth_compat_bp.post("/auth/refresh")
+def refresh():
+    """
+    POST /api/auth/refresh
+    Body: { "refreshToken": "eyJ..." }
+    Devolve: { "access_token": "eyJ..." }
 
-    if not refresh_tk:
-        return jsonify({"ok": False, "message": "refreshToken em falta."}), 400
+    Usa o refresh token emitido pelo login para gerar um novo access token.
+    """
+    dados = request.get_json(force=True, silent=True) or {}
+
+    # Aceita "refreshToken" ou "refresh_token"
+    refresh_token = (
+        dados.get("refreshToken")
+        or dados.get("refresh_token")
+        or ""
+    )
+
+    if not refresh_token:
+        return jsonify({"erro": "refreshToken obrigatório"}), 400
 
     try:
-        secret = current_app.config.get("JWT_SECRET_KEY", "imtsb-secret")
-        algoritmo = current_app.config.get("JWT_ALGORITHM", "HS256")
+        # Decodifica o refresh token para extrair a identidade
+        token_data = decode_token(refresh_token)
 
-        payload = pyjwt.decode(
-            refresh_tk,
-            secret,
-            algorithms=[algoritmo],
-            options={"require": ["exp", "sub", "type"]},
+        # Verifica que é de facto um refresh token
+        if token_data.get("type") != "refresh":
+            return jsonify({"erro": "Token inválido — não é um refresh token"}), 401
+
+        identity = token_data.get("sub")
+        if not identity:
+            return jsonify({"erro": "Token sem identidade"}), 401
+
+        # Emite novo access token com os mesmos claims adicionais
+        additional_claims = {}
+        for campo in ("tipo", "nome", "balcao", "servico_id"):
+            if campo in token_data:
+                additional_claims[campo] = token_data[campo]
+
+        novo_access = create_access_token(
+            identity=str(identity),
+            additional_claims=additional_claims,
         )
 
-        if payload.get("type") != "refresh":
-            return jsonify({"ok": False, "message": "Token não é refresh token."}), 401
+        return jsonify({"access_token": novo_access}), 200
 
-        agora = datetime.utcnow()
-        novo_payload = {
-            "sub": payload["sub"],
-            "email": payload.get("email", ""),
-            "tipo": payload.get("tipo", "atendente"),
-            "type": "access",
-            "iat": agora,
-            "exp": agora + timedelta(hours=1),
-        }
-        novo_token = pyjwt.encode(novo_payload, secret, algorithm=algoritmo)
-
-        return jsonify({"ok": True, "accessToken": novo_token, "refreshToken": refresh_tk}), 200
-    except Exception as exc:
-        logger.warning("Refresh token inválido: %s", exc)
-        return jsonify({"ok": False, "message": "Refresh token inválido ou expirado."}), 401
+    except ExpiredSignatureError:
+        return jsonify({"erro": "Refresh token expirado. Faça login novamente."}), 401
+    except (InvalidTokenError, Exception) as e:
+        return jsonify({"erro": "Token inválido", "detalhe": str(e)}), 401
 
 
-@auth_compat_bp.route("/auth/logout", methods=["POST"])
+@auth_compat_bp.post("/auth/logout")
 def logout():
-    logger.info("Logout | IP: %s", request.remote_addr)
-    return jsonify({"ok": True, "message": "Sessão terminada. Apague os tokens localmente."}), 200
+    """
+    POST /api/auth/logout
+    Logout do lado do servidor — pode invalidar token numa blocklist futura.
+    Por agora apenas confirma ao cliente que pode limpar os tokens locais.
+    """
+    return jsonify({
+        "ok":       True,
+        "mensagem": "Sessão terminada com sucesso.",
+    }), 200

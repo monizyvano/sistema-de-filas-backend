@@ -81,6 +81,16 @@ class Senha(BaseModel):
     tempo_espera_minutos = db.Column(db.Integer, nullable=True, comment='Tempo entre emissão e início (em minutos)')
     tempo_atendimento_minutos = db.Column(db.Integer, nullable=True, comment='Tempo entre início e fim (em minutos)')
     observacoes = db.Column(db.Text, nullable=True)
+    nota_avaliacao = db.Column(
+        db.Integer,
+        nullable=True,
+        comment='Nota de avaliação do utente (1-5 estrelas)'
+    )
+    comentario_avaliacao = db.Column(
+        db.String(500),
+        nullable=True,
+        comment='Comentário opcional da avaliação'
+    )
 
     servico = db.relationship('Servico', foreign_keys=[servico_id])
     atendente = db.relationship('Atendente', foreign_keys=[atendente_id])
@@ -117,6 +127,8 @@ class Senha(BaseModel):
             'tempo_espera_minutos': self.tempo_espera_minutos,
             'tempo_atendimento_minutos': self.tempo_atendimento_minutos,
             'observacoes': self.observacoes,
+            'nota_avaliacao': self.nota_avaliacao,
+            'comentario_avaliacao': self.comentario_avaliacao,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -213,4 +225,12 @@ class Senha(BaseModel):
         self.observacoes = f'CANCELADA: {motivo}'
         if atendente_id:
             self.atendente_id = atendente_id
+        db.session.commit()
+
+    def avaliar(self, nota, comentario=None):
+        """Registra nota (1-5) e comentário opcional do utente."""
+        if nota < 1 or nota > 5:
+            raise ValueError('Nota deve ser entre 1 e 5.')
+        self.nota_avaliacao = nota
+        self.comentario_avaliacao = comentario
         db.session.commit()

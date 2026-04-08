@@ -119,7 +119,7 @@
         ? adapter.adaptLoginResponse(result.data, email)
         : result.data;
 
-      return { ok: true, ...adapted };
+      return { ok: true, raw: result.data, ...adapted };
     },
 
     async register(payload) {
@@ -251,10 +251,18 @@
         skipAuth: true
       });
       return result.ok ? result.data : { status: "offline" };
+    },
+
+    async rateTicket(senhaId, nota, comentario) {
+      return apiRequest(`/senhas/${senhaId}/avaliar`, {
+        method: "PUT",
+        body: JSON.stringify({ nota, comentario: comentario || "" })
+      });
     }
   };
 
   window.ApiClient = ApiClient;
+  window.IMTSBApiClient = ApiClient;  // alias para logintcc.js
 
   console.log("✅ API Client carregado (corrigido)");
 

@@ -12,8 +12,6 @@
   const apiConfig = window.IMTSBApiConfig || {};
 
   if (!ApiClient) {
-    console.warn("⚠ ApiClient não carregado!");
-    return;
     console.warn("⚠ ApiClient não carregado! Algumas funções ficarão indisponíveis.");
   }
 
@@ -295,15 +293,12 @@
           this._state.lastCall = senha;
           await this.refreshQueue(serviceId);
           this._notify();
-          
-          console.log("[SUCCESS] Senha chamada:", senha.numero);
-          return { ok: true, senha };
+
           console.log("[SUCCESS] Senha chamada:", senha.numero);
           return { ok: true, senha };
         }
 
         // Se não houver senha
-        const message = result?.data?.mensagem || result?.mensagem || result?.message || "Nenhuma senha disponível";
         const message = result?.data?.mensagem || result?.mensagem || result?.message || "Nenhuma senha disponível";
         console.log("[INFO]", message);
         
@@ -369,6 +364,23 @@
         clearInterval(this._pollingInterval);
         this._pollingInterval = null;
         console.log("🛑 Polling parado");
+      }
+    },
+
+    async rateTicket(senhaId, nota, comentario) {
+      if (!ApiClient?.rateTicket) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
+      try {
+        const result = await ApiClient.rateTicket(senhaId, nota, comentario);
+        if (result.ok) {
+          await this.refreshSnapshot();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("❌ Erro ao avaliar:", error);
+        return { ok: false, message: "Erro de conexão" };
       }
     }
   };

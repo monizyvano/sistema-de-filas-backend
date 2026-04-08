@@ -8,7 +8,7 @@ from app.models import Servico, Atendente, Configuracao
 
 def seed_servicos():
     """Cria serviços conforme documentação IMTSB"""
-    print("\n📋 CRIANDO SERVIÇOS...")
+    print("\n[SERVICOS] Criando serviços...")
     
     servicos = [
         {
@@ -53,7 +53,7 @@ def seed_servicos():
 
 def seed_atendentes():
     """Cria atendentes iniciais"""
-    print("\n👥 CRIANDO ATENDENTES...")
+    print("\n[ATENDENTES] Criando atendentes...")
     
     atendentes = [
         {
@@ -100,7 +100,7 @@ def seed_atendentes():
 
 def seed_configuracoes():
     """Cria configurações iniciais do sistema"""
-    print("\n⚙️  CRIANDO CONFIGURAÇÕES...")
+    print("\n[CONFIGURACOES] Criando configuracoes...")
     
     configs = [
         {
