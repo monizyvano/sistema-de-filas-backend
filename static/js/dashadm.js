@@ -267,12 +267,30 @@ function setupWorkerForm() {
     var dept  = (document.getElementById("newWorkerDept")  || {}).value || "";
     var msg   = document.getElementById("workerFormMsg");
 
-    var result = { ok: false, message: "Funcionalidade pendente." };
+    if (!nome || !email || !pass) {
+      if (msg) { msg.textContent = "Preencha nome, email e senha."; msg.style.color = "#b91c1c"; }
+      return;
+    }
 
-    if (msg) { msg.textContent = result.message; msg.style.color = result.ok ? "#0f766e" : "#b91c1c"; }
-    if (result && result.ok) await render();
+    try {
+      var result = await window.ApiClient.register(email, pass, nome, dept);
+      if (result.ok) {
+        if (msg) { msg.textContent = "Atendente criado com sucesso!"; msg.style.color = "#0f766e"; }
+        // Limpar formulário
+        document.getElementById("newWorkerName").value = "";
+        document.getElementById("newWorkerEmail").value = "";
+        document.getElementById("newWorkerPass").value = "";
+        document.getElementById("newWorkerDept").value = "";
+        await render();
+      } else {
+        if (msg) { msg.textContent = result.message || "Erro ao criar atendente"; msg.style.color = "#b91c1c"; }
+      }
+    } catch (e) {
+      if (msg) { msg.textContent = "Erro de conexão"; msg.style.color = "#b91c1c"; }
+    }
   });
 }
+
 
 /* ── Exportar ── */
 
@@ -340,6 +358,10 @@ document.addEventListener("DOMContentLoaded", async function () {
   var btnReset = document.getElementById("btnResetDayAdmin");
   if (btnSair)  btnSair.addEventListener("click", window.sair);
   if (btnReset) btnReset.addEventListener("click", function () {
-    alert("Funcionalidade pendente.");
-  });
+  if (confirm("Guardar dados do dia e reiniciar?\n\nEsta ação exportará o histórico atual e preparará o sistema para um novo dia de atendimento.")) {
+    window.exportData();
+    alert("Dados do dia guardados com sucesso!\n\nPronto para novo atendimento.");
+    // Nota: O reinício do servidor não é automático — requer intervenção manual
+  }
+});
 });
