@@ -102,7 +102,15 @@
 
   const ApiClient = {
 
-    async login(email, senha) {
+    async login(emailOrPayload, senhaParam) {
+      // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
+      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.email || "")
+        : (emailOrPayload || "");
+      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.password || emailOrPayload.senha || "")
+        : (senhaParam || "");
+
       const result = await apiRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, senha }),
@@ -178,9 +186,15 @@
     },
 
     async getQueue(servicoId = null) {
-      const path = servicoId ? `/filas/${servicoId}` : "/senhas";
-      const result = await apiRequest(path);
-      return result.ok ? (result.data || []) : [];
+      const query = servicoId
+        ? `/senhas?status=aguardando&servico_id=${servicoId}&page=1&per_page=100`
+        : "/senhas?status=aguardando&page=1&per_page=100";
+
+      const result = await apiRequest(query);
+      if (!result.ok) return [];
+
+      if (Array.isArray(result.data)) return result.data;
+      return result.data?.senhas || [];
     },
 
     async callNext(dataFrontend) {
@@ -215,6 +229,28 @@
         concluidas: 0,
         tempo_medio_espera: 0,
         satisfacao: 0
+      };
+    },
+
+    async getSnapshot() {
+      const snapshot = await apiRequest("/realtime/snapshot");
+      if (snapshot.ok) return { ok: true, data: snapshot.data };
+
+      // Fallback gradual: monta snapshot mínimo com endpoints já existentes.
+      const [queue, stats] = await Promise.all([
+        this.getQueue(),
+        this.getStats()
+      ]);
+
+      return {
+        ok: true,
+        data: {
+          queue: Array.isArray(queue) ? queue : [],
+          history: [],
+          users: [],
+          lastCalled: null,
+          stats: stats || {}
+        }
       };
     },
 
