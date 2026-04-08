@@ -197,6 +197,11 @@
             console.error("❌ Erro ao actualizar histórico:", error);
         }
     }
+  } else if (window.IMTSBStore) {
+    result = await window.IMTSBStore.callNext(servicoId, balcao);
+  } else {
+    result = { ok: false, message: "API não disponível" };
+  }
 
 
     // ═══════════════════════════════════════════════════════════

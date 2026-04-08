@@ -365,6 +365,23 @@
         this._pollingInterval = null;
         console.log("🛑 Polling parado");
       }
+    },
+
+    async rateTicket(senhaId, nota, comentario) {
+      if (!ApiClient?.rateTicket) {
+        return { ok: false, message: "API indisponível no modo atual" };
+      }
+      try {
+        const result = await ApiClient.rateTicket(senhaId, nota, comentario);
+        if (result.ok) {
+          await this.refreshSnapshot();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("❌ Erro ao avaliar:", error);
+        return { ok: false, message: "Erro de conexão" };
+      }
     }
   };
 

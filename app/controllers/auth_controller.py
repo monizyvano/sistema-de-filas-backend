@@ -84,6 +84,7 @@ def login():
 
     return jsonify({
         'access_token': access_token,
+        'refresh_token': refresh_token,
         'atendente': {
             'id': atendente.id,
             'nome': atendente.nome,

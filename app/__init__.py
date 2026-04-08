@@ -1,3 +1,4 @@
+
 """
 Application Factory Pattern - VERSÃO FINAL CORRIGIDA
 app/__init__.py
@@ -169,9 +170,9 @@ def register_blueprints(app):
     app.register_blueprint(utente_bp, url_prefix='/api/utentes')
 
     print("\n" + "="*60)
-    print("✅ BLUEPRINTS REGISTRADOS:")
+    print("BLUEPRINTS REGISTRADOS:")
     print("  - /api/auth")
-    print("  - /api/senhas")  # ✅ CORRETO!
+    print("  - /api/senhas")
     print("  - /api/filas")
     print("  - /api/servicos")
     print("  - /api/dashboard")

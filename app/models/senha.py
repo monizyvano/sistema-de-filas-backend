@@ -117,6 +117,8 @@ class Senha(BaseModel):
             'tempo_espera_minutos': self.tempo_espera_minutos,
             'tempo_atendimento_minutos': self.tempo_atendimento_minutos,
             'observacoes': self.observacoes,
+            'nota_avaliacao': self.nota_avaliacao,
+            'comentario_avaliacao': self.comentario_avaliacao,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

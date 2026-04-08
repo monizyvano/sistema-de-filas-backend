@@ -1,7 +1,7 @@
 ﻿/**
  * API CLIENT - VERSÃO CORRIGIDA
  * static/js/api-client.js
- * 
+ *
  * ✅ Fetch com sintaxe correta
  * ✅ Cadastro funcionando
  * ✅ Login integrado
@@ -31,18 +31,13 @@
   }
 
   function setTokens(data) {
-    if (!data) return;
+    if (!data || typeof data !== "object") return;
 
-    const access = data.access_token || data.accessToken || null;
+    const access = data.access_token || data.accessToken || data.token || null;
     const refresh = data.refresh_token || data.refreshToken || null;
 
-    if (access) {
-      localStorage.setItem(config.accessTokenStorageKey, access);
-    }
-
-    if (refresh) {
-      localStorage.setItem(config.refreshTokenStorageKey, refresh);
-    }
+    if (access) localStorage.setItem(config.accessTokenStorageKey, access);
+    if (refresh) localStorage.setItem(config.refreshTokenStorageKey, refresh);
   }
 
   function clearSession() {
@@ -51,13 +46,8 @@
     localStorage.removeItem("imtsb_user");
   }
 
-  function redirectToLogin() {
-    clearSession();
-    window.location.href = "/login";
-  }
-
   // ===============================
-  // 🌐 BASE REQUEST (CORRIGIDO)
+  // 🌐 BASE REQUEST
   // ===============================
 
   async function apiRequest(path, options = {}) {
@@ -72,7 +62,6 @@
     }
 
     try {
-      // ✅ CORRIGIDO: Sintaxe correta do fetch
       const response = await fetch(`${config.baseUrl}${path}`, {
         ...options,
         headers
@@ -89,7 +78,6 @@
       }
 
       return { ok: true, data };
-
     } catch (error) {
       console.error("❌ Erro de conexão:", error);
       return { ok: false, message: "Erro de conexão com servidor" };
@@ -101,6 +89,19 @@
   // ===============================
 
   const ApiClient = {
+    getAccessToken,
+    getRefreshToken,
+    clearSession,
+
+    async login(emailOrPayload, senhaParam) {
+      // Compat: aceita login(email, senha) e login({ email, password|senha })
+      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.email || "")
+        : (emailOrPayload || "");
+
+      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.password || emailOrPayload.senha || "")
+        : (senhaParam || "");
 
     async login(emailOrPayload, senhaParam) {
       // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
@@ -118,7 +119,7 @@
       });
 
       if (!result.ok) {
-        return { ok: false, message: "Email ou senha inválidos" };
+        return { ok: false, message: result.message || "Email ou senha inválidos" };
       }
 
       setTokens(result.data);
@@ -127,7 +128,7 @@
         ? adapter.adaptLoginResponse(result.data, email)
         : result.data;
 
-      return { ok: true, ...adapted };
+      return { ok: true, raw: result.data, ...adapted };
     },
 
     async register(payload) {
@@ -145,9 +146,9 @@
       });
 
       if (!result.ok) {
-        return { 
-          ok: false, 
-          message: result.message || "Erro no cadastro" 
+        return {
+          ok: false,
+          message: result.message || "Erro no cadastro"
         };
       }
 
@@ -179,7 +180,7 @@
       }
 
       const ticket = adapter?.adaptTicketResponse
-        ? adapter.adaptTicketResponse(result.data.senha)
+        ? adapter.adaptTicketResponse(result.data?.senha || result.data)
         : result.data;
 
       return { ok: true, ticket };
@@ -259,10 +260,18 @@
         skipAuth: true
       });
       return result.ok ? result.data : { status: "offline" };
+    },
+
+    async rateTicket(senhaId, nota, comentario) {
+      return apiRequest(`/senhas/${senhaId}/avaliar`, {
+        method: "PUT",
+        body: JSON.stringify({ nota, comentario: comentario || "" })
+      });
     }
   };
 
   window.ApiClient = ApiClient;
+  window.IMTSBApiClient = ApiClient;  // alias para logintcc.js
 
   console.log("✅ API Client carregado (corrigido)");
 
