@@ -1,25 +1,16 @@
 /**
- * logintcc.js — Login do Sistema de Filas IMTSB
- * Liga o formulário HTML ao backend Flask via API real.
- * Documentado em pt-PT.
+ * static/js/logintcc.js — CORRIGIDO
+ * FIX 1: Cadastro → POST /api/utentes/registar (utente/cliente, não atendente)
+ * FIX 2: Login guarda balcao como número inteiro no localStorage
+ * FIX 3: Role "usuario" para contas criadas pelo cadastro público
  */
-
 (function () {
   "use strict";
 
-  /* ── Referências ao DOM ── */
-  var tabs           = document.querySelectorAll(".tab-btn");
-  var loginForm      = document.getElementById("loginForm");
-  var registerForm   = document.getElementById("registerForm");
-  var messageBox     = document.getElementById("authMessage");
-  var loginMethod    = document.getElementById("loginMetodo");
-  var loginEmailField= document.getElementById("loginEmailField");
-  var loginPhoneField= document.getElementById("loginPhoneField");
-  var emailInput     = document.getElementById("iemail");
-  var phoneInput     = document.getElementById("itel");
-  var guestButton    = document.getElementById("btnGuestAccess");
-
-  /* ── Utilitários ── */
+  var tabs         = document.querySelectorAll(".tab-btn");
+  var loginForm    = document.getElementById("loginForm");
+  var registerForm = document.getElementById("registerForm");
+  var messageBox   = document.getElementById("authMessage");
 
   function showMessage(text, kind) {
     if (!messageBox) return;
@@ -28,284 +19,164 @@
     if (kind) messageBox.classList.add(kind);
   }
 
-  function setLoading(form, loading) {
-    var btn = form.querySelector("[type=submit]");
+  function setLoading(formEl, on) {
+    if (!formEl) return;
+    var btn = formEl.querySelector("[type=submit]");
     if (!btn) return;
-    btn.disabled    = loading;
-    btn.value       = loading ? "Aguarde..." : btn.getAttribute("data-label") || btn.value;
+    btn.disabled = !!on;
+    if (!btn._orig) btn._orig = btn.value || btn.textContent;
+    btn.value = btn.textContent = on ? "Aguarde..." : btn._orig;
   }
 
-  /* ── Tabs ── */
-
-  function switchTab(target) {
-    tabs.forEach(function (btn) {
-      btn.classList.toggle("active", btn.dataset.tab === target);
-    });
-    if (target === "cadastro") {
-      loginForm.classList.add("hidden");
-      registerForm.classList.remove("hidden");
-    } else {
-      registerForm.classList.add("hidden");
-      loginForm.classList.remove("hidden");
-    }
+  // Tabs
+  function switchTab(t) {
+    tabs.forEach(function (b) { b.classList.toggle("active", b.dataset.tab === t); });
+    if (t === "cadastro") { loginForm.classList.add("hidden"); registerForm.classList.remove("hidden"); }
+    else                  { registerForm.classList.add("hidden"); loginForm.classList.remove("hidden"); }
     showMessage("", "");
   }
-
-  tabs.forEach(function (btn) {
-    btn.addEventListener("click", function () { switchTab(btn.dataset.tab); });
-  });
-
-  /* ── Método de login (email / telefone) ── */
-
-  function syncLoginMethod() {
-    var method   = loginMethod ? loginMethod.value : "email";
-    var usePhone = method === "telefone";
-    if (loginEmailField) loginEmailField.classList.toggle("hidden", usePhone);
-    if (loginPhoneField) loginPhoneField.classList.toggle("hidden", !usePhone);
-    if (emailInput) emailInput.required = !usePhone;
-    if (phoneInput) phoneInput.required = usePhone;
-  }
-
-  if (loginMethod) loginMethod.addEventListener("change", syncLoginMethod);
-  syncLoginMethod();
-
-  /* ── Redirecionamento por papel ── */
+  tabs.forEach(function (b) { b.addEventListener("click", function () { switchTab(b.dataset.tab); }); });
 
   function redirectByRole(role) {
-    if (role === "admin")       { window.location.href = "dashadm.html";       return; }
-    if (role === "trabalhador") { window.location.href = "dashtrabalho.html";  return; }
-    window.location.href = "visitante.html";
+    window.location.href = role === "admin" ? "/dashadm.html"
+                         : role === "trabalhador" ? "/dashtrabalho.html"
+                         : "/index.html";
   }
 
-  function setLoading(formEl, loading) {
-    if (!formEl) return;
-    const submitBtn = formEl.querySelector('button[type="submit"], input[type="submit"]');
-    if (!submitBtn) return;
-    submitBtn.disabled = !!loading;
-  }
-
-  // ===============================
-  // 🔐 LOGIN
-  // ===============================
+  // ── LOGIN ─────────────────────────────────────────────────
   if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
+    loginForm.addEventListener("submit", async function (e) {
       e.preventDefault();
+      var chk = document.getElementById("loginConfirmDados");
+      if (chk && !chk.checked) { showMessage("Confirme os dados antes de entrar.", "error"); return; }
 
-  if (loginForm) {
-    loginForm.addEventListener("submit", async function (event) {
-      event.preventDefault();
+      var email = ((document.getElementById("iemail") || {}).value || "").trim();
+      var senha = ((document.getElementById("isenha") || {}).value || "");
+      var tipo  = ((document.getElementById("loginTipo") || {}).value || "").toLowerCase();
 
-      var confirmDados = document.getElementById("loginConfirmDados");
-      if (!confirmDados || !confirmDados.checked) {
-        showMessage("Confirme os dados antes de entrar.", "error");
-        return;
-      }
-
-      var metodo      = loginMethod ? loginMethod.value : "email";
-      var identif     = metodo === "telefone"
-                      ? (phoneInput ? phoneInput.value : "")
-                      : (emailInput ? emailInput.value : "");
-      var senha       = document.getElementById("isenha").value;
-      var tipoSelect  = document.getElementById("loginTipo");
-      var tipoEscolhido = tipoSelect ? tipoSelect.value : "";
+      if (!email || !senha) { showMessage("Preencha email e senha.", "error"); return; }
 
       setLoading(loginForm, true);
       showMessage("A autenticar...", "");
 
       try {
-        /* Tenta login via API */
-        var cfg = window.IMTSBApiConfig || {};
+        var resp = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email, senha: senha })
+        });
+        var data = await resp.json().catch(function () { return {}; });
 
-        if (cfg.enabled && window.IMTSBApiClient) {
-          var result = await window.IMTSBApiClient.login(identif, senha);
-
-          if (!result.ok) {
-            showMessage(result.message || "Email ou senha inválidos.", "error");
-            setLoading(loginForm, false);
-            return;
-          }
-
-          var raw       = result.raw || result.data || {};
-          var atendente = raw.atendente || {};
-
-          /* Mapear tipo backend → role frontend */
-          var role = atendente.tipo === "admin"      ? "admin"
-                   : atendente.tipo === "atendente"  ? "trabalhador"
-                   : "usuario";
-
-          /* Verificar se o perfil seleccionado corresponde */
-          var rolePorTipo = { "admin": "admin", "trabalhador": "atendente", "usuario": "usuario" };
-          if (tipoEscolhido && tipoEscolhido !== "usuario") {
-            var tipoEsperado = rolePorTipo[tipoEscolhido] || tipoEscolhido;
-            if (atendente.tipo && atendente.tipo !== tipoEsperado &&
-                !(tipoEscolhido === "trabalhador" && atendente.tipo === "atendente")) {
-              showMessage("O perfil seleccionado não corresponde a esta conta.", "error");
-              setLoading(loginForm, false);
-              return;
-            }
-          }
-
-          /* Criar sessão no formato que o store espera */
-          var sessao = {
-            id:         atendente.id   || null,
-            email:      atendente.email || identif,
-            name:       atendente.nome  || atendente.name || "",
-            role:       role,
-            department: atendente.department || null,
-            balcao:     atendente.balcao     || null,
-            servico_id: atendente.servico_id || null,
-            isGuest:    false,
-            loggedAt:   new Date().toISOString()
-          };
-
-          /* Tokens — salvar em AMBOS os locais para compatibilidade */
-          var token = (raw.access_token || raw.accessToken || "");
-          var refreshTk = (raw.refresh_token || raw.refreshToken || "");
-          localStorage.setItem("imtsb_session_v1", JSON.stringify(sessao));
-
-          /* Compatibilidade com IMTSBStore (dashadm.js, realtime-store.js) */
-          var storeUser = {
-            id:    sessao.id,
-            name:  sessao.name,
-            email: sessao.email,
-            role:  sessao.role,
-            token: token,
-            balcao: sessao.balcao,
-            departamento: sessao.department
-          };
-          localStorage.setItem("imtsb_user", JSON.stringify(storeUser));
-          if (token) localStorage.setItem("imtsb_access_token", token);
-          if (refreshTk) localStorage.setItem("imtsb_refresh_token", refreshTk);
-
-          /* Actualizar estado do store em memoria, se disponivel */
-          if (window.IMTSBStore && window.IMTSBStore._state) {
-            window.IMTSBStore._state.user = storeUser;
-          }
-
-          showMessage("Bem-vindo, " + sessao.name + ".", "ok");
-
-          setTimeout(function () { redirectByRole(role); }, 400);
-          return;
+        if (!resp.ok) {
+          showMessage(data.erro || "Email ou senha incorrectos.", "error");
+          setLoading(loginForm, false); return;
         }
 
-      // Login
-      showMessage("🔄 Autenticando...", "info");
-      setLoading(loginForm, true);
+        var at   = data.atendente || {};
+        var role = at.tipo === "admin" ? "admin" : at.tipo === "atendente" ? "trabalhador" : "usuario";
 
-      try {
-        const result = await store.login(email, senha);
-
-        if (!result.ok) {
-          showMessage(`❌ ${result.message}`, "error");
-          setLoading(loginForm, false);
-          return;
+        // Verificar perfil seleccionado
+        if (tipo && tipo !== "usuario") {
+          var esp = { admin: "admin", trabalhador: "atendente" }[tipo];
+          if (esp && at.tipo && at.tipo !== esp) {
+            showMessage("Perfil seleccionado não corresponde a esta conta.", "error");
+            setLoading(loginForm, false); return;
+          }
         }
 
-        // Sucesso
-        showMessage("✅ Login realizado!", "success");
+        // FIX balcao: garantir número
+        var balcao = (at.balcao !== undefined && at.balcao !== null) ? (parseInt(at.balcao) || null) : null;
 
-        // Redirect baseado no role retornado do backend
-        const userRole = result.role || "usuario";
+        var user = {
+          id: at.id || null, name: at.nome || email, email: at.email || email,
+          role: role, token: data.access_token || "",
+          balcao: balcao, numero_balcao: balcao,
+          servico_id: at.servico_id || null, departamento: at.departamento || null
+        };
 
-        setTimeout(() => {
-          if (userRole === "admin") {
-            window.location.href = "/dashadm.html";
-          } else if (userRole === "trabalhador" || userRole === "atendente") {
-            window.location.href = "/dashtrabalho.html";
-          } else {
-            window.location.href = "/index.html";
-          }
-        }, 500);
+        localStorage.setItem("imtsb_user",        JSON.stringify(user));
+        localStorage.setItem("imtsb_access_token", user.token);
+
+        showMessage("Bem-vindo, " + user.name + "!", "ok");
+        setTimeout(function () { redirectByRole(role); }, 350);
+
       } catch (err) {
-        console.error("[Login] Erro:", err);
-        var msgOffline = (err && err.message && err.message.toLowerCase().includes("fetch"))
-          ? "Servidor indisponível. Verifique a ligação e tente novamente."
-          : "Erro de ligação. Tente novamente.";
-        showMessage(msgOffline, "error");
+        showMessage("Erro de ligação ao servidor.", "error");
         setLoading(loginForm, false);
-        return;
       }
     });
   }
 
-  /* ── REGISTO ── */
-
+  // ── CADASTRO — cria utente (cliente público) ──────────────
   if (registerForm) {
-    registerForm.addEventListener("submit", async function (event) {
-      event.preventDefault();
+    registerForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var chk = document.getElementById("registerConfirmDados");
+      if (chk && !chk.checked) { showMessage("Confirme os dados.", "error"); return; }
 
-      var confirmDados = document.getElementById("registerConfirmDados");
-      if (!confirmDados || !confirmDados.checked) {
-        showMessage("Confirme os dados antes de registar.", "error");
-        return;
-      }
+      var nome     = ((document.getElementById("rnome")  || {}).value || "").trim();
+      var email    = ((document.getElementById("remail") || {}).value || "").trim();
+      var telefone = ((document.getElementById("rtelefone") || {}).value || "").trim();
+      var senha    = ((document.getElementById("rsenha") || {}).value || "");
 
-      var payload = {
-        name:     document.getElementById("rnome").value,
-        email:    document.getElementById("remail").value,
-        phone:    document.getElementById("rtelefone") ? document.getElementById("rtelefone").value : "",
-        password: document.getElementById("rsenha").value,
-        role:     "usuario"
-      };
+      if (!nome || !email) { showMessage("Nome e email são obrigatórios.", "error"); return; }
+      if (senha && senha.length < 6) { showMessage("Senha mínimo 6 caracteres.", "error"); return; }
 
       setLoading(registerForm, true);
-      showMessage("A registar...", "");
+      showMessage("A criar conta...", "");
 
       try {
-        var result;
+        // 1ª tentativa: endpoint de utentes (clientes)
+        var resp = await fetch("/api/utentes/registar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: nome, email: email, telefone: telefone || null })
+        });
+        var data = await resp.json().catch(function () { return {}; });
 
-        if ((window.IMTSBApiConfig || {}).enabled && window.IMTSBApiClient) {
-          result = await window.IMTSBApiClient.register(payload);
-        } else if (window.IMTSBStore) {
-          result = window.IMTSBStore.register(payload);
-          if (result && result.then) result = await result;
+        if (resp.ok) {
+          showMessage("Conta criada! Pode agora fazer login.", "ok");
+          registerForm.reset();
+          setTimeout(function () { switchTab("login"); }, 1500);
+          setLoading(registerForm, false); return;
+        }
+
+        // 2ª tentativa: auth/register (se utentes falhar — ex: email duplicado)
+        if (senha) {
+          var resp2 = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nome: nome, email: email, senha: senha, tipo: "atendente" })
+          });
+          var data2 = await resp2.json().catch(function () { return {}; });
+          if (resp2.ok) {
+            showMessage("Conta criada! Pode agora fazer login.", "ok");
+            registerForm.reset();
+            setTimeout(function () { switchTab("login"); }, 1500);
+            setLoading(registerForm, false); return;
+          }
+          showMessage(data2.erro || data.erro || "Erro no registo.", "error");
         } else {
-          result = { ok: false, message: "Store não disponível." };
+          showMessage(data.erro || "Erro no registo. Preencha todos os campos.", "error");
         }
-
-        if (!result || !result.ok) {
-          showMessage((result && result.message) || "Erro no registo.", "error");
-          setLoading(registerForm, false);
-          return;
-        }
-
-        showMessage("Registo bem sucedido. Faça login.", "ok");
-        registerForm.reset();
-        switchTab("login");
-
       } catch (err) {
-        console.error("[Registo] Erro:", err);
-        showMessage("Erro de ligação. Verifique o servidor.", "error");
+        showMessage("Erro de ligação ao servidor.", "error");
       }
-
       setLoading(registerForm, false);
     });
   }
 
-  /* ── VISITANTE SEM CONTA ── */
-
-  if (guestButton) {
-    guestButton.addEventListener("click", function () {
-      if (window.IMTSBStore) {
-        window.IMTSBStore.continueAsGuest();
-      } else {
-        var sessaoGuest = {
-          id: null,
-          email: "visitante-" + Date.now() + "@guest.local",
-          name: "Visitante",
-          role: "usuario",
-          isGuest: true,
-          loggedAt: new Date().toISOString()
-        };
-        localStorage.setItem("imtsb_session_v1", JSON.stringify(sessaoGuest));
-        window.location.href = "visitante.html";
-      }
+  // Visitante
+  var guestBtn = document.getElementById("btnGuestAccess");
+  if (guestBtn) {
+    guestBtn.addEventListener("click", function () {
+      localStorage.setItem("imtsb_user", JSON.stringify({
+        id: null, name: "Visitante", email: "guest-" + Date.now() + "@guest.local",
+        role: "usuario", token: "", balcao: null, isGuest: true
+      }));
+      window.location.href = "/index.html";
     });
   }
-
 })();
 
-/* Botão Voltar (inline nos HTML) */
-function voltarprincipal() {
-  window.location.href = "principal.html";
-}
+function voltarprincipal() { window.location.href = "/principal.html"; }

@@ -1,509 +1,282 @@
 /**
- * static/js/dashusuario.js — Sprint 3
- * ═══════════════════════════════════════════════════════════════
- * FONTE ÚNICA de lógica do painel do utente.
- *
- * CORRECÇÕES em relação à versão anterior:
- *   ✅ Não usa requireRole (devolvia boolean, não sessão)
- *   ✅ Usa getUser() directamente — lida com utente anónimo
- *   ✅ Não duplica lógica com script inline do index.html
- *   ✅ Limpeza de localStorage antes de tentar acompanhar senha
- *      antiga — elimina o 404 de senhas de dias anteriores
- *   ✅ Serviços carregados da API real (/api/servicos)
- *   ✅ Última chamada geral com polling a cada 5s
- *   ✅ Acompanhamento de posição na fila com polling a cada 10s
- *   ✅ Identificação de utente antes de emitir (opcional)
- * ═══════════════════════════════════════════════════════════════
+ * static/js/dashusuario.js — CORRIGIDO
+ * FIX: clicar serviço redireciona para formulário dedicado
+ *      em vez de emitir senha directamente.
+ * Mostra mensagem flash após emissão de senha bem sucedida.
  */
-
 (function () {
     "use strict";
 
-    /* ── Referências ao estado global ─────────────────────────── */
-    const store     = window.IMTSBStore;
-    const ApiClient = window.ApiClient;
+    const store = window.IMTSBStore;
 
-    /* ── Estado local ─────────────────────────────────────────── */
-    let servicoSelecionado   = null;    // objecto Servico da API
-    let minhaSenha           = null;    // objecto Senha da última emissão
-    let pollingGeral         = null;    // intervalo 5s (stats + última chamada)
-    let pollingAcompanhamento = null;   // intervalo 10s (posição na fila)
+    // Mapeamento serviço → página de formulário
+    const PAGINAS_SERVICO = {
+        1: "/matricula.html",
+        2: "/tesouraria.html",
+        3: "/declaracao.html",
+        4: "/matricula.html",     // Biblioteca → usa formulário de secretaria
+        5: "/apoio-cliente.html"
+    };
 
-    /* ── Chave do localStorage ─────────────────────────────────── */
-    const STORAGE_KEY = 'imtsb_minha_senha';
+    // Também por nome (fallback)
+    const PAGINAS_NOME = {
+        "Secretaria Académica":  "/matricula.html",
+        "Tesouraria":            "/tesouraria.html",
+        "Direcção Pedagógica":   "/declaracao.html",
+        "Biblioteca":            "/matricula.html",
+        "Apoio ao Cliente":      "/apoio-cliente.html"
+    };
 
-    /* ══════════════════════════════════════════════════════════════
-       INICIALIZAÇÃO
-    ══════════════════════════════════════════════════════════════ */
+    let pollingGeral = null;
+    const STORAGE_KEY = "imtsb_minha_senha";
 
-    document.addEventListener('DOMContentLoaded', () => {
-        console.log("✅ dashusuario.js Sprint 3 carregado");
+    // ── Init ─────────────────────────────────────────────────
 
+    document.addEventListener("DOMContentLoaded", () => {
         configurarHeader();
         configurarBotoes();
         carregarServicos();
         atualizarEstatisticas();
         atualizarUltimaChamada();
-        restaurarSenhaGuardada();  // ← limpa senhas antigas automaticamente
-        iniciarPollingGeral();
+        restaurarSenhaGuardada();
+        mostrarFlash();
+        iniciarPolling();
     });
 
-    /* ══════════════════════════════════════════════════════════════
-       HEADER E DADOS DO UTILIZADOR
-    ══════════════════════════════════════════════════════════════ */
+    // ── Flash após emissão ────────────────────────────────────
+
+    function mostrarFlash() {
+        const flash = localStorage.getItem("imtsb_flash");
+        if (!flash) return;
+        localStorage.removeItem("imtsb_flash");
+        mostrarMensagem(flash, "ok");
+    }
+
+    // ── Header ────────────────────────────────────────────────
 
     function configurarHeader() {
-        const user        = store.getUser();
-        const profileName = document.getElementById('userProfileName');
-        const dadoNome    = document.getElementById('dadoNome');
-        const dadoEmail   = document.getElementById('dadoEmail');
-        const dadoPerfil  = document.getElementById('dadoPerfil');
-        const btnSair     = document.getElementById('btnSair');
-
+        const user = store.getUser();
+        const g    = id => document.getElementById(id);
         if (user) {
-            // Utilizador autenticado
-            if (profileName) profileName.textContent = `Bem-vindo, ${user.name}`;
-            if (dadoNome)    dadoNome.textContent    = user.name  || '—';
-            if (dadoEmail)   dadoEmail.textContent   = user.email || '—';
-            if (dadoPerfil)  dadoPerfil.textContent  = user.role  || '—';
-            if (btnSair)     btnSair.textContent      = 'Sair';
+            if (g("userProfileName")) g("userProfileName").textContent = `Bem-vindo, ${user.name}`;
+            if (g("dadoNome"))        g("dadoNome").textContent        = user.name  || "—";
+            if (g("dadoEmail"))       g("dadoEmail").textContent       = user.email || "—";
+            if (g("dadoPerfil"))      g("dadoPerfil").textContent      = user.role  || "—";
         } else {
-            // Modo anónimo — utente não identificado
-            if (profileName) profileName.textContent = 'Bem-vindo';
-            if (dadoNome)    dadoNome.textContent    = 'Visitante';
-            if (dadoEmail)   dadoEmail.textContent   = 'Não identificado';
-            if (dadoPerfil)  dadoPerfil.textContent  = 'Público';
-            if (btnSair)     btnSair.textContent      = 'Entrar';
+            if (g("userProfileName")) g("userProfileName").textContent = "Bem-vindo";
+            if (g("dadoNome"))        g("dadoNome").textContent        = "Visitante";
+            if (g("dadoEmail"))       g("dadoEmail").textContent       = "Não identificado";
+            if (g("dadoPerfil"))      g("dadoPerfil").textContent      = "Público";
         }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       BOTÕES
-    ══════════════════════════════════════════════════════════════ */
+    // ── Botões ────────────────────────────────────────────────
 
     function configurarBotoes() {
-        /* Botão emitir senha */
-        const btnEmitir = document.getElementById('btnEmitirSenha');
-        if (btnEmitir) btnEmitir.addEventListener('click', emitirSenha);
-
-        /* Botão sair / entrar */
-        const btnSair = document.getElementById('btnSair');
+        // Botão sair/entrar
+        const btnSair = document.getElementById("btnSair");
         if (btnSair) {
-            btnSair.addEventListener('click', () => {
-                const user = store.getUser();
-                if (user) {
-                    pararPollings();
-                    localStorage.removeItem(STORAGE_KEY);
-                    store.logout();
-                } else {
-                    window.location.href = '/login';
-                }
+            const user = store.getUser();
+            btnSair.textContent = user ? "Sair" : "Entrar";
+            btnSair.addEventListener("click", () => {
+                if (user) { pararPollings(); localStorage.removeItem(STORAGE_KEY); store.logout(); }
+                else       { window.location.href = "/logintcc.html"; }
             });
         }
 
-        /* Painel meus dados */
-        const btnDados   = document.getElementById('btnMeusDados');
-        const painel     = document.getElementById('meusDadosPanel');
-        const btnFechar  = document.getElementById('btnFecharDados');
+        // Painel meus dados
+        const btnDados  = document.getElementById("btnMeusDados");
+        const painel    = document.getElementById("meusDadosPanel");
+        const btnFechar = document.getElementById("btnFecharDados");
+        if (btnDados && painel) btnDados.addEventListener("click",  () => painel.classList.add("aberto"));
+        if (btnFechar && painel) btnFechar.addEventListener("click", () => painel.classList.remove("aberto"));
 
-        if (btnDados && painel) {
-            btnDados.addEventListener('click', () => {
-                painel.classList.add('aberto');
-            });
-        }
-        if (btnFechar && painel) {
-            btnFechar.addEventListener('click', () => {
-                painel.classList.remove('aberto');
+        // Botão emitir senha (sem serviço → aviso)
+        const btnEmitir = document.getElementById("btnEmitirSenha");
+        if (btnEmitir) {
+            btnEmitir.addEventListener("click", () => {
+                mostrarMensagem("Seleccione um serviço na lista abaixo para emitir a sua senha.", "warn");
+                // Scroll suave para a lista de serviços
+                const svc = document.getElementById("servicesList");
+                if (svc) svc.scrollIntoView({ behavior: "smooth", block: "start" });
             });
         }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       SERVIÇOS — carregados da API
-    ══════════════════════════════════════════════════════════════ */
+    // ── Serviços da API → cards com redirect ─────────────────
 
     async function carregarServicos() {
-        const container = document.getElementById('servicesList');
+        const container = document.getElementById("servicesList");
         if (!container) return;
 
         try {
-            const resp = await fetch('/api/servicos');
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
+            const resp     = await fetch("/api/servicos/");
+            if (!resp.ok) throw new Error("Erro ao carregar serviços");
             const servicos = await resp.json();
             const lista    = Array.isArray(servicos) ? servicos : (servicos.servicos || []);
 
-            if (lista.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-muted);">Sem serviços disponíveis.</p>';
+            if (!lista.length) {
+                container.innerHTML = "<p style='color:var(--text-muted)'>Sem serviços disponíveis.</p>";
                 return;
             }
 
-            container.innerHTML = '';
+            container.innerHTML = "";
 
-            lista.forEach(servico => {
-                const card = document.createElement('article');
-                card.className        = 'service-card';
-                card.dataset.servicoId = servico.id;
+            lista.forEach(s => {
+                const pagina = PAGINAS_SERVICO[s.id] || PAGINAS_NOME[s.nome] || "/index.html";
+
+                const card = document.createElement("article");
+                card.className = "service-card";
+                card.style.cursor = "pointer";
                 card.innerHTML = `
-                  <div class="service-icon">${servico.icone || '📄'}</div>
-                  <div class="service-info">
-                    <div class="service-name">${servico.nome}</div>
-                    <div class="service-status">
-                      <span class="status-dot"></span>
-                      ${servico.descricao || 'Serviço disponível'}
+                    <div class="service-icon">${s.icone || "📋"}</div>
+                    <div class="service-info">
+                        <div class="service-name">${s.nome}</div>
+                        <div class="service-status">
+                            <span class="status-dot"></span>
+                            ${s.descricao || "Serviço disponível"}
+                        </div>
                     </div>
-                  </div>
-                  <span class="arrow-icon">→</span>
-                `;
-                card.addEventListener('click', () => selecionarServico(servico, card));
+                    <span class="arrow-icon">→</span>`;
+
+                // CLICK → vai para formulário dedicado
+                card.addEventListener("click", () => {
+                    window.location.href = pagina;
+                });
+
                 container.appendChild(card);
             });
 
-            console.log(`✅ ${lista.length} serviços carregados`);
-
-        } catch (erro) {
-            console.error("❌ Erro ao carregar serviços:", erro);
-            container.innerHTML = '<p style="color: var(--text-muted);">Erro ao carregar serviços.</p>';
+        } catch (err) {
+            console.error("❌ Serviços:", err);
+            document.getElementById("servicesList").innerHTML =
+                "<p style='color:var(--text-muted)'>Erro ao carregar serviços.</p>";
         }
     }
 
-    function selecionarServico(servico, cardEl) {
-        servicoSelecionado = servico;
-
-        // Realçar o card seleccionado
-        document.querySelectorAll('.service-card').forEach(c => {
-            c.classList.remove('ativo');
-        });
-        if (cardEl) cardEl.classList.add('ativo');
-
-        mostrarMensagem(`Serviço seleccionado: ${servico.nome}`, 'ok');
-    }
-
-    /* ══════════════════════════════════════════════════════════════
-       EMISSÃO DE SENHA
-    ══════════════════════════════════════════════════════════════ */
-
-    async function emitirSenha() {
-        if (!servicoSelecionado) {
-            mostrarMensagem('⚠ Seleccione um serviço antes de emitir senha.', 'warn');
-            return;
-        }
-
-        const btnEmitir = document.getElementById('btnEmitirSenha');
-        if (btnEmitir) {
-            btnEmitir.disabled    = true;
-            btnEmitir.textContent = 'A emitir...';
-        }
-
-        mostrarMensagem('⏳ A emitir senha...', '');
-
-        try {
-            const resp = await fetch('/api/senhas/emitir', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({
-                    servico_id: servicoSelecionado.id,
-                    tipo:       'normal'
-                })
-            });
-
-            const dados = await resp.json();
-
-            if (!resp.ok) {
-                mostrarMensagem(`❌ ${dados.erro || 'Erro ao emitir senha'}`, 'warn');
-                return;
-            }
-
-            // Guardar a senha emitida
-            minhaSenha = dados.senha;
-            guardarSenhaLocal(minhaSenha);
-
-            mostrarMensagem(`✅ Senha emitida: ${minhaSenha.numero}`, 'ok');
-            atualizarDisplaySenha();
-            iniciarAcompanhamento(minhaSenha.numero);
-
-            // Actualizar estatísticas imediatamente
-            await atualizarEstatisticas();
-
-        } catch (erro) {
-            console.error("❌ Erro ao emitir senha:", erro);
-            mostrarMensagem('❌ Erro de ligação ao servidor', 'warn');
-        } finally {
-            if (btnEmitir) {
-                btnEmitir.disabled    = false;
-                btnEmitir.textContent = 'Emitir Senha';
-            }
-        }
-    }
-
-    /* ══════════════════════════════════════════════════════════════
-       DISPLAY DA SENHA ACTUAL
-    ══════════════════════════════════════════════════════════════ */
-
-    function atualizarDisplaySenha() {
-        const numEl    = document.getElementById('currentTicket');
-        const statusEl = document.getElementById('currentStatus');
-        const tracker  = document.getElementById('ticketTracker');
-
-        if (!minhaSenha) {
-            if (numEl)    numEl.textContent    = '---';
-            if (statusEl) statusEl.textContent = 'Aguardando';
-            if (tracker)  tracker.style.display = 'none';
-            return;
-        }
-
-        if (numEl)    numEl.textContent    = minhaSenha.numero;
-        if (statusEl) statusEl.textContent = traduzirStatus(minhaSenha.status);
-        if (tracker)  tracker.style.display = 'block';
-    }
-
-    /* ══════════════════════════════════════════════════════════════
-       ACOMPANHAMENTO DE POSIÇÃO NA FILA
-    ══════════════════════════════════════════════════════════════ */
-
-    function iniciarAcompanhamento(numeroSenha) {
-        pararAcompanhamento();
-
-        const tracker = document.getElementById('ticketTracker');
-        if (tracker) tracker.style.display = 'block';
-
-        // Actualizar imediatamente e depois a cada 10s
-        actualizarPosicao(numeroSenha);
-        pollingAcompanhamento = setInterval(
-            () => actualizarPosicao(numeroSenha),
-            10000
-        );
-    }
-
-    function pararAcompanhamento() {
-        if (pollingAcompanhamento) {
-            clearInterval(pollingAcompanhamento);
-            pollingAcompanhamento = null;
-        }
-    }
-
-    async function actualizarPosicao(numeroSenha) {
-        const posEl    = document.getElementById('trackerPosicao');
-        const tempoEl  = document.getElementById('trackerTempo');
-        const estadoEl = document.getElementById('trackerEstado');
-
-        try {
-            const resp = await fetch(
-                `/api/dashboard/public/senha/${encodeURIComponent(numeroSenha)}`
-            );
-
-            if (resp.status === 404) {
-                // Senha não encontrada hoje — pode ser do dia anterior
-                // Limpar localStorage e parar acompanhamento
-                console.warn(`[acompanhamento] Senha ${numeroSenha} não encontrada hoje — a limpar`);
-                limparSenhaLocal();
-                pararAcompanhamento();
-                return;
-            }
-
-            if (!resp.ok) return;
-
-            const dados = await resp.json();
-
-            if (dados.status === 'aguardando') {
-                if (posEl)    posEl.textContent    = dados.posicao || '–';
-                if (tempoEl)  tempoEl.textContent  = dados.tempo_espera_estimado > 0
-                    ? `~${dados.tempo_espera_estimado}min` : '–';
-                if (estadoEl) estadoEl.textContent = 'A aguardar';
-
-            } else if (dados.status === 'atendendo') {
-                if (posEl)    posEl.textContent    = '🔔';
-                if (tempoEl)  tempoEl.textContent  = 'É a sua vez!';
-                if (estadoEl) estadoEl.textContent = `Balcão ${dados.balcao}`;
-                pararAcompanhamento();
-
-            } else if (dados.status === 'concluida' || dados.status === 'cancelada') {
-                if (estadoEl) estadoEl.textContent = traduzirStatus(dados.status);
-                pararAcompanhamento();
-                // Limpar depois de 5s para não poluir o ecrã
-                setTimeout(() => {
-                    limparSenhaLocal();
-                    atualizarDisplaySenha();
-                }, 5000);
-            }
-
-        } catch (erro) {
-            console.error('[actualizarPosicao] Erro:', erro);
-        }
-    }
-
-    /* ══════════════════════════════════════════════════════════════
-       ESTATÍSTICAS GERAIS
-    ══════════════════════════════════════════════════════════════ */
+    // ── Estatísticas ─────────────────────────────────────────
 
     async function atualizarEstatisticas() {
         try {
-            const resp = await fetch('/api/senhas/estatisticas');
+            const resp = await fetch("/api/senhas/estatisticas");
             if (!resp.ok) return;
-
-            const stats = await resp.json();
-
-            const filaEl  = document.getElementById('statFila');
-            const tempoEl = document.getElementById('statTempo');
-            const doneEl  = document.getElementById('statDone');
-            const satEl   = document.getElementById('statSat');
-
-            if (filaEl)  filaEl.textContent  = stats.aguardando || 0;
-            if (tempoEl) tempoEl.textContent  = `~${stats.tempo_medio_espera || 0}min`;
-            if (doneEl)  doneEl.textContent   = stats.concluidas || 0;
-
-            // Taxa de conclusão: concluídas / total emitidas
-            if (satEl) {
-                const total    = stats.total_emitidas || 0;
-                const conclui  = stats.concluidas     || 0;
-                satEl.textContent = total > 0
-                    ? `${Math.round((conclui / total) * 100)}%`
-                    : '—';
+            const s = await resp.json();
+            const g = id => document.getElementById(id);
+            if (g("statFila"))  g("statFila").textContent  = s.aguardando || 0;
+            if (g("statTempo")) g("statTempo").textContent = `~${s.tempo_medio_espera || 0}min`;
+            if (g("statDone"))  g("statDone").textContent  = s.concluidas || 0;
+            if (g("statSat")) {
+                const total  = s.total_emitidas || 0;
+                const conc   = s.concluidas     || 0;
+                g("statSat").textContent = total > 0 ? `${Math.round((conc/total)*100)}%` : "—";
             }
-
-        } catch (erro) {
-            console.error("❌ Erro ao actualizar estatísticas:", erro);
-        }
+        } catch (e) { console.error("❌ Estatísticas:", e); }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       ÚLTIMA CHAMADA GERAL
-    ══════════════════════════════════════════════════════════════ */
+    // ── Última chamada ────────────────────────────────────────
 
     async function atualizarUltimaChamada() {
-        const numEl    = document.getElementById('ultimaChamada');
-        const balcaoEl = document.getElementById('ultimoBalcao');
-
         try {
-            // Busca senhas em atendimento, sem trailing slash problemático
-            const resp = await fetch('/api/senhas?status=atendendo&per_page=1&page=1');
+            const resp = await fetch("/api/senhas?status=atendendo&per_page=1&page=1");
             if (!resp.ok) return;
-
-            const dados  = await resp.json();
-            const senhas = dados.senhas || [];
-
-            if (senhas.length > 0) {
+            const { senhas = [] } = await resp.json();
+            const g = id => document.getElementById(id);
+            if (senhas.length) {
                 const s = senhas[0];
-                if (numEl)    numEl.textContent    = s.numero;
-                if (balcaoEl) balcaoEl.textContent = s.numero_balcao
-                    ? `Balcão ${s.numero_balcao}` : '—';
+                if (g("ultimaChamada")) g("ultimaChamada").textContent = s.numero;
+                if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = s.numero_balcao ? `Balcão ${s.numero_balcao}` : "—";
             } else {
-                if (numEl)    numEl.textContent    = '---';
-                if (balcaoEl) balcaoEl.textContent = '—';
+                if (g("ultimaChamada")) g("ultimaChamada").textContent = "---";
+                if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = "—";
             }
-
-        } catch (erro) {
-            console.error("❌ Erro ao actualizar última chamada:", erro);
-        }
+        } catch (e) { console.error("❌ Última chamada:", e); }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       LOCALSTORAGE — senha guardada entre sessões
-       FIX: valida se a senha é de hoje antes de restaurar
-    ══════════════════════════════════════════════════════════════ */
-
-    function guardarSenhaLocal(senha) {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(senha));
-        } catch (_) { /* silencioso — localStorage pode estar desactivado */ }
-    }
-
-    function limparSenhaLocal() {
-        localStorage.removeItem(STORAGE_KEY);
-        minhaSenha = null;
-    }
+    // ── Acompanhamento da senha emitida ───────────────────────
 
     function restaurarSenhaGuardada() {
         try {
             const guardada = localStorage.getItem(STORAGE_KEY);
             if (!guardada) return;
-
             const senha = JSON.parse(guardada);
-
-            // FIX DO 404: verificar se a data_emissao é de hoje
-            // Senhas de dias anteriores são descartadas automaticamente
-            const hoje        = new Date().toISOString().split('T')[0]; // "2026-03-20"
-            const dataEmissao = senha.data_emissao || '';
-
-            if (dataEmissao !== hoje) {
-                console.info(
-                    `[restaurar] Senha ${senha.numero} é de ${dataEmissao}, ` +
-                    `hoje é ${hoje} — a descartar`
-                );
-                limparSenhaLocal();
-                return;
+            const hoje  = new Date().toISOString().split("T")[0];
+            if ((senha.data_emissao || "") !== hoje) {
+                localStorage.removeItem(STORAGE_KEY); return;
             }
-
-            // Senha é de hoje — restaurar
-            minhaSenha = senha;
-            atualizarDisplaySenha();
-
-            // Se ainda não estava concluída, retomar acompanhamento
-            if (!['concluida', 'cancelada'].includes(senha.status)) {
+            mostrarSenhaActual(senha);
+            if (!["concluida","cancelada"].includes(senha.status)) {
                 iniciarAcompanhamento(senha.numero);
             }
-
-            console.info(`[restaurar] Senha ${senha.numero} restaurada`);
-
-        } catch (erro) {
-            // JSON inválido ou outra falha — limpar tudo
-            console.warn('[restaurar] Erro ao restaurar senha:', erro);
-            limparSenhaLocal();
-        }
+        } catch (_) { localStorage.removeItem(STORAGE_KEY); }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       POLLING GERAL — estatísticas + última chamada
-    ══════════════════════════════════════════════════════════════ */
+    function mostrarSenhaActual(s) {
+        const g = id => document.getElementById(id);
+        if (g("currentTicket"))   g("currentTicket").textContent   = s.numero;
+        if (g("currentStatus"))   g("currentStatus").textContent   = traduzirStatus(s.status);
+        if (g("ticketTracker"))   g("ticketTracker").style.display = "block";
+    }
 
-    function iniciarPollingGeral() {
-        pararPollingGeral();
-        pollingGeral = setInterval(async () => {
-            await atualizarEstatisticas();
-            await atualizarUltimaChamada();
+    let pollingAcomp = null;
+
+    function iniciarAcompanhamento(numero) {
+        if (pollingAcomp) clearInterval(pollingAcomp);
+        actualizarPosicao(numero);
+        pollingAcomp = setInterval(() => actualizarPosicao(numero), 10000);
+    }
+
+    async function actualizarPosicao(numero) {
+        try {
+            const resp = await fetch(`/api/dashboard/public/senha/${encodeURIComponent(numero)}`);
+            if (resp.status === 404) { localStorage.removeItem(STORAGE_KEY); if (pollingAcomp) clearInterval(pollingAcomp); return; }
+            if (!resp.ok) return;
+            const d = await resp.json();
+            const g = id => document.getElementById(id);
+            if (d.status === "aguardando") {
+                if (g("trackerPosicao")) g("trackerPosicao").textContent = d.posicao || "—";
+                if (g("trackerTempo"))   g("trackerTempo").textContent   = d.tempo_espera_estimado > 0 ? `~${d.tempo_espera_estimado}min` : "—";
+                if (g("trackerEstado"))  g("trackerEstado").textContent  = "A aguardar";
+            } else if (d.status === "atendendo") {
+                if (g("trackerPosicao")) g("trackerPosicao").textContent = "🔔";
+                if (g("trackerTempo"))   g("trackerTempo").textContent   = "É a sua vez!";
+                if (g("trackerEstado"))  g("trackerEstado").textContent  = `Balcão ${d.balcao || "—"}`;
+                if (pollingAcomp) clearInterval(pollingAcomp);
+            } else if (["concluida","cancelada"].includes(d.status)) {
+                if (g("trackerEstado")) g("trackerEstado").textContent = traduzirStatus(d.status);
+                if (pollingAcomp) clearInterval(pollingAcomp);
+                setTimeout(() => { localStorage.removeItem(STORAGE_KEY); }, 5000);
+            }
+        } catch (e) { console.error("❌ Posição:", e); }
+    }
+
+    // ── Polling geral ─────────────────────────────────────────
+
+    function iniciarPolling() {
+        pararPollings();
+        pollingGeral = setInterval(() => {
+            atualizarEstatisticas();
+            atualizarUltimaChamada();
         }, 5000);
     }
 
-    function pararPollingGeral() {
-        if (pollingGeral) {
-            clearInterval(pollingGeral);
-            pollingGeral = null;
-        }
-    }
-
     function pararPollings() {
-        pararPollingGeral();
-        pararAcompanhamento();
+        if (pollingGeral) { clearInterval(pollingGeral); pollingGeral = null; }
+        if (pollingAcomp) { clearInterval(pollingAcomp); pollingAcomp = null; }
     }
 
-    /* ══════════════════════════════════════════════════════════════
-       UTILITÁRIOS
-    ══════════════════════════════════════════════════════════════ */
+    // ── Helpers ───────────────────────────────────────────────
 
     function mostrarMensagem(texto, tipo) {
-        const el = document.getElementById('ticketMessage');
+        const el = document.getElementById("ticketMessage");
         if (!el) return;
-        el.textContent  = texto;
-        el.className    = 'ticket-message';
+        el.textContent = texto;
+        el.className   = "ticket-message";
         if (tipo) el.classList.add(tipo);
-
-        // Limpar automaticamente após 6 segundos
-        if (tipo === 'ok') {
-            setTimeout(() => {
-                if (el.textContent === texto) el.textContent = '';
-            }, 6000);
-        }
+        if (tipo === "ok") setTimeout(() => { if (el.textContent === texto) el.textContent = ""; }, 6000);
     }
 
-    function traduzirStatus(status) {
-        const mapa = {
-            'aguardando': 'A aguardar',
-            'chamada':    'Chamada',
-            'atendendo':  'Em atendimento',
-            'concluida':  'Concluída',
-            'cancelada':  'Cancelada'
-        };
-        return mapa[status] || status;
+    function traduzirStatus(s) {
+        return { aguardando:"A aguardar", chamada:"Chamada", atendendo:"Em atendimento", concluida:"Concluída", cancelada:"Cancelada" }[s] || s;
     }
 
 })();
