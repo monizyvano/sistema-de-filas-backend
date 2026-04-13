@@ -1,71 +1,22 @@
 /**
- * static/js/service-form.js
- * Formulários de serviço — ligado à API real do backend
- * Documentado em PT-PT
+ * static/js/service-form.js — v2
+ * Dados do formulário guardados nas observacoes da senha.
+ * Trabalhador vê o contexto completo do atendimento.
  */
-
 (function () {
   "use strict";
 
-  // Definição dos campos e documentos por serviço
   const DEFS = {
-    "Secretaria Académica": {
-      docs: ["Bilhete de Identidade", "Certificado de habilitações", "2 fotografias tipo passe"],
-      fields: [
-        { key: "nome_aluno",  label: "Nome do aluno",  type: "text",     required: true },
-        { key: "ano_turma",   label: "Ano / Turma",    type: "text",     required: true }
-      ]
-    },
-    Matricula: {
-      docs: ["Bilhete de Identidade", "Certificado", "2 fotos"],
-      fields: [
-        { key: "nome_aluno", label: "Nome do aluno", type: "text",     required: true },
-        { key: "ano",        label: "Ano / Turma",   type: "text",     required: true }
-      ]
-    },
-    Reconfirmacao: {
-      docs: ["Cartão do aluno", "Comprovativo de pagamento"],
-      fields: [
-        { key: "numero_aluno", label: "Número do aluno", type: "text", required: true },
-        { key: "classe",       label: "Classe",          type: "text", required: true }
-      ]
-    },
-    Tesouraria: {
-      docs: ["Comprovativo de pagamento", "Documento de identificação"],
-      fields: [
-        { key: "referencia", label: "Referência de pagamento", type: "text", required: true },
-        { key: "valor",      label: "Valor",                   type: "text", required: true }
-      ]
-    },
-    "Pedido de declaracao": {
-      docs: ["Documento de identificação", "Formulário do pedido"],
-      fields: [
-        { key: "tipo_declaracao", label: "Tipo de declaração", type: "text",     required: true },
-        { key: "motivo",          label: "Motivo",             type: "textarea", required: true }
-      ]
-    },
-    "Apoio ao Cliente": {
-      docs: ["Documento de identificação (opcional)"],
-      fields: [
-        { key: "assunto",   label: "Assunto",    type: "text",     required: true },
-        { key: "descricao", label: "Descrição",  type: "textarea", required: true }
-      ]
-    }
+    "Matricula":           { servicoId:1, tipo:"normal",     docs:["BI","Certificado","2 fotos"], fields:[{key:"nome_aluno",label:"Nome do aluno",type:"text",required:true},{key:"ano",label:"Ano / Turma",type:"text",required:true}] },
+    "Reconfirmacao":       { servicoId:1, tipo:"normal",     docs:["Cartão do aluno","Comprovativo"], fields:[{key:"numero_aluno",label:"Nº aluno",type:"text",required:true},{key:"classe",label:"Classe",type:"text",required:true}] },
+    "Tesouraria":          { servicoId:2, tipo:"normal",     docs:["Comprovativo","BI"], fields:[{key:"tipo_pag",label:"Tipo de pagamento",type:"text",required:true},{key:"referencia",label:"Referência / Nº aluno",type:"text",required:true},{key:"valor",label:"Valor (Kz)",type:"text",required:false}] },
+    "Pedido de declaracao":{ servicoId:3, tipo:"prioritaria",docs:["BI","Formulário"], fields:[{key:"tipo_decl",label:"Tipo de declaração",type:"text",required:true},{key:"motivo",label:"Motivo / Destino",type:"textarea",required:true}] },
+    "Apoio ao Cliente":    { servicoId:5, tipo:"normal",     docs:["BI (opcional)"],   fields:[{key:"assunto",label:"Assunto",type:"text",required:true},{key:"descricao",label:"Descrição",type:"textarea",required:true}] }
   };
 
-  // Mapeamento de serviço → servico_id da API
-  const SERVICO_ID = {
-    "Secretaria Académica":    1,
-    "Matricula":               1,
-    "Reconfirmacao":           1,
-    "Tesouraria":              2,
-    "Direcção Pedagógica":     3,
-    "Pedido de declaracao":    3,
-    "Biblioteca":              4,
-    "Apoio ao Cliente":        5
-  };
+  const service = document.body.getAttribute("data-service") || "Apoio ao Cliente";
+  const def     = DEFS[service] || DEFS["Apoio ao Cliente"];
 
-  const service       = document.body.getAttribute("data-service") || "Apoio ao Cliente";
   const titleEl       = document.getElementById("serviceTitle");
   const docsList      = document.getElementById("requiredDocs");
   const dynamicFields = document.getElementById("dynamicFields");
@@ -73,94 +24,73 @@
   const msg           = document.getElementById("formMsg");
   const form          = document.getElementById("serviceForm");
 
-  function showMessage(text, type) {
+  function showMsg(text, type) {
     if (!msg) return;
-    msg.textContent  = text || "";
-    msg.className    = "msg";
+    msg.textContent = text || "";
+    msg.className   = "msg";
     if (type) msg.classList.add(type);
   }
 
   function renderPage() {
-    const def = DEFS[service] || DEFS["Apoio ao Cliente"];
-
     if (titleEl) titleEl.textContent = service;
-
-    // Documentos necessários
     if (docsList) {
       docsList.innerHTML = "";
-      def.docs.forEach(d => {
-        const li = document.createElement("li");
-        li.textContent = d;
-        docsList.appendChild(li);
-      });
+      def.docs.forEach(d => { const li = document.createElement("li"); li.textContent = d; docsList.appendChild(li); });
     }
-
-    // Campos dinâmicos
     if (dynamicFields) {
       dynamicFields.innerHTML = "";
       def.fields.forEach(f => {
         const wrap  = document.createElement("div");
+        wrap.style.marginBottom = "8px";
         const label = document.createElement("label");
-        label.textContent = f.label;
-        const input = document.createElement(f.type === "textarea" ? "textarea" : "input");
-        if (f.type !== "textarea") input.type = f.type;
-        input.required = !!f.required;
+        label.textContent   = f.label + (f.required ? " *" : "");
+        label.style.cssText = "font-weight:700;display:block;margin-bottom:4px;font-size:.9rem;";
+        let input;
+        if (f.type === "textarea") { input = document.createElement("textarea"); input.rows = 3; }
+        else { input = document.createElement("input"); input.type = f.type; }
         input.name     = f.key;
+        input.required = !!f.required;
+        input.style.cssText = "width:100%;border:1px solid #d9cabc;border-radius:10px;padding:10px;font-size:.95rem;";
         wrap.appendChild(label);
         wrap.appendChild(input);
         dynamicFields.appendChild(wrap);
       });
     }
-
-    // Pré-preencher email se utilizador estiver logado
     if (inputEmail) {
-      try {
-        const user = JSON.parse(localStorage.getItem("imtsb_user") || "{}");
-        if (user.email && !user.isGuest) inputEmail.value = user.email;
-      } catch (_) {}
+      try { const u = JSON.parse(localStorage.getItem("imtsb_user") || "{}"); if (u.email && !u.isGuest) inputEmail.value = u.email; } catch (_) {}
     }
   }
 
-  // Submissão — emite senha via API real
   if (form) {
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
-      showMessage("A emitir senha...", "");
-
-      const servicoId = SERVICO_ID[service] || 1;
-
+      showMsg("A emitir senha...", "");
+      const formData = {};
+      if (dynamicFields) dynamicFields.querySelectorAll("[name]").forEach(el => { if (el.value) formData[el.name] = el.value; });
+      let utenteId = null, contacto = "";
+      try { const u = JSON.parse(localStorage.getItem("imtsb_user") || "{}"); utenteId = u.id || null; contacto = u.email || ""; } catch (_) {}
+      const linhas = ["SERVIÇO: " + service];
+      def.fields.forEach(f => { if (formData[f.key]) linhas.push(f.label + ": " + formData[f.key]); });
+      if (inputEmail && inputEmail.value) linhas.push("Contacto: " + inputEmail.value);
+      const observacoes = linhas.join(" | ");
       try {
         const resp = await fetch("/api/senhas/emitir", {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ servico_id: servicoId, tipo: "normal" })
+          body: JSON.stringify({ servico_id: def.servicoId, tipo: def.tipo || "normal", usuario_contato: contacto || null, utente_id: utenteId, observacoes: observacoes })
         });
-
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          showMessage(data.erro || "Erro ao emitir senha.", "warn");
-          return;
-        }
-
-        const numero = data.senha?.numero || data.numero || "???";
-
-        // Guardar senha no localStorage para acompanhamento
-        if (data.senha) {
-          localStorage.setItem("imtsb_minha_senha", JSON.stringify(data.senha));
-        }
-
-        // Guardar mensagem flash e redirecionar para o painel
-        localStorage.setItem("imtsb_flash", `Senha emitida: ${numero} — Serviço: ${service}`);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) { showMsg(data.erro || "Erro ao emitir senha.", "warn"); return; }
+        const senha  = data.senha || {};
+        const numero = senha.numero || "???";
+        if (senha.id) localStorage.setItem("imtsb_minha_senha", JSON.stringify(senha));
+        localStorage.setItem("imtsb_flash", "✅ Senha emitida: " + numero + " — " + service + ". Aguarde ser chamado.");
         window.location.href = "/index.html";
-
       } catch (err) {
-        console.error(err);
-        showMessage("Erro de ligação ao servidor.", "warn");
+        showMsg("Erro de ligação ao servidor.", "warn");
       }
     });
   }
 
   renderPage();
-
 })();
