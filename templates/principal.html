@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
+  <!-- Configuracoes basicas da pagina -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Instituto Medio Tecnico Sao Benedito</title>
+
+  <!-- Folha de estilos da pagina principal -->
   <link rel="stylesheet" href="/static/css/principal.css">
 </head>
 <body>
@@ -19,11 +22,13 @@
   <main class="main-content">
     <!-- Destaque inicial com mensagem principal da escola -->
     <section class="hero-strip">
+      <!-- Imagem principal do topo -->
       <img
         src="/static/image/classroom.jpg"
         alt="Campus do Instituto Medio Tecnico Sao Benedito"
       >
 
+      <!-- Texto que aparece sobre a imagem principal -->
       <div class="hero-overlay">
         <h1>O Futuro Comeca Aqui: Formacao Tecnica de Excelencia</h1>
         <p>
@@ -39,10 +44,13 @@
       <h2>Cursos da Escola</h2>
 
       <div class="carousel-shell">
+        <!-- Lista horizontal dos cursos. O movimento automatico acontece no script no fim da pagina. -->
         <div class="courses-list carousel-track" id="courses-list">
           <article class="course-item">
+            <!-- Imagem do curso aplicada pelo CSS -->
             <div class="course-media course-media-informatica" aria-hidden="true"></div>
 
+            <!-- Texto do curso -->
             <div class="course-body">
               <h3>Informatica</h3>
               <p>
@@ -156,6 +164,7 @@
       <h2>Professores</h2>
 
       <div class="carousel-shell">
+        <!-- Lista horizontal dos professores -->
         <div class="cards-grid carousel-track teachers-track" id="teachers-list">
           <article class="card">
             <h3>Prof. Gregorio</h3>
@@ -185,8 +194,10 @@
       <h2>Missao da Escola</h2>
 
       <div class="mission-layout">
+        <!-- Imagem decorativa da secao -->
         <div class="mission-media" aria-hidden="true"></div>
 
+        <!-- Texto institucional da escola -->
         <div class="mission-content">
           <p>
             A missao do IMTSB e formar profissionais tecnicos qualificados, com
@@ -201,24 +212,28 @@
   <!-- Rodape com contactos e informacoes gerais -->
   <footer class="footer">
     <div class="footer-grid">
+      <!-- Horario e telefone -->
       <article>
         <h3>Apoio ao Cliente</h3>
         <p>Seg a Sex: 08h00 - 17h00</p>
         <p>Telefone: +244 939 183 415</p>
       </article>
 
+      <!-- Endereco da instituicao -->
       <article>
         <h3>Localizacao</h3>
         <p>Rua Principal, Bairro Sao Benedito</p>
         <p>Luanda, Angola</p>
       </article>
 
+      <!-- Emails de contacto -->
       <article>
         <h3>Email</h3>
         <p>atendimento@imtsb.co.ao</p>
         <p>secretaria@imtsb.co.ao</p>
       </article>
 
+      <!-- Resumo do que o portal oferece -->
       <article>
         <h3>Outras Informacoes</h3>
         <p>Atendimento presencial e online.</p>
@@ -229,8 +244,14 @@
 
   <script src="/static/js/principal.js"></script>
   <script>
+    // Espera a pagina carregar completamente antes de executar o script.
     document.addEventListener("DOMContentLoaded", function () {
+
+      // Tempo da rotacao automatica do carrossel, em milissegundos.
+      // Exemplo: 4000 = 4 segundos entre cada mudanca de curso.
       const CAROUSEL_INTERVAL = 4000;
+
+      // Lista de elementos que vao receber efeito de entrada ao aparecer na tela.
       const REVEAL_SELECTOR =
         ".hero-strip, .content-section, .course-item, .card, .footer article";
 
@@ -243,9 +264,13 @@
 
       // Calcula quanto o carrossel deve avancar por vez com base no primeiro card visivel.
       function getStepWidth(track) {
+        // Procura o primeiro card da lista atual para usar a largura dele como referencia.
         const firstCard = track.querySelector(".course-item, .card");
+
+        // Le o espaco entre os cards para a conta da rolagem ficar correta.
         const gap = parseFloat(window.getComputedStyle(track).gap || 0);
 
+        // Se existir card, usa a largura dele. Se nao, usa quase a largura da tela.
         return firstCard
           ? firstCard.getBoundingClientRect().width + gap
           : track.clientWidth * 0.9;
@@ -253,10 +278,16 @@
 
       // Avanca para o proximo card e volta ao inicio quando chegar ao fim.
       function advanceCarousel(track) {
+        // Ponto maximo onde a rolagem horizontal pode chegar.
         const maxScroll = Math.max(track.scrollWidth - track.clientWidth, 0);
+
+        // Proxima posicao horizontal do carrossel.
         const nextLeft = track.scrollLeft + getStepWidth(track);
+
+        // Quando chega no fim, volta para o inicio e continua o ciclo.
         const shouldReturnToStart = nextLeft >= maxScroll - 8;
 
+        // Faz a rolagem suave entre os cards.
         track.scrollTo({
           left: shouldReturnToStart ? 0 : nextLeft,
           behavior: "smooth"
@@ -265,16 +296,20 @@
 
       // Inicia a rotacao automatica e pausa durante interacoes do utilizador.
       function setupAutoCarousel(track) {
+        // Respeita a preferencia do utilizador que pediu menos movimento no sistema.
         if (prefersReducedMotion) return;
 
+        // Temporizador que troca os cards automaticamente no intervalo definido.
         let autoRotate = window.setInterval(function () {
           advanceCarousel(track);
         }, CAROUSEL_INTERVAL);
 
+        // Para o temporizador atual.
         function stopAutoRotate() {
           window.clearInterval(autoRotate);
         }
 
+        // Reinicia o temporizador depois de uma pausa ou interacao.
         function restartAutoRotate() {
           stopAutoRotate();
           autoRotate = window.setInterval(function () {
@@ -282,21 +317,34 @@
           }, CAROUSEL_INTERVAL);
         }
 
+        // Pausa quando o mouse fica sobre o carrossel.
         track.addEventListener("mouseenter", stopAutoRotate);
+
+        // Continua quando o mouse sai do carrossel.
         track.addEventListener("mouseleave", restartAutoRotate);
+
+        // Pausa quando alguem navega com teclado e cai dentro da trilha.
         track.addEventListener("focusin", stopAutoRotate);
+
+        // Continua quando o foco sai.
         track.addEventListener("focusout", restartAutoRotate);
+
+        // Em telemoveis, reinicia depois do toque.
         track.addEventListener("touchend", restartAutoRotate, { passive: true });
 
+        // Reinicia ao redimensionar a tela para ajustar o calculo da largura.
         window.addEventListener("resize", restartAutoRotate);
       }
 
       // Ativa o estado inicial das animacoes de revelacao.
       function setupRevealAnimation() {
+        // Se nao houver elementos para animar, para aqui.
         if (!revealElements.length) return;
 
+        // Marca o body para o CSS preparar a animacao.
         document.body.classList.add("reveal-ready");
 
+        // Adiciona classes e um pequeno atraso diferente para cada bloco.
         revealElements.forEach(function (element, index) {
           element.classList.add("reveal-item");
           element.style.setProperty("--reveal-delay", ((index % 6) * 70) + "ms");
@@ -305,22 +353,33 @@
         // Observer responsavel por mostrar os blocos gradualmente ao entrar na viewport.
         const observer = new IntersectionObserver(function (entries) {
           entries.forEach(function (entry) {
+            // Ignora elementos ainda fora da area visivel.
             if (!entry.isIntersecting) return;
 
+            // Quando o elemento aparece na tela, recebe a classe de visivel.
             entry.target.classList.add("is-visible");
+
+            // Depois de mostrar uma vez, nao precisa mais observar.
             observer.unobserve(entry.target);
           });
         }, {
+          // O elemento precisa aparecer pelo menos 15% para ativar.
           threshold: 0.15,
+
+          // Faz o disparo acontecer um pouco antes do fim da viewport.
           rootMargin: "0px 0px -40px 0px"
         });
 
+        // Coloca todos os elementos da lista sob observacao.
         revealElements.forEach(function (element) {
           observer.observe(element);
         });
       }
 
+      // Aplica a rotacao automatica a cada trilha horizontal da pagina.
       carouselTracks.forEach(setupAutoCarousel);
+
+      // Inicia as animacoes de entrada.
       setupRevealAnimation();
     });
   </script>
