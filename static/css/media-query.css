@@ -1,4 +1,4 @@
-﻿@charset "UTF-8";
+@charset "UTF-8";
 
 /*tablets*/
 @media (min-width: 768px) and (max-width: 992px){
@@ -41,13 +41,13 @@
             --text-dark: #401903;
             --text-muted: #8C6746;
             /* Cores de estado */
-            --success-green: #10B981;
+            --success-green: #8C6746;
             --color-error: #DC2626;
             /* Sombras */
             --shadow-sm: 0 2px 8px rgba(64, 25, 3, 0.08);
             --shadow-md: 0 4px 16px rgba(64, 25, 3, 0.12);
             --shadow-lg: 0 8px 32px rgba(64, 25, 3, 0.16);
-            /* EspaÃ§amentos (Mobile) */
+            /* Espaçamentos (Mobile) */
             --space-xs: 0.5rem;
             --space-sm: 0.75rem;
             --space-md: 1rem;
@@ -237,7 +237,7 @@
         grid-template-columns: repeat(4, 1fr);
     }
     
-    /* ServiÃ§os: grid 4 colunas */
+    /* Serviços: grid 4 colunas */
     .services-list {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -277,6 +277,7 @@
         text-align: right;
     }
 }
+
 
 
 

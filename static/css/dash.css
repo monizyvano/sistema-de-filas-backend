@@ -1,4 +1,4 @@
-ï»¿  :root {
+  :root {
             --primary-brown: #8C6746;
             --primary-brown-dark: #401903;
             --accent-beige: #BFA799;
@@ -10,7 +10,7 @@
             --shadow-strong: 0 20px 60px rgba(64, 25, 3, 0.15);
             --text-dark: #401903;
             --text-muted: #8C6746;
-            --success-green: #10B981;
+            --success-green: #8C6746;
             --warning-orange: #F59E0B;
             --alert-red: #DC2626;
         }
@@ -51,7 +51,7 @@
         .attendant-avatar {
             width: 48px;
             height: 48px;
-            background: linear-gradient(135deg, var(--primary-brown), var(--success-green));
+            background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -91,7 +91,7 @@
         .status-dot {
             width: 12px;
             height: 12px;
-            background: var(--success-green);
+            background: var(--primary-brown);
             border-radius: 50%;
             animation: pulse 2s infinite;
         }
@@ -103,7 +103,7 @@
 
         .status-text {
             font-weight: 600;
-            color: var(--success-green);
+            color: var(--primary-brown);
         }
 
         /* Container Principal */
@@ -274,7 +274,7 @@
         }
 
         .btn-next {
-            background: linear-gradient(135deg, var(--success-green), #059669);
+            background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
             color: white;
         }
 
@@ -389,7 +389,7 @@
             background: white;
             padding: 1rem;
             border-radius: 12px;
-            border-left: 4px solid var(--success-green);
+            border-left: 4px solid var(--accent-beige);
             transition: transform 0.3s;
         }
 
@@ -398,7 +398,7 @@
         }
 
         .log-item.completed {
-            border-left-color: var(--success-green);
+            border-left-color: var(--primary-brown);
         }
 
         .log-item.redirected {
@@ -492,16 +492,16 @@
 
 
 
-/* BotÃ£o Concluir â€” verde escuro, destaque positivo */
+/* Botão Concluir — verde escuro, destaque positivo */
 .btn-conclude {
-    background: linear-gradient(135deg, var(--success-green, #10B981), #059669);
+    background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
     color: white;
     opacity: 0.5;
     cursor: not-allowed;
     transition: opacity 0.3s ease, transform 0.2s ease;
 }
 
-/* Estado activo â€” quando hÃ¡ senha em atendimento */
+/* Estado activo — quando há senha em atendimento */
 .btn-conclude:not(:disabled) {
     opacity: 1;
     cursor: pointer;
@@ -509,9 +509,10 @@
 
 .btn-conclude:not(:disabled):hover {
     transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+    box-shadow: 0 8px 24px rgba(140, 103, 70, 0.24);
 }
 
 .btn-conclude:not(:disabled):active {
     transform: translateY(-2px);
 }
+

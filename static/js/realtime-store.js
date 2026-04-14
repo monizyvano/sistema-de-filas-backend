@@ -1,100 +1,174 @@
 /**
- * REALTIME STORE — Sistema de Filas IMTSB
+ * REALTIME STORE
  * static/js/realtime-store.js
- * Documentado em PT-PT
  */
-
 (function () {
   "use strict";
 
   const ApiClient = window.ApiClient;
-  const apiConfig = window.IMTSBApiConfig || {};
 
   if (!ApiClient) {
-    console.warn("⚠ ApiClient não carregado!");
+    console.warn("ApiClient nao carregado! realtime-store.js nao funcionara.");
+    return;
   }
 
   const IMTSBStore = {
-
     _state: {
       user: null,
       queue: [],
       history: [],
-      stats: { aguardando: 0, concluidas: 0, tempo_medio: 0 },
+      stats: {
+        aguardando: 0,
+        concluidas: 0,
+        tempo_medio: 0,
+        satisfacao: 0
+      },
       currentTicket: null,
       lastCall: null
     },
 
     _listeners: [],
+    _pollingInterval: null,
 
     subscribe(callback) {
       this._listeners.push(callback);
       return () => {
-        const i = this._listeners.indexOf(callback);
-        if (i > -1) this._listeners.splice(i, 1);
+        const index = this._listeners.indexOf(callback);
+        if (index > -1) this._listeners.splice(index, 1);
       };
     },
 
-    onChange(callback) { return this.subscribe(callback); },
+    onChange(callback) {
+      return this.subscribe(callback);
+    },
 
-    _notify() { this._listeners.forEach(fn => fn(this._state)); },
+    _notify() {
+      const snapshot = this._state;
+      this._listeners.forEach(function (listener) {
+        listener(snapshot);
+      });
+    },
 
-    // ── Utilizador ──────────────────────────────────────────
+    getSnapshot() {
+      return {
+        queue: this._state.queue.slice(),
+        history: this._state.history.slice(),
+        users: [],
+        stats: Object.assign({}, this._state.stats)
+      };
+    },
 
     getUser() {
       const stored = localStorage.getItem("imtsb_user");
       if (stored) {
-        try { return JSON.parse(stored); } catch { return null; }
+        try {
+          return JSON.parse(stored);
+        } catch (error) {
+          return null;
+        }
       }
       return this._state.user;
     },
 
-    getToken() {
-      const user = this.getUser();
-      return user ? (user.token || localStorage.getItem("imtsb_access_token")) : null;
+    getCurrentTicket() {
+      return this._state.currentTicket;
     },
 
-    isAuthenticated() { return !!this.getToken(); },
-    isLoggedIn()      { return this.isAuthenticated(); },
+    getToken() {
+      const user = this.getUser();
+      return user ? (user.token || localStorage.getItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token")) : null;
+    },
 
-    getCurrentTicket() { return this._state.currentTicket; },
+    isAuthenticated() {
+      return !!this.getToken();
+    },
 
-    // ── Sessão ───────────────────────────────────────────────
+    isLoggedIn() {
+      return this.isAuthenticated();
+    },
 
     continueAsGuest() {
-      const sessao = {
-        id:      null,
-        name:    "Visitante",
-        email:   "visitante-" + Date.now() + "@guest.local",
-        role:    "usuario",
-        token:   "",
+      const session = {
+        id: null,
+        name: "Visitante",
+        email: "",
+        role: "usuario",
+        token: "",
+        balcao: null,
         isGuest: true
       };
-      localStorage.setItem("imtsb_user", JSON.stringify(sessao));
-      this._state.user = sessao;
+
+      localStorage.setItem("imtsb_user", JSON.stringify(session));
+      this._state.user = session;
       this._notify();
       return { ok: true, redirect: "/index.html" };
     },
 
+    async login(email, password) {
+      try {
+        const result = await ApiClient.login(email, password);
+
+        if (!result.ok) {
+          return { ok: false, message: result.message || "Erro no login" };
+        }
+
+        const user = {
+          id: result.id,
+          name: result.name,
+          email: result.email,
+          role: result.role,
+          token: result.token || result.raw?.access_token || "",
+          balcao: result.balcao,
+          numero_balcao: result.numero_balcao || result.balcao,
+          departamento: result.departamento,
+          servico_id: result.servico_id || null,
+          isGuest: false
+        };
+
+        this._state.user = user;
+        localStorage.setItem("imtsb_user", JSON.stringify(user));
+        this._notify();
+
+        return { ok: true, user, role: result.role };
+      } catch (error) {
+        console.error("Erro no login:", error);
+        return { ok: false, message: "Erro de conexao" };
+      }
+    },
+
+    async register(payload) {
+      try {
+        const result = await ApiClient.register(payload);
+
+        if (!result.ok) {
+          return { ok: false, message: result.message || "Erro no cadastro" };
+        }
+
+        return { ok: true, data: result.data };
+      } catch (error) {
+        console.error("Erro no cadastro:", error);
+        return { ok: false, message: "Erro de conexao" };
+      }
+    },
+
     logout() {
-      this._state.user          = null;
-      this._state.queue         = [];
-      this._state.history       = [];
+      this._state.user = null;
+      this._state.queue = [];
+      this._state.history = [];
       this._state.currentTicket = null;
 
       localStorage.removeItem("imtsb_user");
-      localStorage.removeItem("imtsb_access_token");
-      localStorage.removeItem("imtsb_refresh_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.refreshTokenStorageKey || "imtsb_refresh_token");
 
       this._notify();
       window.location.href = "/";
     },
 
     requireRole(allowedRoles) {
-      const user  = this.getUser();
+      const user = this.getUser();
       const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
 
-      // Modo anónimo — permitir role "usuario"
       if (!user) {
         if (roles.includes("usuario")) {
           return { name: "Visitante", email: "", role: "usuario", isAnonymous: true };
@@ -104,7 +178,6 @@
       }
 
       if (!roles.includes(user.role)) {
-        console.warn("Acesso negado. Role necessário:", roles, "Role actual:", user.role);
         window.location.href = "/logintcc.html";
         return null;
       }
@@ -112,140 +185,112 @@
       return user;
     },
 
-    // ── Login / Registo ──────────────────────────────────────
-
-    async login(email, password) {
-      if (!ApiClient) return { ok: false, message: "API indisponível" };
+    async issueTicket(serviceId, tipo, contato) {
       try {
-        const result = await ApiClient.login(email, password);
-        if (!result.ok) return { ok: false, message: result.message || "Erro no login" };
+        const result = await ApiClient.issueTicket({
+          servico_id: serviceId,
+          tipo: tipo || "normal",
+          usuario_contato: contato || null
+        });
 
-        const user = {
-          id:    result.id,
-          name:  result.name,
-          email: result.email,
-          role:  result.role,
-          token: result.token || result.raw?.access_token,
-          balcao: result.balcao
-        };
-
-        this._state.user = user;
-        localStorage.setItem("imtsb_user", JSON.stringify(user));
-        this._notify();
-
-        return { ok: true, user, role: result.role };
-      } catch (e) {
-        return { ok: false, message: "Erro de ligação" };
-      }
-    },
-
-    async register(payload) {
-      if (!ApiClient) return { ok: false, message: "API indisponível" };
-      try {
-        const result = await ApiClient.register(payload);
-        return result.ok ? { ok: true, data: result.data } : { ok: false, message: result.message };
-      } catch (e) {
-        return { ok: false, message: "Erro de ligação" };
-      }
-    },
-
-    // ── Snapshot ─────────────────────────────────────────────
-
-    getSnapshot() {
-      return {
-        queue:      [...this._state.queue],
-        history:    [...this._state.history],
-        users:      [...(this._state.users || [])],
-        lastCalled: this._state.lastCall || null,
-        stats:      { ...this._state.stats },
-        updatedAt:  this._state.updatedAt || null
-      };
-    },
-
-    async refreshSnapshot() {
-      if (!ApiClient || !ApiClient.getSnapshot) return this.getSnapshot();
-      try {
-        const result = await ApiClient.getSnapshot();
-        if (!result.ok) return this.getSnapshot();
-        const data = result.data || {};
-        this._state.queue      = Array.isArray(data.queue)   ? data.queue   : [];
-        this._state.history    = Array.isArray(data.history) ? data.history : [];
-        this._state.users      = Array.isArray(data.users)   ? data.users   : [];
-        this._state.lastCall   = data.lastCalled || data.lastCall || null;
-        this._state.stats      = data.stats || this._state.stats;
-        this._state.updatedAt  = data.updatedAt || null;
-        this._notify();
-        return this.getSnapshot();
-      } catch (e) {
-        return this.getSnapshot();
-      }
-    },
-
-    // ── Senhas ───────────────────────────────────────────────
-
-    async issueTicket(serviceId, tipo = "normal", contato = null) {
-      if (!ApiClient) return { ok: false, message: "API indisponível" };
-      try {
-        const result = await ApiClient.issueTicket({ servico_id: serviceId, tipo, usuario_contato: contato });
-        if (!result.ok) return { ok: false, message: result.message };
-        this._state.currentTicket = result.ticket;
-        await this.refreshSnapshot();
-        this._notify();
-        return { ok: true, ticket: result.ticket };
-      } catch (e) {
-        return { ok: false, message: "Erro de ligação" };
-      }
-    },
-
-    async callNext(serviceId, balcao) {
-      if (!ApiClient) return { ok: false, message: "API indisponível" };
-      try {
-        const result = await ApiClient.callNext({ servico_id: serviceId, numero_balcao: balcao });
-        const senha  = result?.data?.senha || result?.senha;
-
-        if (result.ok && senha) {
-          this._state.lastCall = senha;
-          await this.refreshSnapshot();
-          this._notify();
-          return { ok: true, senha };
+        if (!result.ok) {
+          return { ok: false, message: result.message || "Erro ao emitir senha" };
         }
 
-        const msg = result?.data?.mensagem || result?.message || "Nenhuma senha disponível";
-        return { ok: false, message: msg };
-      } catch (e) {
-        return { ok: false, message: "Erro de ligação" };
+        this._state.currentTicket = result.ticket;
+        this._notify();
+        return { ok: true, ticket: result.ticket };
+      } catch (error) {
+        console.error("Erro ao emitir senha:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
-    async refreshQueue(servicoId = null) {
-      if (!ApiClient) return [];
+    async refreshQueue(servicoId) {
       try {
-        const queue = await ApiClient.getQueue(servicoId);
+        const queue = await ApiClient.getQueue(servicoId || null);
         this._state.queue = Array.isArray(queue) ? queue : [];
         this._notify();
         return this._state.queue;
-      } catch (e) { return []; }
+      } catch (error) {
+        console.error("Erro ao atualizar fila:", error);
+        return [];
+      }
     },
 
     async refreshStats() {
-      if (!ApiClient) return this._state.stats;
       try {
         const stats = await ApiClient.getStats();
         this._state.stats = stats;
         this._notify();
         return stats;
-      } catch (e) { return this._state.stats; }
+      } catch (error) {
+        console.error("Erro ao atualizar estatisticas:", error);
+        return this._state.stats;
+      }
     },
 
-    // ── Polling ──────────────────────────────────────────────
+    async callNext(serviceId, balcao) {
+      try {
+        const result = await ApiClient.callNext({
+          servico_id: serviceId,
+          numero_balcao: balcao
+        });
 
-    _pollingInterval: null,
+        const senha = result?.data?.senha || result?.senha;
 
-    startPolling(intervalMs = 5000) {
+        if (result.ok && senha) {
+          this._state.lastCall = senha;
+          await this.refreshQueue(serviceId);
+          this._notify();
+          return { ok: true, senha };
+        }
+
+        return {
+          ok: false,
+          message: result?.data?.mensagem || result?.message || "Nenhuma senha disponivel"
+        };
+      } catch (error) {
+        console.error("Erro ao chamar proxima:", error);
+        return { ok: false, message: "Erro de conexao" };
+      }
+    },
+
+    async startAttendance(senhaId, balcao) {
+      try {
+        const result = await ApiClient.startAttendance(senhaId, balcao);
+        if (result.ok) {
+          await this.refreshQueue();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("Erro ao iniciar atendimento:", error);
+        return { ok: false, message: "Erro de conexao" };
+      }
+    },
+
+    async finishAttendance(senhaId, observacoes) {
+      try {
+        const result = await ApiClient.finishAttendance(senhaId, observacoes || "");
+        if (result.ok) {
+          await this.refreshQueue();
+          await this.refreshStats();
+          this._notify();
+        }
+        return result;
+      } catch (error) {
+        console.error("Erro ao finalizar atendimento:", error);
+        return { ok: false, message: "Erro de conexao" };
+      }
+    },
+
+    startPolling(intervalMs) {
       this.stopPolling();
       this._pollingInterval = setInterval(async () => {
-        await this.refreshSnapshot();
-      }, intervalMs);
+        await this.refreshQueue();
+        await this.refreshStats();
+      }, intervalMs || 5000);
     },
 
     stopPolling() {
@@ -257,6 +302,4 @@
   };
 
   window.IMTSBStore = IMTSBStore;
-  console.log("✅ IMTSBStore carregado");
-
 })();

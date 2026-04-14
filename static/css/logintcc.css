@@ -1,4 +1,4 @@
-﻿@charset "UTF-8";
+@charset "UTF-8";
 
 :root {
   --primary-brown: #8c6746;
@@ -8,7 +8,7 @@
   --neutral-gray: #d9d9d9;
   --simples-bg: #e8ddd4;
   --text-dark: #401903;
-  --ok: #0f766e;
+  --ok: #8c6746;
   --error: #b91c1c;
 }
 
@@ -193,6 +193,7 @@ input[type="submit"]:hover {
   color: var(--text-dark);
   margin-top: 8px;
 }
+
 
 
 

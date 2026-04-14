@@ -1,29 +1,33 @@
-﻿/**
- * API CLIENT — Sistema de Filas IMTSB
+/**
+ * API CLIENT
  * static/js/api-client.js
- * Documentado em PT-PT
  */
-
 (function () {
   "use strict";
 
-  const config  = window.IMTSBApiConfig;
+  const config = window.IMTSBApiConfig;
   const adapter = window.ApiAdapter;
 
   if (!config || !config.enabled) {
-    console.warn("⚠ API desactivada no api-config.js");
+    console.warn("API desativada no api-config.js");
     return;
   }
 
-  // ── Helpers de token ──────────────────────────────────────
-  function getAccessToken()  { return localStorage.getItem(config.accessTokenStorageKey); }
-  function getRefreshToken() { return localStorage.getItem(config.refreshTokenStorageKey); }
+  function getAccessToken() {
+    return localStorage.getItem(config.accessTokenStorageKey);
+  }
+
+  function getRefreshToken() {
+    return localStorage.getItem(config.refreshTokenStorageKey);
+  }
 
   function setTokens(data) {
     if (!data || typeof data !== "object") return;
-    const access  = data.access_token  || data.accessToken  || data.token || null;
+
+    const access = data.access_token || data.accessToken || data.token || null;
     const refresh = data.refresh_token || data.refreshToken || null;
-    if (access)  localStorage.setItem(config.accessTokenStorageKey,  access);
+
+    if (access) localStorage.setItem(config.accessTokenStorageKey, access);
     if (refresh) localStorage.setItem(config.refreshTokenStorageKey, refresh);
   }
 
@@ -33,168 +37,219 @@
     localStorage.removeItem("imtsb_user");
   }
 
-  // ── Pedido base ──────────────────────────────────────────
-  async function apiRequest(path, options = {}) {
-    const headers = { "Content-Type": "application/json", ...options.headers };
-    const token   = getAccessToken();
-    if (token && !options.skipAuth) {
+  function resolveBaseCandidates() {
+    const configured = String(config.baseUrl || "/api").replace(/\/$/, "");
+    const host = String(window.location.hostname || "").toLowerCase();
+    const candidates = [configured];
+
+    if (configured.includes("localhost:5000")) {
+      candidates.push(configured.replace("localhost:5000", "127.0.0.1:5000"));
+    } else if (configured.includes("127.0.0.1:5000")) {
+      candidates.push(configured.replace("127.0.0.1:5000", "localhost:5000"));
+    } else if (host === "localhost") {
+      candidates.push("http://127.0.0.1:5000/api");
+    } else if (host === "127.0.0.1") {
+      candidates.push("http://localhost:5000/api");
+    } else {
+      candidates.push("http://localhost:5000/api");
+      candidates.push("http://127.0.0.1:5000/api");
+    }
+
+    return Array.from(new Set(candidates));
+  }
+
+  async function apiRequest(path, options) {
+    const opts = options || {};
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    const token = getAccessToken();
+
+    if (token && !opts.skipAuth) {
       headers[config.authHeaderName || "Authorization"] = `Bearer ${token}`;
     }
 
-    try {
-      const response = await fetch(`${config.baseUrl}${path}`, { ...options, headers });
-      const data     = await response.json().catch(() => ({}));
+    const bases = resolveBaseCandidates();
+    let lastNetworkError = null;
 
-      if (!response.ok) {
-        return { ok: false, status: response.status, message: data.erro || data.message || "Erro na API" };
+    for (let i = 0; i < bases.length; i += 1) {
+      const baseUrl = bases[i];
+
+      try {
+        const response = await fetch(`${baseUrl}${path}`, Object.assign({}, opts, { headers }));
+        const data = await response.json().catch(function () {
+          return {};
+        });
+
+        if (!response.ok) {
+          return {
+            ok: false,
+            status: response.status,
+            message: data.erro || data.message || "Erro na API",
+            data
+          };
+        }
+
+        return { ok: true, data, baseUrlUsed: baseUrl };
+      } catch (error) {
+        lastNetworkError = error;
       }
-
-      return { ok: true, data };
-    } catch (error) {
-      console.error("❌ Erro de ligação:", error);
-      return { ok: false, message: "Erro de ligação com o servidor" };
     }
+
+    return {
+      ok: false,
+      message: "Erro de conexao com servidor",
+      error: String(lastNetworkError || "")
+    };
   }
 
-  // ── API pública ───────────────────────────────────────────
   const ApiClient = {
     getAccessToken,
     getRefreshToken,
     clearSession,
 
-    /**
-     * Login — aceita login(email, senha) ou login({ email, password })
-     */
-    async login(emailOrPayload, senhaParam) {
+    async login(emailOrPayload, senhaMaybe) {
       const email = typeof emailOrPayload === "object" && emailOrPayload !== null
-        ? (emailOrPayload.email || "")
-        : (emailOrPayload || "");
-
+        ? String(emailOrPayload.email || "")
+        : String(emailOrPayload || "");
       const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
-        ? (emailOrPayload.password || emailOrPayload.senha || "")
-        : (senhaParam || "");
+        ? String(emailOrPayload.senha || emailOrPayload.password || "")
+        : String(senhaMaybe || "");
 
       const result = await apiRequest("/auth/login", {
-        method:    "POST",
-        body:      JSON.stringify({ email, senha }),
-        skipAuth:  true
-      });
-
-      if (!result.ok) {
-        return { ok: false, message: result.message || "Email ou senha inválidos" };
-      }
-
-      setTokens(result.data);
-
-      const adapted = adapter && adapter.adaptLoginResponse
-        ? adapter.adaptLoginResponse(result.data, email)
-        : result.data;
-
-      return { ok: true, raw: result.data, ...adapted };
-    },
-
-    /**
-     * Registo de novo utilizador
-     */
-    async register(payload) {
-      const body = {
-        nome:  payload.name  || payload.nome  || "",
-        email: payload.email || "",
-        senha: payload.password || payload.senha || "",
-        tipo:  "atendente"
-      };
-
-      const result = await apiRequest("/auth/register", {
-        method:   "POST",
-        body:     JSON.stringify(body),
+        method: "POST",
+        body: JSON.stringify({ email, senha }),
         skipAuth: true
       });
 
       if (!result.ok) {
-        return { ok: false, message: result.message || "Erro no registo" };
+        return { ok: false, message: result.message || "Email ou senha invalidos" };
+      }
+
+      setTokens(result.data);
+
+      const adapted = adapter && typeof adapter.adaptLoginResponse === "function"
+        ? adapter.adaptLoginResponse(result.data, email)
+        : {
+            ok: true,
+            token: result.data.access_token || result.data.token || null,
+            id: result.data.id,
+            name: result.data.nome || result.data.name,
+            email,
+            role: result.data.role || "usuario"
+          };
+
+      return Object.assign({ ok: true, raw: result.data }, adapted);
+    },
+
+    async register(payload) {
+      const body = {
+        nome: payload && (payload.name || payload.nome) || "",
+        email: payload && payload.email || "",
+        senha: payload && (payload.password || payload.senha) || "",
+        tipo: payload && payload.tipo || "usuario"
+      };
+
+      const result = await apiRequest("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(body),
+        skipAuth: true
+      });
+
+      if (!result.ok) {
+        return { ok: false, message: result.message || "Erro no cadastro" };
       }
 
       return { ok: true, data: result.data };
     },
 
-    logout() {
+    async logout() {
       clearSession();
-      window.location.href = "/";
-    },
-
-    async getServices() {
-      const result = await apiRequest("/servicos");
-      if (result.ok) {
-        return Array.isArray(result.data) ? result.data : (result.data.servicos || []);
-      }
-      return [];
+      return { ok: true };
     },
 
     async issueTicket(frontendData) {
-      const backendData = adapter && adapter.adaptIssueTicket
+      const backendData = adapter && typeof adapter.adaptIssueTicket === "function"
         ? adapter.adaptIssueTicket(frontendData)
         : frontendData;
 
-      const result = await apiRequest("/senhas/emitir", {
+      const result = await apiRequest("/senhas", {
         method: "POST",
-        body:   JSON.stringify(backendData)
+        body: JSON.stringify(backendData)
       });
 
-      if (!result.ok) return { ok: false, message: result.message || "Erro ao emitir senha" };
+      if (!result.ok) {
+        return { ok: false, message: result.message || "Erro ao emitir senha" };
+      }
 
-      const ticket = adapter && adapter.adaptTicketResponse
+      const ticket = adapter && typeof adapter.adaptTicketResponse === "function"
         ? adapter.adaptTicketResponse(result.data.senha || result.data)
-        : result.data;
+        : (result.data.senha || result.data);
 
       return { ok: true, ticket };
     },
 
-    async getQueue(servicoId = null) {
-      const query  = servicoId
-        ? `/senhas?status=aguardando&servico_id=${servicoId}&page=1&per_page=100`
-        : "/senhas?status=aguardando&page=1&per_page=100";
-      const result = await apiRequest(query);
-      if (!result.ok) return [];
-      return Array.isArray(result.data) ? result.data : (result.data.senhas || []);
-    },
-
     async callNext(dataFrontend) {
-      const backendData = adapter && adapter.adaptCallNext
+      const backendData = adapter && typeof adapter.adaptCallNext === "function"
         ? adapter.adaptCallNext(dataFrontend)
-        : dataFrontend;
+        : (dataFrontend || {});
+
       return apiRequest("/filas/chamar", {
         method: "POST",
-        body:   JSON.stringify(backendData)
+        body: JSON.stringify(backendData)
       });
     },
 
     async startAttendance(id, numero_balcao) {
       return apiRequest(`/senhas/${id}/iniciar`, {
         method: "PUT",
-        body:   JSON.stringify({ numero_balcao })
+        body: JSON.stringify({ numero_balcao })
       });
     },
 
-    async finishAttendance(id, observacoes = "") {
+    async finishAttendance(id, observacoes) {
       return apiRequest(`/senhas/${id}/finalizar`, {
         method: "PUT",
-        body:   JSON.stringify({ observacoes })
+        body: JSON.stringify({ observacoes: observacoes || "" })
       });
+    },
+
+    async getQueue(servicoId) {
+      const query = servicoId
+        ? `/senhas?status=aguardando&servico_id=${servicoId}&page=1&per_page=100`
+        : "/senhas?status=aguardando&page=1&per_page=100";
+
+      const result = await apiRequest(query);
+      if (!result.ok) return [];
+      if (Array.isArray(result.data)) return result.data;
+      return result.data?.senhas || [];
     },
 
     async getStats() {
       const result = await apiRequest("/senhas/estatisticas");
-      return result.ok ? (result.data || {}) : { aguardando: 0, concluidas: 0, tempo_medio_espera: 0 };
+      return result.ok ? (result.data || {}) : {
+        aguardando: 0,
+        concluidas: 0,
+        tempo_medio_espera: 0,
+        satisfacao: 0
+      };
     },
 
     async getSnapshot() {
-      const snap = await apiRequest("/realtime/snapshot");
-      if (snap.ok) return { ok: true, data: snap.data };
+      const snapshot = await apiRequest("/realtime/snapshot");
+      if (snapshot.ok) {
+        return { ok: true, data: snapshot.data };
+      }
 
-      const [queue, stats] = await Promise.all([this.getQueue(), this.getStats()]);
+      const queue = await this.getQueue();
+      const stats = await this.getStats();
       return {
         ok: true,
-        data: { queue: Array.isArray(queue) ? queue : [], history: [], users: [], lastCalled: null, stats: stats || {} }
+        data: {
+          queue: Array.isArray(queue) ? queue : [],
+          history: [],
+          users: [],
+          lastCalled: null,
+          stats: stats || {}
+        }
       };
     },
 
@@ -204,11 +259,6 @@
     }
   };
 
-  window.ApiClient        = ApiClient;
-  window.IMTSBApiClient   = ApiClient;
-
-  console.log("✅ API Client carregado");
-
-  ApiClient.healthCheck().then(s => console.log("🏥 Backend:", s.status || "offline"));
-
+  window.ApiClient = ApiClient;
+  window.IMTSBApiClient = ApiClient;
 })();

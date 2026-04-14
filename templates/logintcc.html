@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Acesso — IMTSB</title>
+  <title>Acesso - IMTSB</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --brown:      #7c5c3e;
-      --brown-dk:   #3e2510;
-      --brown-lt:   #c4a882;
-      --beige:      #f0e8dc;
-      --beige-lt:   #faf6f1;
-      --bordeaux:   #3d1010;
-      --text:       #2a1a0a;
-      --muted:      #8a7060;
-      --ok:         #1a6b50;
-      --error:      #a31c1c;
-      --radius:     16px;
-      --shadow:     0 8px 32px rgba(62,37,16,.13);
+      --brown: #7c5c3e;
+      --brown-dk: #3e2510;
+      --brown-lt: #c4a882;
+      --beige: #f0e8dc;
+      --beige-lt: #faf6f1;
+      --bordeaux: #3d1010;
+      --text: #2a1a0a;
+      --muted: #8a7060;
+      --ok: #6f4f33;
+      --error: #a31c1c;
+      --radius: 16px;
+      --shadow: 0 8px 32px rgba(62,37,16,.13);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,7 +36,6 @@
         radial-gradient(ellipse 50% 40% at 10% 90%, rgba(124,92,62,.12) 0%, transparent 60%);
     }
 
-    /* ── Card ──────────────────────────────────────────────── */
     .card {
       width: 100%;
       max-width: 420px;
@@ -47,7 +46,6 @@
       border: 1px solid rgba(196,168,130,.35);
     }
 
-    /* ── Banner ────────────────────────────────────────────── */
     .banner {
       background: linear-gradient(135deg, var(--brown-dk) 0%, var(--brown) 100%);
       padding: 2rem 2rem 1.75rem;
@@ -58,8 +56,10 @@
     .banner::before {
       content: "";
       position: absolute;
-      top: -40px; right: -40px;
-      width: 180px; height: 180px;
+      top: -40px;
+      right: -40px;
+      width: 180px;
+      height: 180px;
       border-radius: 50%;
       background: rgba(255,255,255,.06);
     }
@@ -87,7 +87,6 @@
       color: rgba(255,255,255,.6);
     }
 
-    /* ── Sub-tabs Entrar/Cadastrar ─────────────────────────── */
     .sub-tabs {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -115,18 +114,18 @@
     .sub-tab.active::after {
       content: "";
       position: absolute;
-      bottom: 0; left: 20%; right: 20%;
+      bottom: 0;
+      left: 20%;
+      right: 20%;
       height: 2px;
       background: var(--brown);
       border-radius: 2px 2px 0 0;
     }
 
-    /* ── Body ──────────────────────────────────────────────── */
     .body {
       padding: 1.75rem 2rem 2rem;
     }
 
-    /* ── Mensagem ──────────────────────────────────────────── */
     .auth-msg {
       font-size: .85rem;
       min-height: 1.2rem;
@@ -136,10 +135,9 @@
       display: none;
     }
 
-    .auth-msg.ok    { display: block; background: rgba(26,107,80,.1);  color: var(--ok); }
+    .auth-msg.ok { display: block; background: rgba(111,79,51,.12); color: var(--ok); }
     .auth-msg.error { display: block; background: rgba(163,28,28,.09); color: var(--error); }
 
-    /* ── Hint ──────────────────────────────────────────────── */
     .hint {
       font-size: .8rem;
       color: var(--muted);
@@ -150,10 +148,7 @@
       line-height: 1.5;
     }
 
-    /* ── Grupos de campo ───────────────────────────────────── */
-    .field {
-      margin-bottom: 1rem;
-    }
+    .field { margin-bottom: 1rem; }
 
     .field label {
       display: block;
@@ -185,7 +180,6 @@
 
     .field input::placeholder { color: #c4b0a0; }
 
-    /* ── Checkbox ──────────────────────────────────────────── */
     .check-line {
       display: flex;
       align-items: center;
@@ -197,12 +191,12 @@
     }
 
     .check-line input[type=checkbox] {
-      width: 16px; height: 16px;
+      width: 16px;
+      height: 16px;
       accent-color: var(--brown);
       cursor: pointer;
     }
 
-    /* ── Botão primário ────────────────────────────────────── */
     .btn-primary {
       width: 100%;
       padding: .9rem;
@@ -217,11 +211,10 @@
       transition: opacity .2s, transform .15s;
     }
 
-    .btn-primary:hover   { opacity: .92; transform: translateY(-1px); }
-    .btn-primary:active  { transform: translateY(0); }
+    .btn-primary:hover { opacity: .92; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
     .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 
-    /* ── Botão secundário (visitante) ──────────────────────── */
     .btn-ghost {
       width: 100%;
       margin-top: .75rem;
@@ -238,7 +231,6 @@
 
     .btn-ghost:hover { background: rgba(196,168,130,.15); color: var(--brown-dk); }
 
-    /* ── Link staff ────────────────────────────────────────── */
     .staff-link {
       display: block;
       text-align: center;
@@ -258,7 +250,6 @@
 
     .staff-link a:hover { color: var(--brown-dk); text-decoration: underline; }
 
-    /* ── Voltar ────────────────────────────────────────────── */
     .btn-back {
       display: inline-block;
       margin-top: .75rem;
@@ -273,97 +264,81 @@
 
     .btn-back:hover { color: var(--brown-dk); }
 
-    /* ── Hidden ────────────────────────────────────────────── */
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
-
-<div class="card">
-
-  <!-- Banner -->
-  <div class="banner">
-    <div class="banner-logo">IMTSB</div>
-    <div class="banner-title">Sistema de Filas</div>
-    <div class="banner-sub">Instituto Médio Técnico São Benedito</div>
-  </div>
-
-  <!-- Sub-tabs -->
-  <div class="sub-tabs">
-    <button class="sub-tab active" data-subtab="entrar">Entrar</button>
-    <button class="sub-tab"        data-subtab="cadastrar">Cadastrar</button>
-  </div>
-
-  <!-- Body -->
-  <div class="body">
-
-    <div id="authMsg" class="auth-msg"></div>
-
-    <!-- ── ENTRAR ──────────────────────────────────────────── -->
-    <form id="formEntrar">
-      <p class="hint">Identifique-se com o email ou telefone que usou no registo.</p>
-
-      <div class="field">
-        <label>Email ou Telefone</label>
-        <input type="text" id="clienteIdentif"
-               placeholder="email@exemplo.com ou 9XXXXXXXX"
-               required autocomplete="email" maxlength="100">
-      </div>
-
-      <label class="check-line">
-        <input type="checkbox" id="confirmEntrar">
-        Confirmo que os dados estão correctos.
-      </label>
-
-      <button type="submit" class="btn-primary">Entrar →</button>
-      <button type="button" class="btn-ghost" id="btnGuest">Continuar sem conta</button>
-      <button type="button" class="btn-back" onclick="voltarprincipal()">← Voltar à página principal</button>
-    </form>
-
-    <!-- ── CADASTRAR ────────────────────────────────────────── -->
-    <form id="formCadastrar" class="hidden">
-      <p class="hint">Crie a sua conta para acompanhar os seus atendimentos.</p>
-
-      <div class="field">
-        <label>Nome completo *</label>
-        <input type="text" id="cNome" placeholder="O seu nome completo"
-               required minlength="3" maxlength="80" autocomplete="name">
-      </div>
-
-      <div class="field">
-        <label>Email</label>
-        <input type="email" id="cEmail" placeholder="email@exemplo.com"
-               autocomplete="email" maxlength="100">
-      </div>
-
-      <div class="field">
-        <label>Telefone</label>
-        <input type="tel" id="cTelefone" placeholder="9XXXXXXXX"
-               autocomplete="tel" maxlength="20">
-      </div>
-
-      <label class="check-line">
-        <input type="checkbox" id="cConfirm">
-        Confirmo que os dados são correctos.
-      </label>
-
-      <button type="submit" class="btn-primary">Criar conta →</button>
-      <button type="button" class="btn-back" onclick="voltarprincipal()">← Voltar</button>
-    </form>
-
-    <!-- Link discreto para staff -->
-    <div class="staff-link">
-      Trabalhador ou administrador?
-      <a href="/login-staff.html">Acesso de staff →</a>
+  <div class="card">
+    <div class="banner">
+      <div class="banner-logo">IMTSB</div>
+      <div class="banner-title">Sistema de Filas</div>
+      <div class="banner-sub">Instituto Medio Tecnico Sao Benedito</div>
     </div>
 
-  </div>
-</div>
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-subtab="entrar" type="button">Entrar</button>
+      <button class="sub-tab" data-subtab="cadastrar" type="button">Cadastrar</button>
+    </div>
 
-<script src="/static/js/api-config.js"></script>
-<script src="/static/js/api-adapter.js"></script>
-<script src="/static/js/api-client.js"></script>
-<script src="/static/js/realtime-store.js"></script>
-<script src="/static/js/logintcc.js"></script>
+    <div class="body">
+      <div id="authMsg" class="auth-msg"></div>
+
+      <form id="formEntrar">
+        <p class="hint">Identifique-se com o email ou telefone que usou no registo.</p>
+
+        <div class="field">
+          <label for="clienteIdentif">Email ou Telefone</label>
+          <input type="text" id="clienteIdentif" placeholder="email@exemplo.com ou 9XXXXXXXX" required autocomplete="email" maxlength="100">
+        </div>
+
+        <label class="check-line">
+          <input type="checkbox" id="confirmEntrar">
+          Confirmo que os dados estao correctos.
+        </label>
+
+        <button type="submit" class="btn-primary">Entrar -></button>
+        <button type="button" class="btn-ghost" id="btnGuest">Continuar sem conta</button>
+        <button type="button" class="btn-back" onclick="voltarprincipal()"><- Voltar a pagina principal</button>
+      </form>
+
+      <form id="formCadastrar" class="hidden">
+        <p class="hint">Crie a sua conta para acompanhar os seus atendimentos.</p>
+
+        <div class="field">
+          <label for="cNome">Nome completo *</label>
+          <input type="text" id="cNome" placeholder="O seu nome completo" required minlength="3" maxlength="80" autocomplete="name">
+        </div>
+
+        <div class="field">
+          <label for="cEmail">Email</label>
+          <input type="email" id="cEmail" placeholder="email@exemplo.com" autocomplete="email" maxlength="100">
+        </div>
+
+        <div class="field">
+          <label for="cTelefone">Telefone</label>
+          <input type="tel" id="cTelefone" placeholder="9XXXXXXXX" autocomplete="tel" maxlength="20">
+        </div>
+
+        <label class="check-line">
+          <input type="checkbox" id="cConfirm">
+          Confirmo que os dados sao correctos.
+        </label>
+
+        <button type="submit" class="btn-primary">Criar conta -></button>
+        <button type="button" class="btn-back" onclick="voltarprincipal()"><- Voltar</button>
+      </form>
+
+      <div class="staff-link">
+        Trabalhador ou administrador?
+        <a href="/login-staff.html">Acesso de staff -></a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/api-config.js"></script>
+  <script src="/static/js/api-adapter.js"></script>
+  <script src="/static/js/api-client.js"></script>
+  <script src="/static/js/realtime-store.js"></script>
+  <script src="/static/js/logintcc.js"></script>
 </body>
 </html>
