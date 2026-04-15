@@ -1,282 +1,297 @@
 /**
- * static/js/dashusuario.js — CORRIGIDO
- * FIX: clicar serviço redireciona para formulário dedicado
- *      em vez de emitir senha directamente.
- * Mostra mensagem flash após emissão de senha bem sucedida.
+ * static/js/dashusuario.js — v3
+ * Notificação ao vivo: "Dirija-se ao Balcão X com Atendente X"
+ * quando a senha do cliente passa para "atendendo".
  */
 (function () {
-    "use strict";
+  "use strict";
 
-    const store = window.IMTSBStore;
+  const store = window.IMTSBStore;
 
-    // Mapeamento serviço → página de formulário
-    const PAGINAS_SERVICO = {
-        1: "/matricula.html",
-        2: "/tesouraria.html",
-        3: "/declaracao.html",
-        4: "/matricula.html",     // Biblioteca → usa formulário de secretaria
-        5: "/apoio-cliente.html"
-    };
+  const PAGINAS = {
+    1: "/matricula.html",
+    2: "/tesouraria.html",
+    3: "/declaracao.html",
+    4: "/matricula.html",
+    5: "/apoio-cliente.html"
+  };
 
-    // Também por nome (fallback)
-    const PAGINAS_NOME = {
-        "Secretaria Académica":  "/matricula.html",
-        "Tesouraria":            "/tesouraria.html",
-        "Direcção Pedagógica":   "/declaracao.html",
-        "Biblioteca":            "/matricula.html",
-        "Apoio ao Cliente":      "/apoio-cliente.html"
-    };
+  const STORAGE_KEY = "imtsb_minha_senha";
+  let pollingGeral = null, pollingAcomp = null;
+  let estadoAnterior = null; // para detectar transição → atendendo
 
-    let pollingGeral = null;
-    const STORAGE_KEY = "imtsb_minha_senha";
+  document.addEventListener("DOMContentLoaded", () => {
+    configurarHeader();
+    configurarBotoes();
+    carregarServicos();
+    atualizarEstatisticas();
+    atualizarUltimaChamada();
+    restaurarSenha();
+    mostrarFlash();
+    iniciarPollingGeral();
+  });
 
-    // ── Init ─────────────────────────────────────────────────
+  // ── Flash ─────────────────────────────────────────────────
+  function mostrarFlash() {
+    const f = localStorage.getItem("imtsb_flash");
+    if (!f) return;
+    localStorage.removeItem("imtsb_flash");
+    mostrarMsg(f, "ok");
+  }
 
-    document.addEventListener("DOMContentLoaded", () => {
-        configurarHeader();
-        configurarBotoes();
-        carregarServicos();
-        atualizarEstatisticas();
-        atualizarUltimaChamada();
-        restaurarSenhaGuardada();
-        mostrarFlash();
-        iniciarPolling();
-    });
-
-    // ── Flash após emissão ────────────────────────────────────
-
-    function mostrarFlash() {
-        const flash = localStorage.getItem("imtsb_flash");
-        if (!flash) return;
-        localStorage.removeItem("imtsb_flash");
-        mostrarMensagem(flash, "ok");
+  // ── Header ────────────────────────────────────────────────
+  function configurarHeader() {
+    const u = store.getUser();
+    const g = id => document.getElementById(id);
+    if (u) {
+      if (g("userProfileName")) g("userProfileName").textContent = `Bem-vindo, ${u.name}`;
+      if (g("dadoNome"))        g("dadoNome").textContent        = u.name  || "—";
+      if (g("dadoEmail"))       g("dadoEmail").textContent       = u.email || "—";
+      if (g("dadoPerfil"))      g("dadoPerfil").textContent      = u.role  || "—";
     }
+  }
 
-    // ── Header ────────────────────────────────────────────────
+  // ── Botões ────────────────────────────────────────────────
+  function configurarBotoes() {
+    const btnSair  = document.getElementById("btnSair");
+    const painel   = document.getElementById("meusDadosPanel");
+    const btnDados = document.getElementById("btnMeusDados");
+    const btnFech  = document.getElementById("btnFecharDados");
 
-    function configurarHeader() {
-        const user = store.getUser();
-        const g    = id => document.getElementById(id);
-        if (user) {
-            if (g("userProfileName")) g("userProfileName").textContent = `Bem-vindo, ${user.name}`;
-            if (g("dadoNome"))        g("dadoNome").textContent        = user.name  || "—";
-            if (g("dadoEmail"))       g("dadoEmail").textContent       = user.email || "—";
-            if (g("dadoPerfil"))      g("dadoPerfil").textContent      = user.role  || "—";
-        } else {
-            if (g("userProfileName")) g("userProfileName").textContent = "Bem-vindo";
-            if (g("dadoNome"))        g("dadoNome").textContent        = "Visitante";
-            if (g("dadoEmail"))       g("dadoEmail").textContent       = "Não identificado";
-            if (g("dadoPerfil"))      g("dadoPerfil").textContent      = "Público";
-        }
+    if (btnSair) {
+      const u = store.getUser();
+      btnSair.textContent = u ? "Sair" : "Entrar";
+      btnSair.addEventListener("click", () => {
+        if (u) { pararPollings(); localStorage.removeItem(STORAGE_KEY); store.logout(); }
+        else   { window.location.href = "/logintcc.html"; }
+      });
     }
+    if (btnDados && painel) btnDados.addEventListener("click",  () => painel.classList.add("aberto"));
+    if (btnFech  && painel) btnFech.addEventListener("click",   () => painel.classList.remove("aberto"));
 
-    // ── Botões ────────────────────────────────────────────────
-
-    function configurarBotoes() {
-        // Botão sair/entrar
-        const btnSair = document.getElementById("btnSair");
-        if (btnSair) {
-            const user = store.getUser();
-            btnSair.textContent = user ? "Sair" : "Entrar";
-            btnSair.addEventListener("click", () => {
-                if (user) { pararPollings(); localStorage.removeItem(STORAGE_KEY); store.logout(); }
-                else       { window.location.href = "/logintcc.html"; }
-            });
-        }
-
-        // Painel meus dados
-        const btnDados  = document.getElementById("btnMeusDados");
-        const painel    = document.getElementById("meusDadosPanel");
-        const btnFechar = document.getElementById("btnFecharDados");
-        if (btnDados && painel) btnDados.addEventListener("click",  () => painel.classList.add("aberto"));
-        if (btnFechar && painel) btnFechar.addEventListener("click", () => painel.classList.remove("aberto"));
-
-        // Botão emitir senha (sem serviço → aviso)
-        const btnEmitir = document.getElementById("btnEmitirSenha");
-        if (btnEmitir) {
-            btnEmitir.addEventListener("click", () => {
-                mostrarMensagem("Seleccione um serviço na lista abaixo para emitir a sua senha.", "warn");
-                // Scroll suave para a lista de serviços
-                const svc = document.getElementById("servicesList");
-                if (svc) svc.scrollIntoView({ behavior: "smooth", block: "start" });
-            });
-        }
+    const btnEmitir = document.getElementById("btnEmitirSenha");
+    if (btnEmitir) {
+      btnEmitir.addEventListener("click", () => {
+        mostrarMsg("👇 Seleccione um serviço abaixo para emitir a sua senha.", "warn");
+        const svc = document.getElementById("servicesList");
+        if (svc) svc.scrollIntoView({ behavior: "smooth" });
+      });
     }
+  }
 
-    // ── Serviços da API → cards com redirect ─────────────────
-
-    async function carregarServicos() {
-        const container = document.getElementById("servicesList");
-        if (!container) return;
-
-        try {
-            const resp     = await fetch("/api/servicos/");
-            if (!resp.ok) throw new Error("Erro ao carregar serviços");
-            const servicos = await resp.json();
-            const lista    = Array.isArray(servicos) ? servicos : (servicos.servicos || []);
-
-            if (!lista.length) {
-                container.innerHTML = "<p style='color:var(--text-muted)'>Sem serviços disponíveis.</p>";
-                return;
-            }
-
-            container.innerHTML = "";
-
-            lista.forEach(s => {
-                const pagina = PAGINAS_SERVICO[s.id] || PAGINAS_NOME[s.nome] || "/index.html";
-
-                const card = document.createElement("article");
-                card.className = "service-card";
-                card.style.cursor = "pointer";
-                card.innerHTML = `
-                    <div class="service-icon">${s.icone || "📋"}</div>
-                    <div class="service-info">
-                        <div class="service-name">${s.nome}</div>
-                        <div class="service-status">
-                            <span class="status-dot"></span>
-                            ${s.descricao || "Serviço disponível"}
-                        </div>
-                    </div>
-                    <span class="arrow-icon">→</span>`;
-
-                // CLICK → vai para formulário dedicado
-                card.addEventListener("click", () => {
-                    window.location.href = pagina;
-                });
-
-                container.appendChild(card);
-            });
-
-        } catch (err) {
-            console.error("❌ Serviços:", err);
-            document.getElementById("servicesList").innerHTML =
-                "<p style='color:var(--text-muted)'>Erro ao carregar serviços.</p>";
-        }
+  // ── Serviços ──────────────────────────────────────────────
+  async function carregarServicos() {
+    const container = document.getElementById("servicesList");
+    if (!container) return;
+    try {
+      const resp = await fetch("/api/servicos/");
+      if (!resp.ok) throw new Error();
+      const lista = await resp.json();
+      if (!lista.length) { container.innerHTML = "<p style='color:var(--text-muted)'>Sem serviços disponíveis.</p>"; return; }
+      container.innerHTML = "";
+      lista.forEach(s => {
+        const pagina = PAGINAS[s.id] || "/index.html";
+        const card   = document.createElement("article");
+        card.className = "service-card";
+        card.innerHTML = `
+          <div class="service-icon">${s.icone || "📋"}</div>
+          <div class="service-info">
+            <div class="service-name">${s.nome}</div>
+            <div class="service-status"><span class="status-dot"></span>${s.descricao || "Disponível"}</div>
+          </div>
+          <span class="arrow-icon">→</span>`;
+        card.addEventListener("click", () => { window.location.href = pagina; });
+        container.appendChild(card);
+      });
+    } catch (e) {
+      document.getElementById("servicesList").innerHTML = "<p style='color:var(--text-muted)'>Erro ao carregar.</p>";
     }
+  }
 
-    // ── Estatísticas ─────────────────────────────────────────
+  // ── Estatísticas ─────────────────────────────────────────
+  async function atualizarEstatisticas() {
+    try {
+      const resp = await fetch("/api/senhas/estatisticas");
+      if (!resp.ok) return;
+      const s = await resp.json();
+      const g = id => document.getElementById(id);
+      if (g("statFila"))  g("statFila").textContent  = s.aguardando || 0;
+      if (g("statTempo")) g("statTempo").textContent = `~${s.tempo_medio_espera || 0}min`;
+      if (g("statDone"))  g("statDone").textContent  = s.concluidas || 0;
+      if (g("statSat")) {
+        const t = s.total_emitidas || 0, c = s.concluidas || 0;
+        g("statSat").textContent = t > 0 ? `${Math.round((c/t)*100)}%` : "—";
+      }
+    } catch (e) {}
+  }
 
-    async function atualizarEstatisticas() {
-        try {
-            const resp = await fetch("/api/senhas/estatisticas");
-            if (!resp.ok) return;
-            const s = await resp.json();
-            const g = id => document.getElementById(id);
-            if (g("statFila"))  g("statFila").textContent  = s.aguardando || 0;
-            if (g("statTempo")) g("statTempo").textContent = `~${s.tempo_medio_espera || 0}min`;
-            if (g("statDone"))  g("statDone").textContent  = s.concluidas || 0;
-            if (g("statSat")) {
-                const total  = s.total_emitidas || 0;
-                const conc   = s.concluidas     || 0;
-                g("statSat").textContent = total > 0 ? `${Math.round((conc/total)*100)}%` : "—";
-            }
-        } catch (e) { console.error("❌ Estatísticas:", e); }
-    }
+  // ── Última chamada geral ──────────────────────────────────
+  async function atualizarUltimaChamada() {
+    try {
+      const resp = await fetch("/api/senhas?status=atendendo&per_page=1&page=1");
+      if (!resp.ok) return;
+      const { senhas = [] } = await resp.json();
+      const g = id => document.getElementById(id);
+      if (senhas.length) {
+        const s = senhas[0];
+        if (g("ultimaChamada")) g("ultimaChamada").textContent = s.numero;
+        if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = s.numero_balcao ? `Balcão ${s.numero_balcao}` : "—";
+      } else {
+        if (g("ultimaChamada")) g("ultimaChamada").textContent = "---";
+        if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = "—";
+      }
+    } catch (e) {}
+  }
 
-    // ── Última chamada ────────────────────────────────────────
+  // ── Acompanhamento interactivo ────────────────────────────
+  function restaurarSenha() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const senha = JSON.parse(raw);
+      const hoje  = new Date().toISOString().split("T")[0];
+      if ((senha.data_emissao || "") !== hoje) { localStorage.removeItem(STORAGE_KEY); return; }
+      mostrarSenhaActual(senha);
+      if (!["concluida","cancelada"].includes(senha.status)) {
+        iniciarAcompanhamento(senha.numero);
+      }
+    } catch (_) { localStorage.removeItem(STORAGE_KEY); }
+  }
 
-    async function atualizarUltimaChamada() {
-        try {
-            const resp = await fetch("/api/senhas?status=atendendo&per_page=1&page=1");
-            if (!resp.ok) return;
-            const { senhas = [] } = await resp.json();
-            const g = id => document.getElementById(id);
-            if (senhas.length) {
-                const s = senhas[0];
-                if (g("ultimaChamada")) g("ultimaChamada").textContent = s.numero;
-                if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = s.numero_balcao ? `Balcão ${s.numero_balcao}` : "—";
-            } else {
-                if (g("ultimaChamada")) g("ultimaChamada").textContent = "---";
-                if (g("ultimoBalcao"))  g("ultimoBalcao").textContent  = "—";
-            }
-        } catch (e) { console.error("❌ Última chamada:", e); }
-    }
+  function mostrarSenhaActual(s) {
+    const g = id => document.getElementById(id);
+    if (g("currentTicket"))   g("currentTicket").textContent   = s.numero;
+    if (g("currentStatus"))   g("currentStatus").textContent   = traduzirStatus(s.status);
+    if (g("ticketTracker"))   g("ticketTracker").style.display = "block";
+  }
 
-    // ── Acompanhamento da senha emitida ───────────────────────
+  function iniciarAcompanhamento(numero) {
+    if (pollingAcomp) clearInterval(pollingAcomp);
+    actualizarPosicao(numero);
+    pollingAcomp = setInterval(() => actualizarPosicao(numero), 8000);
+  }
 
-    function restaurarSenhaGuardada() {
-        try {
-            const guardada = localStorage.getItem(STORAGE_KEY);
-            if (!guardada) return;
-            const senha = JSON.parse(guardada);
-            const hoje  = new Date().toISOString().split("T")[0];
-            if ((senha.data_emissao || "") !== hoje) {
-                localStorage.removeItem(STORAGE_KEY); return;
-            }
-            mostrarSenhaActual(senha);
-            if (!["concluida","cancelada"].includes(senha.status)) {
-                iniciarAcompanhamento(senha.numero);
-            }
-        } catch (_) { localStorage.removeItem(STORAGE_KEY); }
-    }
-
-    function mostrarSenhaActual(s) {
-        const g = id => document.getElementById(id);
-        if (g("currentTicket"))   g("currentTicket").textContent   = s.numero;
-        if (g("currentStatus"))   g("currentStatus").textContent   = traduzirStatus(s.status);
-        if (g("ticketTracker"))   g("ticketTracker").style.display = "block";
-    }
-
-    let pollingAcomp = null;
-
-    function iniciarAcompanhamento(numero) {
+  async function actualizarPosicao(numero) {
+    try {
+      const resp = await fetch(`/api/dashboard/public/senha/${encodeURIComponent(numero)}`);
+      if (resp.status === 404) {
+        localStorage.removeItem(STORAGE_KEY);
         if (pollingAcomp) clearInterval(pollingAcomp);
-        actualizarPosicao(numero);
-        pollingAcomp = setInterval(() => actualizarPosicao(numero), 10000);
-    }
+        return;
+      }
+      if (!resp.ok) return;
+      const d = await resp.json();
+      const g = id => document.getElementById(id);
 
-    async function actualizarPosicao(numero) {
-        try {
-            const resp = await fetch(`/api/dashboard/public/senha/${encodeURIComponent(numero)}`);
-            if (resp.status === 404) { localStorage.removeItem(STORAGE_KEY); if (pollingAcomp) clearInterval(pollingAcomp); return; }
-            if (!resp.ok) return;
-            const d = await resp.json();
-            const g = id => document.getElementById(id);
-            if (d.status === "aguardando") {
-                if (g("trackerPosicao")) g("trackerPosicao").textContent = d.posicao || "—";
-                if (g("trackerTempo"))   g("trackerTempo").textContent   = d.tempo_espera_estimado > 0 ? `~${d.tempo_espera_estimado}min` : "—";
-                if (g("trackerEstado"))  g("trackerEstado").textContent  = "A aguardar";
-            } else if (d.status === "atendendo") {
-                if (g("trackerPosicao")) g("trackerPosicao").textContent = "🔔";
-                if (g("trackerTempo"))   g("trackerTempo").textContent   = "É a sua vez!";
-                if (g("trackerEstado"))  g("trackerEstado").textContent  = `Balcão ${d.balcao || "—"}`;
-                if (pollingAcomp) clearInterval(pollingAcomp);
-            } else if (["concluida","cancelada"].includes(d.status)) {
-                if (g("trackerEstado")) g("trackerEstado").textContent = traduzirStatus(d.status);
-                if (pollingAcomp) clearInterval(pollingAcomp);
-                setTimeout(() => { localStorage.removeItem(STORAGE_KEY); }, 5000);
-            }
-        } catch (e) { console.error("❌ Posição:", e); }
-    }
+      // Detectar transição para "atendendo"
+      if (d.status === "atendendo" && estadoAnterior !== "atendendo") {
+        mostrarNotificacaoAtendimento(d, numero);
+      }
+      estadoAnterior = d.status;
 
-    // ── Polling geral ─────────────────────────────────────────
+      // Actualizar trackers
+      if (g("currentStatus")) g("currentStatus").textContent = traduzirStatus(d.status);
 
-    function iniciarPolling() {
-        pararPollings();
-        pollingGeral = setInterval(() => {
-            atualizarEstatisticas();
-            atualizarUltimaChamada();
-        }, 5000);
-    }
+      if (d.status === "aguardando") {
+        if (g("trackerPosicao")) g("trackerPosicao").textContent = d.posicao || "—";
+        if (g("trackerTempo"))   g("trackerTempo").textContent   = d.tempo_espera_estimado > 0 ? `~${d.tempo_espera_estimado}min` : "—";
+        if (g("trackerEstado"))  g("trackerEstado").textContent  = "A aguardar";
 
-    function pararPollings() {
-        if (pollingGeral) { clearInterval(pollingGeral); pollingGeral = null; }
-        if (pollingAcomp) { clearInterval(pollingAcomp); pollingAcomp = null; }
-    }
+      } else if (d.status === "atendendo") {
+        if (g("trackerPosicao")) g("trackerPosicao").textContent = "🔔";
+        if (g("trackerTempo"))   g("trackerTempo").textContent   = "É a sua vez!";
+        if (g("trackerEstado"))  g("trackerEstado").textContent  = `Balcão ${d.balcao || "—"}`;
+        if (pollingAcomp) clearInterval(pollingAcomp);
 
-    // ── Helpers ───────────────────────────────────────────────
+      } else if (["concluida","cancelada"].includes(d.status)) {
+        const negado = d.status === "cancelada";
+        if (g("trackerEstado")) {
+          g("trackerEstado").textContent = negado ? "❌ Negada" : "✅ Concluída";
+        }
+        // Mostrar motivo de negação se existir
+        if (negado && d.observacoes) {
+          const motivo = d.observacoes.replace(/^CANCELADA:\s*/i,"").replace(/^NEGADO:\s*/i,"");
+          mostrarMsg(`Senha ${numero} foi negada: ${motivo}`, "warn");
+        }
+        if (pollingAcomp) clearInterval(pollingAcomp);
+        setTimeout(() => { localStorage.removeItem(STORAGE_KEY); }, 8000);
+      }
 
-    function mostrarMensagem(texto, tipo) {
-        const el = document.getElementById("ticketMessage");
-        if (!el) return;
-        el.textContent = texto;
-        el.className   = "ticket-message";
-        if (tipo) el.classList.add(tipo);
-        if (tipo === "ok") setTimeout(() => { if (el.textContent === texto) el.textContent = ""; }, 6000);
-    }
+    } catch (e) {}
+  }
 
-    function traduzirStatus(s) {
-        return { aguardando:"A aguardar", chamada:"Chamada", atendendo:"Em atendimento", concluida:"Concluída", cancelada:"Cancelada" }[s] || s;
-    }
+  // ── Notificação ao vivo ───────────────────────────────────
+  function mostrarNotificacaoAtendimento(d, numero) {
+    // Criar banner de notificação
+    const balcao   = d.balcao    ? `Balcão ${d.balcao}` : "Balcão";
+    const atendente = d.atendente || "atendente";
+
+    // Remover banner anterior se existir
+    const old = document.getElementById("notifBanner");
+    if (old) old.remove();
+
+    const banner = document.createElement("div");
+    banner.id    = "notifBanner";
+    banner.style.cssText = `
+      position:fixed; top:0; left:0; right:0; z-index:9999;
+      background:linear-gradient(135deg,#065f46,#047857);
+      color:#fff; padding:1.1rem 1.5rem;
+      display:flex; align-items:center; justify-content:space-between; gap:1rem;
+      box-shadow:0 4px 20px rgba(0,0,0,.3);
+      animation: slideDown .4s ease-out;
+    `;
+
+    const style = document.createElement("style");
+    style.textContent = `@keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+      @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}`;
+    document.head.appendChild(style);
+
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.85rem">
+        <span style="font-size:1.8rem;animation:pulse 1s ease-in-out infinite">🔔</span>
+        <div>
+          <div style="font-weight:700;font-size:1.05rem">Senha ${numero} — É A SUA VEZ!</div>
+          <div style="font-size:.88rem;opacity:.9;margin-top:.15rem">
+            Dirija-se ao <strong>${balcao}</strong> com o atendente <strong>${atendente}</strong>
+          </div>
+        </div>
+      </div>
+      <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:.4rem .85rem;cursor:pointer;font-weight:700;font-size:.9rem">OK</button>
+    `;
+
+    document.body.prepend(banner);
+
+    // Vibração mobile se suportado
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+
+    // Auto-remover após 30s
+    setTimeout(() => banner.remove(), 30000);
+  }
+
+  // ── Polling geral ─────────────────────────────────────────
+  function iniciarPollingGeral() {
+    pararPollings();
+    pollingGeral = setInterval(() => {
+      atualizarEstatisticas();
+      atualizarUltimaChamada();
+    }, 5000);
+  }
+
+  function pararPollings() {
+    if (pollingGeral) { clearInterval(pollingGeral); pollingGeral = null; }
+    if (pollingAcomp) { clearInterval(pollingAcomp); pollingAcomp = null; }
+  }
+
+  function mostrarMsg(t, tipo) {
+    const el = document.getElementById("ticketMessage");
+    if (!el) return;
+    el.textContent = t; el.className = "ticket-message";
+    if (tipo) el.classList.add(tipo);
+    if (tipo === "ok") setTimeout(() => { if (el.textContent === t) el.textContent = ""; }, 7000);
+  }
+
+  function traduzirStatus(s) {
+    return { aguardando:"🕐 A aguardar", chamada:"📣 Chamada", atendendo:"🟢 Em atendimento", concluida:"✅ Concluída", cancelada:"❌ Cancelada" }[s] || s;
+  }
 
 })();

@@ -1,201 +1,321 @@
 <!DOCTYPE html>
 <html lang="pt-pt">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel do Trabalhador — IMTSB</title>
-    <link rel="stylesheet" href="/static/css/dash.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Trabalhador — IMTSB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/dash.css">
+  <style>
+    /* ── Melhorias UI/UX ───────────────────────────────────── */
+    :root {
+      --accent: #c4a164;
+      --deny:   #c0392b;
+      --deny-lt:#fee2e2;
+    }
+
+    /* ── Selector serviço integrado ──────────────────────── */
+    #servicoSelectorWrapper {
+      background: rgba(191,167,153,.1);
+      border: 1.5px dashed rgba(191,167,153,.4);
+      border-radius: 14px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    #servicoSelectorWrapper label { font-weight:700; font-size:.82rem; text-transform:uppercase; letter-spacing:.06em; color: var(--text-muted); }
+    #servicoSelector { margin-top:.4rem; width:100%; padding:.65rem .9rem; border:1.5px solid rgba(191,167,153,.4); border-radius:10px; font-size:.95rem; background:#fff; font-weight:600; }
+
+    /* ── Botões de acção aprimorados ───────────────────────── */
+    .action-buttons { display:grid; grid-template-columns:1fr 1fr; gap:.85rem; }
+
+    .btn-action { min-height:64px; font-size:.88rem; flex-direction:column; gap:.35rem; border-radius:14px; }
+    .btn-action .btn-icon { font-size:1.3rem; }
+
+    .btn-deny {
+      background: #fff5f5;
+      color: var(--deny);
+      border: 2px solid var(--deny-lt);
+    }
+    .btn-deny:hover { background: var(--deny-lt); }
+
+    /* ── Fila lateral ─────────────────────────────────────── */
+    .queue-live {
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 1.5rem;
+      box-shadow: var(--shadow-soft);
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .queue-live-title { font-family:'DM Sans',sans-serif; font-weight:700; font-size:1rem; color:var(--primary-brown-dark); margin-bottom:1rem; }
+
+    .q-item {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.65rem .85rem; border-radius:10px;
+      background:#fff; margin-bottom:.5rem;
+      border-left:3px solid transparent;
+      font-size:.88rem; transition:border-color .2s;
+    }
+    .q-item.minha  { border-left-color: var(--success-green); background:rgba(16,185,129,.05); }
+    .q-item.normal { border-left-color: rgba(191,167,153,.4); }
+    .q-item.prior  { border-left-color: var(--warning-orange); background:rgba(245,158,11,.04); }
+
+    .q-num  { font-family:'DM Mono',monospace; font-weight:600; font-size:1rem; color:var(--primary-brown-dark); }
+    .q-info { font-size:.78rem; color:var(--text-muted); }
+    .q-badge { font-size:.7rem; font-weight:700; padding:.2rem .5rem; border-radius:6px; }
+    .q-badge.p { background:rgba(245,158,11,.15); color:#b45309; }
+    .q-badge.n { background:rgba(191,167,153,.15); color:#7a5c46; }
+
+    /* ── Modal ─────────────────────────────────────────────── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,.45);
+      display:none; align-items:center; justify-content:center;
+      z-index:1000; padding:1rem; backdrop-filter:blur(4px);
+    }
+    .modal-overlay.open { display:flex; }
+
+    .modal {
+      width:min(480px,100%); background:#fff; border-radius:20px;
+      padding:1.75rem; box-shadow:0 24px 60px rgba(0,0,0,.25);
+      animation: modalIn .25s ease-out;
+    }
+    @keyframes modalIn { from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+
+    .modal h3 { font-size:1.15rem; font-weight:700; color:var(--primary-brown-dark); margin-bottom:1rem; }
+
+    .modal-info-block {
+      background:#faf6f1; border-radius:12px; padding:1rem;
+      font-size:.88rem; line-height:1.7; margin-bottom:1rem;
+      white-space:pre-wrap; word-break:break-word;
+      color: var(--text-dark); border:1px solid rgba(191,167,153,.25);
+      max-height:220px; overflow-y:auto;
+    }
+
+    .modal textarea {
+      width:100%; padding:.75rem; border:1.5px solid rgba(191,167,153,.45);
+      border-radius:12px; font-family:'DM Sans',sans-serif; font-size:.9rem;
+      resize:vertical; min-height:90px; outline:none;
+      transition: border-color .2s;
+    }
+    .modal textarea:focus { border-color:var(--primary-brown); }
+
+    .modal-actions { display:flex; gap:.75rem; margin-top:1rem; justify-content:flex-end; }
+
+    .btn-modal { padding:.65rem 1.25rem; border-radius:10px; font-weight:600; font-size:.9rem; cursor:pointer; border:none; transition:opacity .2s; }
+    .btn-modal.cancel { background:#f3f4f6; color:#6b7280; }
+    .btn-modal.confirm { background: linear-gradient(135deg,var(--primary-brown),var(--accent-beige)); color:#fff; }
+    .btn-modal.danger  { background: var(--deny); color:#fff; }
+    .btn-modal:hover { opacity:.88; }
+
+    /* ── Ticket negar ─────────────────────────────────────── */
+    .deny-reason-input {
+      width:100%; padding:.75rem; border:1.5px solid #fca5a5;
+      border-radius:12px; font-family:'DM Sans',sans-serif; font-size:.9rem;
+      resize:vertical; min-height:80px; outline:none; margin-bottom:.5rem;
+    }
+    .deny-reason-input:focus { border-color:var(--deny); }
+
+    /* ── Status badge na senha ────────────────────────────── */
+    .senha-status-badge {
+      display:inline-block; padding:.3rem .85rem; border-radius:20px;
+      font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      margin-top:.5rem;
+    }
+    .badge-atendendo { background:rgba(16,185,129,.12); color:#065f46; }
+    .badge-chamada   { background:rgba(245,158,11,.12);  color:#92400e; }
+  </style>
 </head>
 <body>
-    <!-- ===================================================
-         CABEÇALHO DO TRABALHADOR
-         Mostra nome, departamento, balcão e estado
-    =================================================== -->
-    <header class="top-bar">
-        <div class="attendant-info">
-            <div class="attendant-avatar" id="workerAvatar">JD</div>
-            <div class="attendant-details">
-                <h3 id="workerName">Trabalhador</h3>
-                <p id="workerDept">Departamento</p>
-            </div>
-        </div>
 
-        <div class="counter-badge" id="counterBadge">Balcão 1</div>
+<!-- Header -->
+<header class="top-bar">
+  <div class="attendant-info">
+    <div class="attendant-avatar" id="workerAvatar">JD</div>
+    <div class="attendant-details">
+      <h3 id="workerName">Trabalhador</h3>
+      <p id="workerDept">Departamento</p>
+    </div>
+  </div>
+  <div class="counter-badge" id="counterBadge">Balcão —</div>
+  <button class="btn-logout" type="button" onclick="sair()">Sair</button>
+  <div class="status-indicator">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Disponível</span>
+  </div>
+</header>
 
-        <button class="btn-logout" type="button" onclick="sair()">Sair</button>
+<!-- Campo oculto para ID da senha actual -->
+<input type="hidden" id="currentSenhaId" value="">
 
-        <div class="status-indicator">
-            <div class="status-dot" id="statusDot"></div>
-            <span class="status-text" id="statusText">Disponível</span>
-        </div>
-    </header>
+<div class="container">
 
-    <!-- ===================================================
-         CAMPO OCULTO — guarda o ID da senha em atendimento
-         Usado pelo dash.js para saber qual senha concluir
-    =================================================== -->
-    <input type="hidden" id="currentSenhaId" value="">
+  <!-- ── PAINEL PRINCIPAL ───────────────────────────────────── -->
+  <main class="current-client">
 
-    <div class="container">
-
-        <!-- ================================================
-             PAINEL PRINCIPAL — atendimento actual
-        ================================================ -->
-        <main class="current-client">
-
-            <div class="section-header">
-                <h2 class="section-title">Atendimento Actual</h2>
-                <div class="timer" id="timer">00:00</div>
-            </div>
-
-            <!-- Exibição da senha chamada -->
-            <section class="password-display">
-                <div class="password-label">Senha</div>
-                <div class="password-number" id="currentPassword">---</div>
-                <div class="password-type" id="passwordType">Aguardando chamada</div>
-            </section>
-
-            <!-- Informações detalhadas do atendimento -->
-            <section class="client-info">
-                <div class="info-row">
-                    <span class="info-label">Serviço Solicitado</span>
-                    <span class="info-value" id="serviceValue">-</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Tempo de Espera</span>
-                    <span class="info-value" id="waitTime">-</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Hora de Emissão</span>
-                    <span class="info-value" id="issuedAt">-</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Observações</span>
-                    <span class="info-value" id="obsValue">Sem observações</span>
-                </div>
-            </section>
-
-            <!-- ============================================
-                 BOTÕES DE ACÇÃO
-                 Sprint 1: adicionado btn-conclude ligado ao
-                 endpoint PUT /api/filas/concluir/:id
-            ============================================ -->
-            <div class="action-buttons">
-
-                <!-- Chama a próxima senha da fila -->
-                <button class="btn-action btn-next" onclick="callNextCustomer()">
-                    Chamar Próximo
-                </button>
-
-                <!-- NOVO — conclui o atendimento da senha actual -->
-                <button
-                    class="btn-action btn-conclude"
-                    id="btnConcluir"
-                    onclick="concludeAttendance()"
-                    disabled
-                    title="Disponível apenas com senha em atendimento">
-                    Concluir
-                </button>
-
-                <button class="btn-action btn-pause" onclick="togglePause()" id="pauseBtn">
-                    Pausar
-                </button>
-
-                <button class="btn-action btn-redirect" onclick="redirectCustomer()">
-                    Reencaminhar
-                </button>
-
-            </div>
-
-        </main>
-
-        <!-- ================================================
-             BARRA LATERAL — resumo e histórico
-        ================================================ -->
-        <aside class="sidebar">
-
-            <!-- Resumo da fila em tempo real -->
-            <section class="queue-summary">
-                <h3 class="summary-title">Resumo da Fila</h3>
-                <div class="summary-stats">
-
-                    <article class="stat-box">
-                        <div class="stat-info">
-                            <h4>Aguardando</h4>
-                            <p id="waitingCount">00</p>
-                        </div>
-                    </article>
-
-                    <article class="stat-box">
-                        <div class="stat-info">
-                            <h4>Atendidos Hoje</h4>
-                            <p id="servedToday">00</p>
-                        </div>
-                    </article>
-
-                    <article class="stat-box">
-                        <div class="stat-info">
-                            <h4>Tempo Médio</h4>
-                            <p id="avgTime">~0min</p>
-                        </div>
-                    </article>
-
-                </div>
-            </section>
-
-            <!-- Histórico do dia -->
-            <section class="activity-log">
-                <h3 class="log-title">Histórico de Hoje</h3>
-                <div class="log-list" id="activityLog">
-                    <div class="log-item">
-                        <div class="log-password">Sem atendimentos ainda</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Acções rápidas -->
-            <section class="quick-actions">
-                <label for="receiptFormat" style="display:block; font-weight:700; margin-bottom:8px;">
-                    Formato do Recibo
-                </label>
-                <select id="receiptFormat" class="quick-btn" style="margin-bottom:8px;">
-                    <option value="pdf">PDF</option>
-                    <option value="txt">TXT</option>
-                </select>
-
-                <button class="quick-btn" onclick="addObservation()">
-                    Adicionar Observação
-                </button>
-                <button class="quick-btn" onclick="requestDocuments()">
-                    Ver Documentos Anexados
-                </button>
-                <button class="quick-btn" onclick="sendReceipt()">
-                    Enviar Recibo
-                </button>
-                <button class="quick-btn" onclick="showStatistics()">
-                    Ver Estatísticas
-                </button>
-            </section>
-
-        </aside>
-
+    <div class="section-header">
+      <h2 class="section-title">Atendimento Actual</h2>
+      <div class="timer" id="timer">00:00</div>
     </div>
 
-    <!-- ===================================================
-         SCRIPTS — ordem importante:
-         1. Configuração da API
-         2. Adaptador de dados
-         3. Cliente da API (fetch)
-         4. Store reactivo
-         5. jsPDF para recibos
-         6. Lógica do dashboard
-    =================================================== -->
-    <script src="/static/js/api-config.js"></script>
-    <script src="/static/js/api-adapter.js"></script>
-    <script src="/static/js/api-client.js"></script>
-    <script src="/static/js/realtime-store.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-    <script src="/static/js/dash.js"></script>
+    <!-- Senha -->
+    <section class="password-display">
+      <div class="password-label">Senha</div>
+      <div class="password-number" id="currentPassword">---</div>
+      <div class="password-type" id="passwordType">Aguardando chamada</div>
+    </section>
 
+    <!-- Info -->
+    <section class="client-info">
+      <div class="info-row">
+        <span class="info-label">Serviço</span>
+        <span class="info-value" id="serviceValue">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Tempo de espera</span>
+        <span class="info-value" id="waitTime">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Emitida às</span>
+        <span class="info-value" id="issuedAt">—</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Contacto</span>
+        <span class="info-value" id="contactoValue">—</span>
+      </div>
+      <div class="info-row" id="obsRow" style="display:none">
+        <span class="info-label">Info do pedido</span>
+        <span class="info-value" id="obsValue" style="font-size:.82rem;color:#666;max-width:60%;word-break:break-word">—</span>
+      </div>
+    </section>
+
+    <!-- Botões de acção -->
+    <div class="action-buttons">
+      <button class="btn-action btn-next" onclick="callNextCustomer()">
+        <span class="btn-icon">🔔</span>Chamar Próximo
+      </button>
+      <button class="btn-action btn-conclude" id="btnConcluir" onclick="concludeAttendance()" disabled>
+        <span class="btn-icon">✅</span>Concluir
+      </button>
+      <button class="btn-action btn-redirect" onclick="openObsModal()">
+        <span class="btn-icon">📝</span>Observações
+      </button>
+      <button class="btn-action btn-redirect" onclick="openDocsModal()">
+        <span class="btn-icon">📋</span>Ver Pedido
+      </button>
+      <button class="btn-action btn-redirect" onclick="sendReceipt()">
+        <span class="btn-icon">🧾</span>Recibo
+      </button>
+      <button class="btn-action btn-deny" onclick="openDenyModal()" id="btnNegar" disabled>
+        <span class="btn-icon">❌</span>Negar Senha
+      </button>
+    </div>
+
+  </main>
+
+  <!-- ── SIDEBAR ────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Resumo -->
+    <section class="queue-summary">
+      <h3 class="summary-title">Resumo do dia</h3>
+      <div class="summary-stats">
+        <article class="stat-box">
+          <div class="stat-info"><h4>Na fila</h4><p id="waitingCount">0</p></div>
+        </article>
+        <article class="stat-box">
+          <div class="stat-info"><h4>Atendidos</h4><p id="servedToday">0</p></div>
+        </article>
+        <article class="stat-box">
+          <div class="stat-info"><h4>Tempo médio</h4><p id="avgTime">~0min</p></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Fila ao vivo -->
+    <section class="queue-live">
+      <div class="queue-live-title">🔴 Fila ao vivo</div>
+      <div id="queueLiveList">
+        <p style="font-size:.82rem;color:var(--text-muted)">A carregar…</p>
+      </div>
+    </section>
+
+    <!-- Histórico -->
+    <section class="activity-log">
+      <h3 class="log-title">Histórico de hoje</h3>
+      <div class="log-list" id="activityLog">
+        <div class="log-item"><div class="log-password">Sem atendimentos ainda</div></div>
+      </div>
+    </section>
+
+  </aside>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAIS
+══════════════════════════════════════════════════════════ -->
+
+<!-- Modal: Ver pedido / documentos -->
+<div class="modal-overlay" id="modalDocs">
+  <div class="modal">
+    <h3>📋 Informações do Pedido</h3>
+    <div class="modal-info-block" id="docsContent">Sem informações registadas.</div>
+    <div class="modal-actions">
+      <button class="btn-modal cancel" onclick="closeModal('modalDocs')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Adicionar observações -->
+<div class="modal-overlay" id="modalObs">
+  <div class="modal">
+    <h3>📝 Adicionar Observação</h3>
+    <p style="font-size:.85rem;color:#666;margin-bottom:.85rem">
+      A observação será visível no histórico e no recibo.
+    </p>
+    <textarea id="obsInput" placeholder="Escreva a observação…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-modal cancel" onclick="closeModal('modalObs')">Cancelar</button>
+      <button class="btn-modal confirm" onclick="saveObs()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Negar senha -->
+<div class="modal-overlay" id="modalNegar">
+  <div class="modal">
+    <h3>❌ Negar Senha</h3>
+    <p style="font-size:.85rem;color:#666;margin-bottom:.85rem">
+      Explique o motivo. O cliente verá esta mensagem quando consultar o estado da sua senha.
+    </p>
+    <textarea class="deny-reason-input" id="denyReason"
+      placeholder="Ex: Documentos incompletos — falta o Bilhete de Identidade…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-modal cancel" onclick="closeModal('modalNegar')">Cancelar</button>
+      <button class="btn-modal danger" onclick="confirmDeny()">Confirmar negação</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Recibo -->
+<div class="modal-overlay" id="modalRecibo">
+  <div class="modal">
+    <h3>🧾 Recibo de Atendimento</h3>
+    <div class="modal-info-block" id="reciboContent" style="font-family:'DM Mono',monospace;font-size:.8rem;line-height:1.8"></div>
+    <div class="modal-actions">
+      <button class="btn-modal cancel" onclick="closeModal('modalRecibo')">Fechar</button>
+      <button class="btn-modal confirm" onclick="downloadRecibo()">⬇ Descarregar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="/static/js/api-config.js"></script>
+<script src="/static/js/api-adapter.js"></script>
+<script src="/static/js/api-client.js"></script>
+<script src="/static/js/realtime-store.js"></script>
+<script src="/static/js/dash.js"></script>
 </body>
 </html>
