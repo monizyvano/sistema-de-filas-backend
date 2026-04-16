@@ -490,3 +490,136 @@
 
 
 
+
+
+/* Botão Concluir — verde escuro, destaque positivo */
+.btn-conclude {
+    background: linear-gradient(135deg, var(--success-green, #10B981), #059669);
+    color: white;
+    opacity: 0.5;
+    cursor: not-allowed;
+    transition: opacity 0.3s ease, transform 0.2s ease;
+}
+
+/* Estado activo — quando há senha em atendimento */
+.btn-conclude:not(:disabled) {
+    opacity: 1;
+    cursor: pointer;
+}
+
+.btn-conclude:not(:disabled):hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+}
+
+.btn-conclude:not(:disabled):active {
+    transform: translateY(-2px);
+}
+
+/* ===== Worker UX refresh (desktop 3 colunas) ===== */
+.worker-layout-3col {
+  grid-template-columns: 1.35fr 0.95fr 1fr;
+  align-items: start;
+}
+
+.control-column {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.tab-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+
+.tab-switch-btn {
+  border: 1px solid #e5ddd1;
+  background: #fff;
+  border-radius: 10px;
+  padding: .55rem .7rem;
+  cursor: pointer;
+  font-weight: 700;
+  color: #5b4635;
+}
+
+.tab-switch-btn.active {
+  background: #6b4226;
+  color: #fff;
+  border-color: #6b4226;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.compact-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.btn-action {
+  padding: .72rem .6rem;
+  border-radius: 12px;
+  font-size: .9rem;
+  min-height: 52px;
+}
+
+.btn-conclude {
+  background: linear-gradient(135deg, #0ea5a4, #0f766e);
+  color: #fff;
+}
+
+.btn-deny {
+  background: #fff;
+  color: #b91c1c;
+  border: 2px solid #fecaca;
+}
+
+.docs-preview {
+  background: #fff;
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+#docsPreviewContent {
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow: auto;
+  font-size: .85rem;
+  color: #374151;
+}
+
+.live-queue-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: .5rem;
+}
+
+.live-queue-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .6rem;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eee;
+}
+
+.live-queue-item.next {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.live-num { font-weight: 800; color: #6b4226; }
+.live-service { font-size: .82rem; color: #5b5b5b; }
+.live-tag { font-size: .72rem; font-weight: 700; color: #065f46; }
+.live-queue-empty { font-size: .85rem; color: #6b7280; }
+
+@media (max-width: 1200px) {
+  .worker-layout-3col { grid-template-columns: 1fr; }
+}

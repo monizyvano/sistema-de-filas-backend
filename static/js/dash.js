@@ -1,255 +1,313 @@
-﻿/**
- * ✅ DASH.JS CORRIGIDO - DASHBOARD TRABALHADOR
- * 
- * CORREÇÕES:
- * - Fix 401 ao chamar próxima
- * - Dados reais do backend
- * - Histórico de atendimentos
- * - Estatísticas calculadas
- * - Timer funcionando
- * 
- * static/js/dash.js
- */
-
-(function() {
+(function () {
   "use strict";
 
   const store = window.IMTSBStore;
-  const ApiClient = window.ApiClient;
+  const ANGOLA_TZ = "Africa/Luanda";
 
-  // Estado local
   let senhaAtual = null;
   let timerInterval = null;
   let pollingInterval = null;
 
-  // ===============================
-  // 🎬 INICIALIZAÇÃO
-  // ===============================
-  document.addEventListener('DOMContentLoaded', async () => {
-    console.log("✅ Dashboard trabalhador carregado");
+  function nowKeyLuanda() {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date());
+  }
 
-    // Verificar autenticação
-    if (!store.isLoggedIn()) {
-      window.location.href = '/login';
+  function keyFromDate(value) {
+    if (!value) return "";
+    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(value));
+  }
+
+  function formatTimeLuanda(value) {
+    if (!value) return "--:--";
+    return new Date(value).toLocaleTimeString("pt-PT", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: ANGOLA_TZ,
+    });
+  }
+
+  function setStatus(text, emAtendimento) {
+    const statusText = document.getElementById("statusText");
+    if (statusText) statusText.textContent = text;
+    const statusDot = document.getElementById("statusDot");
+    if (statusDot) statusDot.style.background = emAtendimento ? "#f59e0b" : "#10b981";
+  }
+
+  function renderTabs() {
+    const btns = document.querySelectorAll(".tab-switch-btn");
+    btns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-switch-btn").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`tab-${btn.dataset.tab}`)?.classList.add("active");
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    if (!store?.isLoggedIn()) {
+      window.location.href = "/login";
       return;
     }
 
-    // Verificar permissão
     const user = store.getUser();
-    if (user.role !== 'trabalhador' && user.role !== 'admin') {
-      alert("Acesso negado. Apenas trabalhadores podem acessar esta página.");
-      window.location.href = '/';
+    if (!["trabalhador", "admin"].includes(user.role)) {
+      window.location.href = "/";
       return;
     }
 
-    // Carregar dados do trabalhador
-    await carregarDadosTrabalhador();
-
-    // Atualizar estatísticas
-    await atualizarEstatisticas();
-
-    // Atualizar histórico
-    await atualizarHistorico();
-
-    // Iniciar polling
+    carregarDadosTrabalhador();
+    renderTabs();
+    await atualizarTudo();
     iniciarPolling();
+    actualizarBotaoConcluir();
   });
 
-  // ===============================
-  // 👤 CARREGAR DADOS DO TRABALHADOR
-  // ===============================
-  async function carregarDadosTrabalhador() {
-    const user = store.getUser();
-
-    // Atualizar header
-    const workerName = document.getElementById('workerName');
-    const workerDept = document.getElementById('workerDept');
-    const workerAvatar = document.getElementById('workerAvatar');
-    const counterBadge = document.getElementById('counterBadge');
-
-    if (workerName) workerName.textContent = user.name || 'Trabalhador';
-    if (workerDept) workerDept.textContent = user.departamento || 'Atendimento';
-
-    // Avatar com iniciais
-    if (workerAvatar) {
-      const initials = (user.name || 'T')
-        .split(' ')
-        .map(n => n[0])
-        .join('')
-        .toUpperCase()
-        .substring(0, 2);
-      workerAvatar.textContent = initials;
-    }
-
-    // Número do balcão
-    if (counterBadge) {
-      counterBadge.textContent = `Balcão ${user.numero_balcao || 1}`;
-    }
+  async function atualizarTudo() {
+    await Promise.all([atualizarEstatisticas(), atualizarHistorico(), atualizarFilaAoVivo()]);
   }
 
-  // ===============================
-  // 📊 ATUALIZAR ESTATÍSTICAS
-  // ===============================
+  function carregarDadosTrabalhador() {
+    const user = store.getUser();
+    document.getElementById("workerName").textContent = user.name || "Trabalhador";
+    document.getElementById("workerDept").textContent = user.departamento || "Atendimento";
+    const iniciais = (user.name || "T")
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+    document.getElementById("workerAvatar").textContent = iniciais;
+    const balcao = user.balcao || user.numero_balcao;
+    document.getElementById("counterBadge").textContent = balcao ? `Balcão ${balcao}` : "Sem balcão";
+  }
+
   async function atualizarEstatisticas() {
     try {
-      const user = store.getUser();
-
-      // Buscar estatísticas do trabalhador
-      const response = await fetch('/api/dashboard/trabalhador/estatisticas', {
-        headers: {
-          'Authorization': `Bearer ${store.getToken()}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await fetch("/api/dashboard/trabalhador/estatisticas", {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
       });
-
-      // Se 401, redirecionar para login
-      if (response.status === 401) {
-        console.warn("Token inválido ou expirado. Redirecionando para login...");
-        store.logout();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!response.ok) {
-        console.error("Erro ao buscar estatísticas:", response.status);
-        return;
-      }
-
+      if (!response.ok) return;
       const stats = await response.json();
-
-      // Atualizar cards
-      const waitingCount = document.getElementById('waitingCount');
-      const servedToday = document.getElementById('servedToday');
-      const avgTime = document.getElementById('avgTime');
-
-      if (waitingCount) waitingCount.textContent = stats.aguardando || '0';
-      if (servedToday) servedToday.textContent = stats.atendidos_hoje || '0';
-      if (avgTime) {
-        const tempo = stats.tempo_medio_atendimento || 0;
-        avgTime.textContent = `~${tempo}min`;
-      }
-
-    } catch (error) {
-      console.error("❌ Erro ao atualizar estatísticas:", error);
+      document.getElementById("waitingCount").textContent = stats.aguardando || 0;
+      document.getElementById("servedToday").textContent = stats.atendidos_hoje || 0;
+      document.getElementById("avgTime").textContent = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
+    } catch (err) {
+      console.error("[worker] estatísticas", err);
     }
   }
 
-  // ===============================
-  // 📞 CHAMAR PRÓXIMA SENHA
-  // ===============================
-  window.callNextCustomer = async function() {
+  async function atualizarHistorico() {
     try {
       const user = store.getUser();
-      const btnNext = document.querySelector('.btn-next');
+      const response = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const today = nowKeyLuanda();
+      const senhasHoje = (data.senhas || []).filter((s) => {
+        const ts = s.atendimento_concluido_em || s.updated_at || s.emitida_em || s.created_at;
+        return keyFromDate(ts) === today;
+      });
 
-      // Desabilitar botão
-      if (btnNext) {
-        btnNext.disabled = true;
-        btnNext.textContent = 'Chamando...';
+      const activityLog = document.getElementById("activityLog");
+      if (!activityLog) return;
+      if (!senhasHoje.length) {
+        activityLog.innerHTML = '<div class="log-item"><div class="log-password">Nenhum atendimento hoje</div></div>';
+        return;
       }
 
-      // Chamar API
-      const result = await store.callNext(
-        1, // servico_id (TODO: pegar do select)
-        user.numero_balcao || 1
-      );
+      activityLog.innerHTML = senhasHoje
+        .map((senha) => {
+          const hora = formatTimeLuanda(senha.atendimento_concluido_em || senha.updated_at || senha.created_at);
+          const duracao = Math.round(senha.tempo_atendimento_minutos || 0);
+          const servico = senha.servico?.nome || "Serviço";
+          return `<div class="log-item completed">
+            <div class="log-password">${senha.numero} — ${servico}</div>
+            <div class="log-time">${hora} · ${duracao}m</div>
+          </div>`;
+        })
+        .join("");
+    } catch (err) {
+      console.error("[worker] histórico", err);
+    }
+  }
 
-      if (result.ok && result.senha) {
-        senhaAtual = result.senha;
+  async function atualizarFilaAoVivo() {
+    const user = store.getUser();
+    const list = document.getElementById("liveQueueList");
+    if (!list) return;
+    try {
+      const serviceFilter = user.servico_id ? `&servico_id=${user.servico_id}` : "";
+      const response = await fetch(`/api/senhas?status=aguardando&page=1&per_page=20${serviceFilter}`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const senhas = Array.isArray(data) ? data : (data.senhas || []);
 
-        // Atualizar display
-        atualizarDisplayAtual(senhaAtual);
-
-        // Iniciar timer
-        iniciarTimer();
-
-        // Atualizar histórico
-        await atualizarHistorico();
-
-        console.log(`[SUCCESS] Senha ${senhaAtual.numero} chamada!`);
-
-      } else {
-        alert(result.message || "Nenhuma senha aguardando");
+      if (!senhas.length) {
+        list.innerHTML = '<div class="live-queue-empty">Sem senhas em fila.</div>';
+        return;
       }
 
-    } catch (error) {
-      console.error("❌ Erro ao chamar próxima:", error);
-      alert("Erro ao chamar próxima senha");
+      list.innerHTML = senhas
+        .slice(0, 8)
+        .map((s, idx) => `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
+            <span class="live-num">${s.numero}</span>
+            <span class="live-service">${s.servico?.nome || "Serviço"}</span>
+            <span class="live-tag">${idx === 0 ? "PRÓXIMA" : `${idx + 1}º`}</span>
+          </div>`)
+        .join("");
+    } catch (err) {
+      console.error("[worker] fila ao vivo", err);
+    }
+  }
+
+  window.callNextCustomer = async function () {
+    const user = store.getUser();
+    const servicoId = user.servico_id;
+    const balcao = user.balcao || user.numero_balcao;
+
+    if (!servicoId || !balcao) {
+      alert("Perfil incompleto: falta serviço ou balcão. Contacte o administrador.");
+      return;
+    }
+
+    const btn = document.querySelector(".btn-next");
+    if (btn) { btn.disabled = true; btn.textContent = "A chamar..."; }
+
+    try {
+      const result = await store.callNext(servicoId, balcao);
+      if (!result.ok || !result.senha) {
+        alert(result.message || "Nenhuma senha disponível.");
+        return;
+      }
+      senhaAtual = result.senha;
+      document.getElementById("currentSenhaId").value = senhaAtual.id || "";
+      atualizarDisplayAtual(senhaAtual);
+      actualizarBotaoConcluir();
+      iniciarTimer();
+      setStatus("Em Atendimento", true);
+      await atualizarTudo();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao chamar próxima senha.");
     } finally {
-      // Reabilitar botão
-      const btnNext = document.querySelector('.btn-next');
-      if (btnNext) {
-        btnNext.disabled = false;
-        btnNext.textContent = 'Chamar Proximo';
-      }
+      if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
     }
   };
 
-  // ===============================
-  // 📺 ATUALIZAR DISPLAY ATUAL
-  // ===============================
-  function atualizarDisplayAtual(senha) {
-    // Número da senha
-    const currentPassword = document.getElementById('currentPassword');
-    if (currentPassword) {
-      currentPassword.textContent = senha.numero;
-      currentPassword.style.animation = 'pulse 1s';
-    }
+  window.concludeAttendance = async function () {
+    const senhaId = document.getElementById("currentSenhaId")?.value;
+    if (!senhaId) return alert("Nenhuma senha em atendimento.");
 
-    // Tipo
-    const passwordType = document.getElementById('passwordType');
-    if (passwordType) {
-      passwordType.textContent = senha.tipo === 'prioritaria' ? 'Atendimento Prioritário' : 'Atendimento Normal';
-    }
+    const btn = document.getElementById("btnConcluir");
+    if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
 
-    // Serviço solicitado
-    const serviceValue = document.getElementById('serviceValue');
-    if (serviceValue && senha.servico) {
-      serviceValue.textContent = senha.servico.nome || 'Serviço Geral';
-    }
-
-    // Tempo de espera
-    const waitTime = document.getElementById('waitTime');
-    if (waitTime) {
-      const tempo = senha.tempo_espera_minutos || calcularTempoEspera(senha);
-      waitTime.textContent = `${tempo} minutos`;
-    }
-
-    // Hora de emissão
-    const issuedAt = document.getElementById('issuedAt');
-    if (issuedAt && senha.emitida_em) {
-      const hora = new Date(senha.emitida_em).toLocaleTimeString('pt-PT', {
-        hour: '2-digit',
-        minute: '2-digit'
+    try {
+      const response = await fetch(`/api/filas/concluir/${senhaId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
       });
-      issuedAt.textContent = hora;
+      if (!response.ok) {
+        const d = await response.json().catch(() => ({}));
+        throw new Error(d.erro || "Falha ao concluir.");
+      }
+      limparAtendimentoAtual();
+      await atualizarTudo();
+    } catch (err) {
+      alert(err.message || "Erro ao concluir atendimento.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Concluir"; }
     }
+  };
 
-    // Observações
-    const obsValue = document.getElementById('obsValue');
-    if (obsValue) {
-      obsValue.textContent = senha.observacoes || 'Sem observações';
+  window.denyCurrentTicket = async function () {
+    const senhaId = document.getElementById("currentSenhaId")?.value;
+    if (!senhaId || !senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const motivo = prompt("Motivo da negação (obrigatório):");
+    if (!motivo) return;
+
+    try {
+      const response = await fetch(`/api/senhas/${senhaId}/finalizar`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+        body: JSON.stringify({ observacoes: `NEGADO pelo trabalhador: ${motivo}` }),
+      });
+      if (!response.ok) {
+        const d = await response.json().catch(() => ({}));
+        throw new Error(d.erro || "Falha ao negar.");
+      }
+      limparAtendimentoAtual();
+      await atualizarTudo();
+      alert("Senha negada e finalizada com sucesso.");
+    } catch (err) {
+      alert(err.message || "Erro ao negar senha.");
     }
+  };
+
+  function atualizarDisplayAtual(senha) {
+    document.getElementById("currentPassword").textContent = senha.numero || "---";
+    document.getElementById("passwordType").textContent = senha.tipo === "prioritaria" ? "Atendimento Prioritário" : "Atendimento Normal";
+    document.getElementById("serviceValue").textContent = senha.servico?.nome || "Serviço";
+    document.getElementById("waitTime").textContent = `${Math.round(senha.tempo_espera_minutos || 0)} min`;
+    document.getElementById("issuedAt").textContent = formatTimeLuanda(senha.emitida_em || senha.created_at);
+    document.getElementById("obsValue").textContent = senha.observacoes || "Sem observações";
+    preencherPreviewDocumentos(senha);
   }
 
-  // ===============================
-  // ⏱️ TIMER
-  // ===============================
+  function preencherPreviewDocumentos(senha) {
+    const pre = document.getElementById("docsPreviewContent");
+    if (!pre) return;
+    const dados = senha?.formulario_dados || senha?.dados_formulario || senha?.documentos || senha?.anexos || null;
+    if (!dados) {
+      pre.textContent = "Sem documentos/formulário para esta senha.";
+      return;
+    }
+    if (typeof dados === "string") {
+      pre.textContent = dados;
+      return;
+    }
+    pre.textContent = JSON.stringify(dados, null, 2);
+  }
+
+  function limparDisplayAtual() {
+    document.getElementById("currentPassword").textContent = "---";
+    document.getElementById("passwordType").textContent = "Aguardando chamada";
+    document.getElementById("serviceValue").textContent = "-";
+    document.getElementById("waitTime").textContent = "-";
+    document.getElementById("issuedAt").textContent = "-";
+    document.getElementById("obsValue").textContent = "Sem observações";
+    document.getElementById("docsPreviewContent").textContent = "Sem documentos/formulário para esta senha.";
+    document.getElementById("timer").textContent = "00:00";
+    setStatus("Disponível", false);
+  }
+
+  function limparAtendimentoAtual() {
+    senhaAtual = null;
+    document.getElementById("currentSenhaId").value = "";
+    pararTimer();
+    limparDisplayAtual();
+    actualizarBotaoConcluir();
+  }
+
+  function actualizarBotaoConcluir() {
+    const btn = document.getElementById("btnConcluir");
+    if (!btn) return;
+    btn.disabled = !senhaAtual;
+  }
+
   function iniciarTimer() {
     pararTimer();
-
     let segundos = 0;
-
     timerInterval = setInterval(() => {
-      segundos++;
-
-      const minutos = Math.floor(segundos / 60);
-      const segs = segundos % 60;
-
-      const timerEl = document.getElementById('timer');
-      if (timerEl) {
-        timerEl.textContent = `${String(minutos).padStart(2, '0')}:${String(segs).padStart(2, '0')}`;
-      }
+      segundos += 1;
+      const m = String(Math.floor(segundos / 60)).padStart(2, "0");
+      const s = String(segundos % 60).padStart(2, "0");
+      document.getElementById("timer").textContent = `${m}:${s}`;
     }, 1000);
   }
 
@@ -260,75 +318,11 @@
     }
   }
 
-  // ===============================
-  // 📋 HISTÓRICO DE ATENDIMENTOS
-  // ===============================
-  async function atualizarHistorico() {
-    try {
-      const user = store.getUser();
-
-      // Buscar senhas atendidas hoje pelo trabalhador
-      const response = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida`, {
-        headers: {
-          'Authorization': `Bearer ${store.getToken()}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      // Se 401, redirecionar para login
-      if (response.status === 401) {
-        console.warn("Token inválido. Redirecionando...");
-        store.logout();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!response.ok) {
-        console.error("Erro ao buscar histórico:", response.status);
-        return;
-      }
-
-      const data = await response.json();
-      const senhas = data.senhas || [];
-
-      const activityLog = document.getElementById('activityLog');
-      if (!activityLog) return;
-
-      if (senhas.length === 0) {
-        activityLog.innerHTML = '<div class="log-item"><div class="log-password">Nenhum atendimento hoje</div></div>';
-        return;
-      }
-
-      // Mostrar últimas 10
-      activityLog.innerHTML = senhas.slice(0, 10).map(senha => {
-        const hora = new Date(senha.atendimento_concluido_em || senha.created_at).toLocaleTimeString('pt-PT', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-
-        return `
-          <div class="log-item completed">
-            <div class="log-password">Senha ${senha.numero}</div>
-            <div class="log-time">${hora} - ${senha.tempo_atendimento_minutos || 0} min</div>
-          </div>
-        `;
-      }).join('');
-
-    } catch (error) {
-      console.error("❌ Erro ao atualizar histórico:", error);
-    }
-  }
-
-  // ===============================
-  // 🔄 POLLING
-  // ===============================
   function iniciarPolling() {
     pararPolling();
-
     pollingInterval = setInterval(async () => {
-      await atualizarEstatisticas();
-      await atualizarHistorico();
-    }, 10000); // 10 segundos
+      await atualizarTudo();
+    }, 7000);
   }
 
   function pararPolling() {
@@ -338,104 +332,73 @@
     }
   }
 
-  // ===============================
-  // 🔧 OUTRAS FUNÇÕES
-  // ===============================
-  window.togglePause = function() {
-    const pauseBtn = document.getElementById('pauseBtn');
-    if (!pauseBtn) return;
-
-    const isPaused = pauseBtn.textContent === 'Retomar';
-
-    if (isPaused) {
-      pauseBtn.textContent = 'Pausar';
+  window.togglePause = function () {
+    const btn = document.getElementById("pauseBtn");
+    if (!btn) return;
+    const pausado = btn.textContent.trim() === "Retomar";
+    if (pausado) {
+      btn.textContent = "Pausar";
       iniciarPolling();
-      console.log("▶️ Atendimento retomado");
+      if (senhaAtual) iniciarTimer();
     } else {
-      pauseBtn.textContent = 'Retomar';
+      btn.textContent = "Retomar";
       pararPolling();
       pararTimer();
-      console.log("⏸️ Atendimento pausado");
     }
   };
 
-  window.redirectCustomer = function() {
-    if (!senhaAtual) {
-      alert("Nenhuma senha em atendimento");
-      return;
-    }
-
-    const novoBalcao = prompt(`Reencaminhar senha ${senhaAtual.numero} para qual balcão?`);
-
-    if (novoBalcao) {
-      console.log(`🔀 Senha ${senhaAtual.numero} reencaminhada para balcão ${novoBalcao}`);
-      alert(`Senha ${senhaAtual.numero} reencaminhada para balcão ${novoBalcao}`);
-      // TODO: Implementar API de reencaminhamento
-    }
+  window.redirectCustomer = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const novoBalcao = prompt(`Reencaminhar ${senhaAtual.numero} para qual balcão?`);
+    if (novoBalcao) alert(`Reencaminhamento registado para balcão ${novoBalcao}.`);
   };
 
-  window.addObservation = function() {
-    if (!senhaAtual) {
-      alert("Nenhuma senha em atendimento");
-      return;
-    }
-
-    const obs = prompt("Adicionar observação:");
-
-    if (obs) {
-      senhaAtual.observacoes = obs;
-      const obsValue = document.getElementById('obsValue');
-      if (obsValue) obsValue.textContent = obs;
-      console.log(`📝 Observação adicionada: ${obs}`);
-    }
+  window.addObservation = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const obs = prompt("Adicionar observação ao atendimento:", senhaAtual.observacoes || "");
+    if (!obs) return;
+    senhaAtual.observacoes = obs;
+    document.getElementById("obsValue").textContent = obs;
+    preencherPreviewDocumentos(senhaAtual);
   };
 
-  window.requestDocuments = function() {
-    if (!senhaAtual) {
-      alert("Nenhuma senha em atendimento");
-      return;
-    }
-
-    alert("Função de documentos em desenvolvimento");
-    console.log("📎 Documentos solicitados");
+  window.requestDocuments = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    document.querySelector('[data-tab="documentos"]')?.click();
+    preencherPreviewDocumentos(senhaAtual);
   };
 
-  window.sendReceipt = function() {
-    if (!senhaAtual) {
-      alert("Nenhuma senha em atendimento");
-      return;
-    }
-
-    const format = document.getElementById('receiptFormat')?.value || 'pdf';
-
-    alert(`Recibo gerado em formato ${format.toUpperCase()}`);
-    console.log(`📄 Recibo enviado (${format})`);
+  window.sendReceipt = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento para recibo.");
+    const html = `
+      <html><head><title>Recibo ${senhaAtual.numero}</title>
+      <style>body{font-family:Arial;padding:24px;color:#222} h2{margin:0 0 16px 0} .line{margin:8px 0}</style>
+      </head><body>
+      <h2>Recibo de Atendimento — IMTSB</h2>
+      <div class="line"><strong>Senha:</strong> ${senhaAtual.numero}</div>
+      <div class="line"><strong>Serviço:</strong> ${senhaAtual.servico?.nome || "Serviço"}</div>
+      <div class="line"><strong>Balcão:</strong> ${store.getUser().balcao || store.getUser().numero_balcao || "-"}</div>
+      <div class="line"><strong>Emitida às:</strong> ${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</div>
+      <div class="line"><strong>Observações:</strong> ${senhaAtual.observacoes || "Sem observações"}</div>
+      <hr /><small>Documento para entrega ao utente.</small>
+      <script>window.onload=()=>window.print();</script>
+      </body></html>`;
+    const w = window.open("", "_blank", "width=760,height=600");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
   };
 
-  window.showStatistics = function() {
-    alert("Estatísticas detalhadas em desenvolvimento");
-    console.log("📊 Estatísticas solicitadas");
+  window.showStatistics = function () {
+    window.location.href = "/dashadm.html";
   };
 
-  window.sair = function() {
+  window.sair = function () {
     if (confirm("Deseja sair do sistema?")) {
       pararPolling();
       pararTimer();
       store.logout();
-      window.location.href = '/login';
+      window.location.href = "/login";
     }
   };
-
-  // ===============================
-  // 🔧 HELPERS
-  // ===============================
-  function calcularTempoEspera(senha) {
-    if (!senha.emitida_em) return 0;
-
-    const agora = new Date();
-    const emissao = new Date(senha.emitida_em);
-    const diff = agora - emissao;
-    return Math.floor(diff / 1000 / 60); // minutos
-  }
-
 })();

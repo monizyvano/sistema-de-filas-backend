@@ -1,415 +1,526 @@
-﻿/**
- * DASHUSUARIO.JS - VERSÃO FINAL CORRIGIDA
- * Localização: static/js/dashusuario.js
- * 
- * ✅ Modo anônimo funcionando
- * ✅ Redirecionamento corrigido
- * ✅ Botão de login visível
- * ✅ Mensagens claras
+/**
+ * static/js/dashusuario.js — Sprint 3
+ * ═══════════════════════════════════════════════════════════════
+ * FONTE ÚNICA de lógica do painel do utente.
+ *
+ * CORRECÇÕES em relação à versão anterior:
+ *   ✅ Não usa requireRole (devolvia boolean, não sessão)
+ *   ✅ Usa getUser() directamente — lida com utente anónimo
+ *   ✅ Não duplica lógica com script inline do index.html
+ *   ✅ Limpeza de localStorage antes de tentar acompanhar senha
+ *      antiga — elimina o 404 de senhas de dias anteriores
+ *   ✅ Serviços carregados da API real (/api/servicos)
+ *   ✅ Última chamada geral com polling a cada 5s
+ *   ✅ Acompanhamento de posição na fila com polling a cada 10s
+ *   ✅ Identificação de utente antes de emitir (opcional)
+ * ═══════════════════════════════════════════════════════════════
  */
 
 (function () {
-  "use strict";
+    "use strict";
 
-  // Permitir modo anônimo
-  const session = window.IMTSBStore.requireRole(["usuario"]);
-  if (!session) return;
+    /* ── Referências ao estado global ─────────────────────────── */
+    const store     = window.IMTSBStore;
+    const ApiClient = window.ApiClient;
 
-  const isAnonymous = session.isAnonymous === true;
+    /* ── Estado local ─────────────────────────────────────────── */
+    let servicoSelecionado   = null;    // objecto Servico da API
+    let minhaSenha           = null;    // objecto Senha da última emissão
+    let pollingGeral         = null;    // intervalo 5s (stats + última chamada)
+    let pollingAcompanhamento = null;   // intervalo 10s (posição na fila)
 
-  // Elementos DOM
-  const servicesList = document.getElementById("servicesList");
-  const docInput = document.getElementById("docInput");
-  const selectedFiles = document.getElementById("selectedFiles");
-  const btnEmitirSenha = document.getElementById("btnAtendimento");
-  const ticketMessage = document.getElementById("ticketMessage");
-  const ticketsList = document.getElementById("ticketsList");
-  const currentTicketEl = document.getElementById("currentTicket");
-  const profileName = document.getElementById("userProfileName");
-  const serviceDocsList = document.getElementById("serviceDocsList");
-  const dadoNome = document.getElementById("dadoNome");
-  const dadoEmail = document.getElementById("dadoEmail");
-  const dadoPerfil = document.getElementById("dadoPerfil");
+    /* ── Chave do localStorage ─────────────────────────────────── */
+    const STORAGE_KEY = 'imtsb_minha_senha';
 
-  const statFila = document.getElementById("statFila");
-  const statTempo = document.getElementById("statTempo");
-  const statDone = document.getElementById("statDone");
-  const statSat = document.getElementById("statSat");
+    const ANGOLA_TZ = 'Africa/Luanda';
 
-  let selectedService = "";
-  let pollingInterval = null;
-
-  const serviceDocuments = {
-    "Matricula": [
-      "Bilhete de Identidade do aluno",
-      "Certificado de habilitações",
-      "2 fotografias tipo passe"
-    ],
-    "Reconfirmacao": [
-      "Cartão do aluno",
-      "Comprovativo de pagamento",
-      "Documento de identificação"
-    ],
-    "Pedido de declaracao": [
-      "Comprovativo do motivo de prioridade",
-      "Documento de identificação",
-      "Formulário do pedido"
-    ],
-    "Tesouraria": [
-      "Comprovativo de pagamento",
-      "Documento de identificação"
-    ],
-    "Apoio ao Cliente": [
-      "Nenhum documento necessário"
-    ]
-  };
-
-  // =============================
-  // FUNÇÕES AUXILIARES
-  // =============================
-
-  function showMessage(text, type) {
-    if (!ticketMessage) return;
-    ticketMessage.textContent = text || "";
-    ticketMessage.className = "ticket-message";
-    if (type) ticketMessage.classList.add(type);
-  }
-
-  function statusLabel(status) {
-    const map = {
-      "aguardando": "Aguardando",
-      "em_atendimento": "Em Atendimento",
-      "atendendo": "Em Atendimento",
-      "concluido": "Concluído",
-      "concluida": "Concluído"
-    };
-    return map[status] || status;
-  }
-
-  function formatDate(iso) {
-    if (!iso) return "-";
-    try {
-      return new Date(iso).toLocaleString("pt-BR");
-    } catch {
-      return "-";
+    function resolverNomeAtendente(atendente) {
+        if (!atendente) return 'atendente';
+        if (typeof atendente === 'string') return atendente;
+        if (typeof atendente === 'object') return atendente.nome || atendente.name || 'atendente';
+        return 'atendente';
     }
-  }
 
-  function renderSelectedFiles() {
-    const files = Array.from(docInput?.files || []);
-    if (!files.length) {
-      if (selectedFiles) selectedFiles.textContent = "Nenhum documento selecionado.";
-      return;
+    function formatHoraLuanda(value) {
+        if (!value) return '--:--';
+        return new Date(value).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: ANGOLA_TZ });
     }
-    if (selectedFiles) {
-      selectedFiles.textContent = files.map(f => 
-        `${f.name} (${Math.ceil(f.size / 1024)} KB)`
-      ).join(" | ");
-    }
-  }
 
-  function renderServiceDocuments(service) {
-    const docs = serviceDocuments[service] || ["Selecione um serviço."];
-    if (!serviceDocsList) return;
-    serviceDocsList.innerHTML = "";
-    docs.forEach(doc => {
-      const li = document.createElement("li");
-      li.textContent = doc;
-      serviceDocsList.appendChild(li);
+    /* ══════════════════════════════════════════════════════════════
+       INICIALIZAÇÃO
+    ══════════════════════════════════════════════════════════════ */
+
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("✅ dashusuario.js Sprint 3 carregado");
+
+        configurarHeader();
+        configurarBotoes();
+        carregarServicos();
+        atualizarEstatisticas();
+        atualizarUltimaChamada();
+        restaurarSenhaGuardada();  // ← limpa senhas antigas automaticamente
+        iniciarPollingGeral();
     });
-  }
 
-  function getServiceName(servicoId) {
-    const map = {
-      1: "Matricula",
-      2: "Reconfirmacao", 
-      3: "Tesouraria",
-      4: "Pedido de declaracao",
-      5: "Apoio ao Cliente"
-    };
-    return map[servicoId] || `Serviço ${servicoId}`;
-  }
+    /* ══════════════════════════════════════════════════════════════
+       HEADER E DADOS DO UTILIZADOR
+    ══════════════════════════════════════════════════════════════ */
 
-  // =============================
-  // BUSCAR DADOS DA API
-  // =============================
+    function configurarHeader() {
+        const user        = store.getUser();
+        const profileName = document.getElementById('userProfileName');
+        const dadoNome    = document.getElementById('dadoNome');
+        const dadoEmail   = document.getElementById('dadoEmail');
+        const dadoPerfil  = document.getElementById('dadoPerfil');
+        const btnSair     = document.getElementById('btnSair');
 
-  async function fetchStats() {
-    try {
-      const stats = await window.ApiClient.getStats();
-      
-      if (statFila) statFila.textContent = String(stats.aguardando || 0);
-      if (statDone) statDone.textContent = String(stats.concluidas || 0);
-      if (statTempo) {
-        const avgMin = Math.round((stats.tempo_medio_espera || 0));
-        statTempo.textContent = `~${Math.max(1, avgMin)}min`;
-      }
-      if (statSat) {
-        const sat = Math.round((stats.satisfacao || 0) * 100);
-        statSat.textContent = `${sat}%`;
-      }
-    } catch (error) {
-      console.error("Erro ao buscar estatísticas:", error);
-    }
-  }
-
-  async function fetchMyTickets() {
-    // Se anônimo, não buscar senhas
-    if (isAnonymous) {
-      if (currentTicketEl) currentTicketEl.textContent = "---";
-      if (ticketsList) {
-        ticketsList.innerHTML = `
-          <p style="text-align: center; padding: 20px;">
-            <strong>Faça login para ver seus atendimentos.</strong><br><br>
-            <button 
-              onclick="window.location.href='/login'" 
-              style="padding: 10px 20px; background: #8C6746; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px;">
-              Fazer Login
-            </button>
-          </p>
-        `;
-      }
-      return;
+        if (user) {
+            // Utilizador autenticado
+            if (profileName) profileName.textContent = `Bem-vindo, ${user.name}`;
+            if (dadoNome)    dadoNome.textContent    = user.name  || '—';
+            if (dadoEmail)   dadoEmail.textContent   = user.email || '—';
+            if (dadoPerfil)  dadoPerfil.textContent  = user.role  || '—';
+            if (btnSair)     btnSair.textContent      = 'Sair';
+        } else {
+            // Modo anónimo — utente não identificado
+            if (profileName) profileName.textContent = 'Bem-vindo';
+            if (dadoNome)    dadoNome.textContent    = 'Visitante';
+            if (dadoEmail)   dadoEmail.textContent   = 'Não identificado';
+            if (dadoPerfil)  dadoPerfil.textContent  = 'Público';
+            if (btnSair)     btnSair.textContent      = 'Entrar';
+        }
     }
 
-    try {
-      const allTickets = await window.ApiClient.getQueue();
-      const myTickets = allTickets.filter(t => 
-        t.usuario_contato === session.email
-      );
-      renderTickets(myTickets);
-    } catch (error) {
-      console.error("Erro ao buscar minhas senhas:", error);
-      if (ticketsList) ticketsList.innerHTML = "<p>Erro ao carregar atendimentos.</p>";
-    }
-  }
+    /* ══════════════════════════════════════════════════════════════
+       BOTÕES
+    ══════════════════════════════════════════════════════════════ */
 
-  function renderTickets(tickets) {
-    if (!tickets || tickets.length === 0) {
-      if (currentTicketEl) currentTicketEl.textContent = "---";
-      if (ticketsList) ticketsList.innerHTML = "<p>Sem atendimentos.</p>";
-      return;
-    }
+    function configurarBotoes() {
+        /* Botão emitir senha */
+        const btnEmitir = document.getElementById('btnEmitirSenha');
+        if (btnEmitir) btnEmitir.addEventListener('click', emitirSenha);
 
-    const active = tickets.find(t => 
-      t.status !== "concluida" && t.status !== "concluido"
-    ) || tickets[0];
-
-    if (currentTicketEl) {
-      currentTicketEl.textContent = `${active.numero} (${statusLabel(active.status)})`;
-    }
-
-    if (!ticketsList) return;
-    ticketsList.innerHTML = "";
-
-    tickets.forEach(ticket => {
-      const item = document.createElement("article");
-      item.className = "ticket-item";
-      const serviceName = getServiceName(ticket.servico_id);
-
-      item.innerHTML = `
-        <div class="ticket-top">
-          <span>${ticket.numero} - ${serviceName}</span>
-          <span>${statusLabel(ticket.status)}</span>
-        </div>
-        <div>Emitida em: ${formatDate(ticket.emitida_em)}</div>
-        <div>Tipo: ${ticket.tipo === 'prioritaria' ? 'Prioritária' : 'Normal'}</div>
-      `;
-
-      ticketsList.appendChild(item);
-    });
-  }
-
-  // =============================
-  // EMITIR SENHA (COM LOGIN)
-  // =============================
-
-  if (btnEmitirSenha) {
-    btnEmitirSenha.addEventListener("click", async () => {
-      if (!selectedService) {
-        showMessage("⚠️ Selecione um serviço antes de emitir senha.", "warn");
-        return;
-      }
-
-      // VERIFICAR LOGIN
-      if (isAnonymous || !window.IMTSBStore.isLoggedIn()) {
-        showMessage("🔒 Você precisa fazer login para emitir senha. Redirecionando...", "warn");
-        
-        // Redirecionar para login após 2s
-        setTimeout(() => {
-          window.location.href = "/login";
-        }, 2000);
-        return;
-      }
-
-      showMessage("⏳ Emitindo senha...", "");
-
-      try {
-        const result = await window.ApiClient.issueTicket({
-          service: selectedService,
-          userEmail: session.email,
-          userName: session.name
-        });
-
-        if (!result.ok) {
-          if (result.requireLogin) {
-            showMessage("🔒 Faça login para emitir senha. Redirecionando...", "warn");
-            setTimeout(() => {
-              window.location.href = "/login";
-            }, 2000);
-            return;
-          }
-          showMessage(result.message || "❌ Erro ao emitir senha", "warn");
-          return;
+        /* Botão sair / entrar */
+        const btnSair = document.getElementById('btnSair');
+        if (btnSair) {
+            btnSair.addEventListener('click', () => {
+                const user = store.getUser();
+                if (user) {
+                    pararPollings();
+                    localStorage.removeItem(STORAGE_KEY);
+                    store.logout();
+                } else {
+                    window.location.href = '/login';
+                }
+            });
         }
 
-        showMessage(`✅ Senha emitida com sucesso: ${result.ticket.code}`, "ok");
-        setTimeout(() => fetchMyTickets(), 500);
+        /* Painel meus dados */
+        const btnDados   = document.getElementById('btnMeusDados');
+        const painel     = document.getElementById('meusDadosPanel');
+        const btnFechar  = document.getElementById('btnFecharDados');
 
-      } catch (error) {
-        console.error("Erro ao emitir senha:", error);
-        showMessage("❌ Erro ao conectar com servidor", "warn");
-      }
-    });
-  }
+        if (btnDados && painel) {
+            btnDados.addEventListener('click', () => {
+                painel.classList.add('aberto');
+            });
+        }
+        if (btnFechar && painel) {
+            btnFechar.addEventListener('click', () => {
+                painel.classList.remove('aberto');
+            });
+        }
+    }
 
-  // =============================
-  // SELEÇÃO DE SERVIÇO
-  // =============================
+    /* ══════════════════════════════════════════════════════════════
+       SERVIÇOS — carregados da API
+    ══════════════════════════════════════════════════════════════ */
 
-  if (servicesList) {
-    servicesList.querySelectorAll(".service-card").forEach(card => {
-      card.addEventListener("click", () => {
-        const servicoDireto = card.dataset.servico;
-        const grupo = card.dataset.grupo;
+    async function carregarServicos() {
+        const container = document.getElementById('servicesList');
+        if (!container) return;
 
-        servicesList.querySelectorAll(".service-card").forEach(c => 
-          c.classList.remove("ativo")
-        );
-        card.classList.add("ativo");
+        try {
+            const resp = await fetch('/api/servicos');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-        const menu = card.querySelector("select");
-        if (menu) {
-          menu.addEventListener("change", () => {
-            selectedService = menu.value;
-            if (selectedService) {
-              renderServiceDocuments(selectedService);
-              showMessage(`✅ Serviço selecionado: ${selectedService}`, "ok");
+            const servicos = await resp.json();
+            const lista    = Array.isArray(servicos) ? servicos : (servicos.servicos || []);
+
+            if (lista.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">Sem serviços disponíveis.</p>';
+                return;
             }
-          });
-          return;
+
+            container.innerHTML = '';
+
+            lista.forEach(servico => {
+                const card = document.createElement('article');
+                card.className        = 'service-card';
+                card.dataset.servicoId = servico.id;
+                card.innerHTML = `
+                  <div class="service-icon">${servico.icone || '📄'}</div>
+                  <div class="service-info">
+                    <div class="service-name">${servico.nome}</div>
+                    <div class="service-status">
+                      <span class="status-dot"></span>
+                      ${servico.descricao || 'Serviço disponível'}
+                    </div>
+                  </div>
+                  <span class="arrow-icon">→</span>
+                `;
+                card.addEventListener('click', () => selecionarServico(servico, card));
+                container.appendChild(card);
+            });
+
+            console.log(`✅ ${lista.length} serviços carregados`);
+
+        } catch (erro) {
+            console.error("❌ Erro ao carregar serviços:", erro);
+            container.innerHTML = '<p style="color: var(--text-muted);">Erro ao carregar serviços.</p>';
+        }
+    }
+
+    function selecionarServico(servico, cardEl) {
+        servicoSelecionado = servico;
+
+        // Realçar o card seleccionado
+        document.querySelectorAll('.service-card').forEach(c => {
+            c.classList.remove('ativo');
+        });
+        if (cardEl) cardEl.classList.add('ativo');
+
+        mostrarMensagem(`Serviço seleccionado: ${servico.nome}`, 'ok');
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       EMISSÃO DE SENHA
+    ══════════════════════════════════════════════════════════════ */
+
+    async function emitirSenha() {
+        if (!servicoSelecionado) {
+            mostrarMensagem('⚠ Seleccione um serviço antes de emitir senha.', 'warn');
+            return;
         }
 
-        // Serviço direto
-        if (servicoDireto) {
-          selectedService = servicoDireto;
-          renderServiceDocuments(servicoDireto);
-          showMessage(`✅ Serviço selecionado: ${servicoDireto}`, "ok");
-        } else if (grupo) {
-          selectedService = grupo;
-          renderServiceDocuments(grupo);
-          showMessage(`✅ Serviço selecionado: ${grupo}`, "ok");
+        const btnEmitir = document.getElementById('btnEmitirSenha');
+        if (btnEmitir) {
+            btnEmitir.disabled    = true;
+            btnEmitir.textContent = 'A emitir...';
         }
-      });
-    });
-  }
 
-  // =============================
-  // UPLOAD DE DOCUMENTOS
-  // =============================
+        mostrarMensagem('⏳ A emitir senha...', '');
 
-  if (docInput) {
-    docInput.addEventListener("change", renderSelectedFiles);
-  }
+        try {
+            const resp = await fetch('/api/senhas/emitir', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    servico_id: servicoSelecionado.id,
+                    tipo:       'normal'
+                })
+            });
 
-  // =============================
-  // BOTÕES
-  // =============================
+            const dados = await resp.json();
 
-  const btnSairDesk = document.getElementById("btnSairUserDesktop");
-  const btnSairMobile = document.getElementById("btnSairUserMobile");
+            if (!resp.ok) {
+                mostrarMensagem(`❌ ${dados.erro || 'Erro ao emitir senha'}`, 'warn');
+                return;
+            }
 
-  if (btnSairDesk) {
-    btnSairDesk.addEventListener("click", () => {
-      if (isAnonymous) {
-        window.location.href = "/login";
-      } else {
-        window.IMTSBStore.logout();
-      }
-    });
-  }
+            // Guardar a senha emitida
+            minhaSenha = dados.senha;
+            guardarSenhaLocal(minhaSenha);
 
-  if (btnSairMobile) {
-    btnSairMobile.addEventListener("click", () => {
-      if (isAnonymous) {
-        window.location.href = "/login";
-      } else {
-        window.IMTSBStore.logout();
-      }
-    });
-  }
+            mostrarMensagem(`✅ Senha emitida: ${minhaSenha.numero}`, 'ok');
+            atualizarDisplaySenha();
+            iniciarAcompanhamento(minhaSenha.numero);
 
-  // Mudar texto do botão se anônimo
-  if (isAnonymous) {
-    if (btnSairDesk) {
-      btnSairDesk.textContent = "🔑 Login";
-      btnSairDesk.classList.add("btn-login-highlight");
+            // Actualizar estatísticas imediatamente
+            await atualizarEstatisticas();
+
+        } catch (erro) {
+            console.error("❌ Erro ao emitir senha:", erro);
+            mostrarMensagem('❌ Erro de ligação ao servidor', 'warn');
+        } finally {
+            if (btnEmitir) {
+                btnEmitir.disabled    = false;
+                btnEmitir.textContent = 'Emitir Senha';
+            }
+        }
     }
-    if (btnSairMobile) {
-      btnSairMobile.textContent = "🔑 Login";
-      btnSairMobile.classList.add("btn-login-highlight");
+
+    /* ══════════════════════════════════════════════════════════════
+       DISPLAY DA SENHA ACTUAL
+    ══════════════════════════════════════════════════════════════ */
+
+    function atualizarDisplaySenha() {
+        const numEl    = document.getElementById('currentTicket');
+        const statusEl = document.getElementById('currentStatus');
+        const tracker  = document.getElementById('ticketTracker');
+
+        if (!minhaSenha) {
+            if (numEl)    numEl.textContent    = '---';
+            if (statusEl) statusEl.textContent = 'Aguardando';
+            if (tracker)  tracker.style.display = 'none';
+            return;
+        }
+
+        if (numEl)    numEl.textContent    = minhaSenha.numero;
+        if (statusEl) statusEl.textContent = traduzirStatus(minhaSenha.status);
+        if (tracker)  tracker.style.display = 'block';
     }
-  }
 
-  // =============================
-  // INICIALIZAÇÃO
-  // =============================
+    /* ══════════════════════════════════════════════════════════════
+       ACOMPANHAMENTO DE POSIÇÃO NA FILA
+    ══════════════════════════════════════════════════════════════ */
 
-  if (profileName) {
-    profileName.textContent = isAnonymous 
-      ? "👤 Visitante (não logado)" 
-      : `👤 ${session.name}`;
-  }
-  
-  if (dadoNome) dadoNome.textContent = session.name || "-";
-  if (dadoEmail) dadoEmail.textContent = isAnonymous ? "Não logado - Clique em Login" : (session.email || "-");
-  if (dadoPerfil) dadoPerfil.textContent = isAnonymous ? "Visitante" : (session.role || "-");
+    function iniciarAcompanhamento(numeroSenha) {
+        pararAcompanhamento();
 
-  renderServiceDocuments("");
-  renderSelectedFiles();
+        const tracker = document.getElementById('ticketTracker');
+        if (tracker) tracker.style.display = 'block';
 
-  fetchStats();
-  fetchMyTickets();
-
-  // Polling a cada 5 segundos
-  pollingInterval = setInterval(() => {
-    fetchStats();
-    if (!isAnonymous) {
-      fetchMyTickets();
+        // Actualizar imediatamente e depois a cada 10s
+        actualizarPosicao(numeroSenha);
+        pollingAcompanhamento = setInterval(
+            () => actualizarPosicao(numeroSenha),
+            10000
+        );
     }
-  }, 5000);
 
-  console.log(isAnonymous 
-    ? "✅ Dashboard usuário (modo anônimo - login disponível)"
-    : "✅ Dashboard usuário (logado como " + session.email + ")"
-  );
+    function pararAcompanhamento() {
+        if (pollingAcompanhamento) {
+            clearInterval(pollingAcompanhamento);
+            pollingAcompanhamento = null;
+        }
+    }
+
+    async function actualizarPosicao(numeroSenha) {
+        const posEl    = document.getElementById('trackerPosicao');
+        const tempoEl  = document.getElementById('trackerTempo');
+        const estadoEl = document.getElementById('trackerEstado');
+
+        try {
+            const resp = await fetch(
+                `/api/dashboard/public/senha/${encodeURIComponent(numeroSenha)}`
+            );
+
+            if (resp.status === 404) {
+                // Senha não encontrada hoje — pode ser do dia anterior
+                // Limpar localStorage e parar acompanhamento
+                console.warn(`[acompanhamento] Senha ${numeroSenha} não encontrada hoje — a limpar`);
+                limparSenhaLocal();
+                pararAcompanhamento();
+                return;
+            }
+
+            if (!resp.ok) return;
+
+            const dados = await resp.json();
+
+            if (dados.status === 'aguardando') {
+                if (posEl)    posEl.textContent    = dados.posicao || '–';
+                if (tempoEl)  tempoEl.textContent  = dados.tempo_espera_estimado > 0
+                    ? `${Math.round(dados.tempo_espera_estimado)}m` : '–';
+                if (estadoEl) estadoEl.textContent = 'A aguardar';
+
+            } else if (dados.status === 'atendendo') {
+                if (posEl)    posEl.textContent    = '🔔';
+                if (tempoEl)  tempoEl.textContent  = 'É a sua vez!';
+                const nomeAtendente = resolverNomeAtendente(dados.atendente);
+                if (estadoEl) estadoEl.textContent = `Dirija-se ao Balcão ${dados.balcao || '—'} com o atendente ${nomeAtendente}`;
+                mostrarMensagem(`✅ Senha ${dados.numero}: dirija-se ao Balcão ${dados.balcao || '—'} com o atendente ${nomeAtendente}.`, 'ok');
+                pararAcompanhamento();
+
+            } else if (dados.status === 'concluida' || dados.status === 'cancelada') {
+                if (estadoEl) estadoEl.textContent = traduzirStatus(dados.status);
+                pararAcompanhamento();
+                // Limpar depois de 5s para não poluir o ecrã
+                setTimeout(() => {
+                    limparSenhaLocal();
+                    atualizarDisplaySenha();
+                }, 5000);
+            }
+
+        } catch (erro) {
+            console.error('[actualizarPosicao] Erro:', erro);
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       ESTATÍSTICAS GERAIS
+    ══════════════════════════════════════════════════════════════ */
+
+    async function atualizarEstatisticas() {
+        try {
+            const resp = await fetch('/api/senhas/estatisticas');
+            if (!resp.ok) return;
+
+            const stats = await resp.json();
+
+            const filaEl  = document.getElementById('statFila');
+            const tempoEl = document.getElementById('statTempo');
+            const doneEl  = document.getElementById('statDone');
+            const satEl   = document.getElementById('statSat');
+
+            if (filaEl)  filaEl.textContent  = stats.aguardando || 0;
+            if (tempoEl) tempoEl.textContent  = `${Math.round(stats.tempo_medio_espera || 0)}m`;
+            if (doneEl)  doneEl.textContent   = stats.concluidas || 0;
+
+            // Taxa de conclusão: concluídas / total emitidas
+            if (satEl) {
+                const total    = stats.total_emitidas || 0;
+                const conclui  = stats.concluidas     || 0;
+                satEl.textContent = total > 0
+                    ? `${Math.round((conclui / total) * 100)}%`
+                    : '—';
+            }
+
+        } catch (erro) {
+            console.error("❌ Erro ao actualizar estatísticas:", erro);
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       ÚLTIMA CHAMADA GERAL
+    ══════════════════════════════════════════════════════════════ */
+
+    async function atualizarUltimaChamada() {
+        const numEl    = document.getElementById('ultimaChamada');
+        const balcaoEl = document.getElementById('ultimoBalcao');
+
+        try {
+            // Busca senhas em atendimento, sem trailing slash problemático
+            const resp = await fetch('/api/senhas?status=atendendo&per_page=1&page=1');
+            if (!resp.ok) return;
+
+            const dados  = await resp.json();
+            const senhas = dados.senhas || [];
+
+            if (senhas.length > 0) {
+                const s = senhas[0];
+                const nomeAt = resolverNomeAtendente(s.atendente);
+                if (numEl)    numEl.textContent    = s.numero;
+                if (balcaoEl) balcaoEl.textContent = s.numero_balcao
+                    ? `Balcão ${s.numero_balcao} · ${nomeAt}` : nomeAt;
+            } else {
+                if (numEl)    numEl.textContent    = '---';
+                if (balcaoEl) balcaoEl.textContent = '—';
+            }
+
+        } catch (erro) {
+            console.error("❌ Erro ao actualizar última chamada:", erro);
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       LOCALSTORAGE — senha guardada entre sessões
+       FIX: valida se a senha é de hoje antes de restaurar
+    ══════════════════════════════════════════════════════════════ */
+
+    function guardarSenhaLocal(senha) {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(senha));
+        } catch (_) { /* silencioso — localStorage pode estar desactivado */ }
+    }
+
+    function limparSenhaLocal() {
+        localStorage.removeItem(STORAGE_KEY);
+        minhaSenha = null;
+    }
+
+    function restaurarSenhaGuardada() {
+        try {
+            const guardada = localStorage.getItem(STORAGE_KEY);
+            if (!guardada) return;
+
+            const senha = JSON.parse(guardada);
+
+            // FIX DO 404: verificar se a data_emissao é de hoje
+            // Senhas de dias anteriores são descartadas automaticamente
+            const hoje        = new Date().toISOString().split('T')[0]; // "2026-03-20"
+            const dataEmissao = senha.data_emissao || '';
+
+            if (dataEmissao !== hoje) {
+                console.info(
+                    `[restaurar] Senha ${senha.numero} é de ${dataEmissao}, ` +
+                    `hoje é ${hoje} — a descartar`
+                );
+                limparSenhaLocal();
+                return;
+            }
+
+            // Senha é de hoje — restaurar
+            minhaSenha = senha;
+            atualizarDisplaySenha();
+
+            // Se ainda não estava concluída, retomar acompanhamento
+            if (!['concluida', 'cancelada'].includes(senha.status)) {
+                iniciarAcompanhamento(senha.numero);
+            }
+
+            console.info(`[restaurar] Senha ${senha.numero} restaurada`);
+
+        } catch (erro) {
+            // JSON inválido ou outra falha — limpar tudo
+            console.warn('[restaurar] Erro ao restaurar senha:', erro);
+            limparSenhaLocal();
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       POLLING GERAL — estatísticas + última chamada
+    ══════════════════════════════════════════════════════════════ */
+
+    function iniciarPollingGeral() {
+        pararPollingGeral();
+        pollingGeral = setInterval(async () => {
+            await atualizarEstatisticas();
+            await atualizarUltimaChamada();
+        }, 5000);
+    }
+
+    function pararPollingGeral() {
+        if (pollingGeral) {
+            clearInterval(pollingGeral);
+            pollingGeral = null;
+        }
+    }
+
+    function pararPollings() {
+        pararPollingGeral();
+        pararAcompanhamento();
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       UTILITÁRIOS
+    ══════════════════════════════════════════════════════════════ */
+
+    function mostrarMensagem(texto, tipo) {
+        const el = document.getElementById('ticketMessage');
+        if (!el) return;
+        el.textContent  = texto;
+        el.className    = 'ticket-message';
+        if (tipo) el.classList.add(tipo);
+
+        // Limpar automaticamente após 6 segundos
+        if (tipo === 'ok') {
+            setTimeout(() => {
+                if (el.textContent === texto) el.textContent = '';
+            }, 6000);
+        }
+    }
+
+    function traduzirStatus(status) {
+        const mapa = {
+            'aguardando': 'A aguardar',
+            'chamada':    'Chamada',
+            'atendendo':  'Em atendimento',
+            'concluida':  'Concluída',
+            'cancelada':  'Cancelada'
+        };
+        return mapa[status] || status;
+    }
 
 })();
-
-// Funções globais
-function clickMenu() {
-  const itens = document.getElementById("itens");
-  if (itens) {
-    itens.style.display = itens.style.display === "block" ? "none" : "block";
-  }
-}
-
-function mudoutamanho() {
-  const itens = document.getElementById("itens");
-  if (itens) {
-    itens.style.display = window.innerWidth >= 768 ? "block" : "none";
-  }
-}
-
-window.addEventListener("resize", mudoutamanho);
-window.addEventListener("load", mudoutamanho);

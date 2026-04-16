@@ -38,6 +38,13 @@ class EmitirSenhaSchema(Schema):
         allow_none=True,
         validate=validate.Length(max=100, error="Contato muito longo (máx 100 caracteres)")
     )
+
+    utente_id = fields.Integer(
+        required=False,
+        allow_none=True,
+        validate=validate.Range(min=1, max=999999, error="utente_id inválido"),
+        load_default=None
+    )
     
     @validates('usuario_contato')
     def validate_contato(self, value):
@@ -148,6 +155,7 @@ class SenhaSchema(Schema):
     status = fields.Str()
     servico_id = fields.Int()
     atendente_id = fields.Int()
+    utente_id = fields.Int(allow_none=True)
     numero_balcao = fields.Int()
     usuario_contato = fields.Str()
     emitida_em = fields.DateTime()

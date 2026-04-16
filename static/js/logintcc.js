@@ -65,6 +65,13 @@
     }
   }
 
+  function setLoading(formEl, loading) {
+    if (!formEl) return;
+    const submitBtn = formEl.querySelector('button[type="submit"], input[type="submit"]');
+    if (!submitBtn) return;
+    submitBtn.disabled = !!loading;
+  }
+
   // ===============================
   // 🔐 LOGIN
   // ===============================
@@ -90,29 +97,41 @@
 
       // Login
       showMessage("🔄 Autenticando...", "info");
+      setLoading(loginForm, true);
 
-      const result = await store.login(email, senha);
+      try {
+        const result = await store.login(email, senha);
 
-      if (!result.ok) {
-        showMessage(`❌ ${result.message}`, "error");
+        if (!result.ok) {
+          showMessage(`❌ ${result.message}`, "error");
+          setLoading(loginForm, false);
+          return;
+        }
+
+        // Sucesso
+        showMessage("✅ Login realizado!", "success");
+
+        // Redirect baseado no role retornado do backend
+        const userRole = result.role || "usuario";
+
+        setTimeout(() => {
+          if (userRole === "admin") {
+            window.location.href = "/dashadm.html";
+          } else if (userRole === "trabalhador" || userRole === "atendente") {
+            window.location.href = "/dashtrabalho.html";
+          } else {
+            window.location.href = "/index.html";
+          }
+        }, 500);
+      } catch (err) {
+        console.error("[Login] Erro:", err);
+        var msgOffline = (err && err.message && err.message.toLowerCase().includes("fetch"))
+          ? "Servidor indisponível. Verifique a ligação e tente novamente."
+          : "Erro de ligação. Tente novamente.";
+        showMessage(msgOffline, "error");
+        setLoading(loginForm, false);
         return;
       }
-
-      // Sucesso
-      showMessage("✅ Login realizado!", "success");
-
-      // Redirect baseado no role retornado do backend
-      const userRole = result.role || "usuario";
-
-      setTimeout(() => {
-        if (userRole === "admin") {
-          window.location.href = "/dashadm.html";
-        } else if (userRole === "trabalhador" || userRole === "atendente") {
-          window.location.href = "/dashtrabalho.html";
-        } else {
-          window.location.href = "/index.html";
-        }
-      }, 500);
     });
   }
 
