@@ -80,7 +80,7 @@ O sistema estará disponível em **http://localhost:5000**
 
 | Papel        | Email                  | Senha      |
 |--------------|------------------------|------------|
-| Admin        | admin@imtsb.ao         | admin123   |
+| Admin        | admin@imtsb.ao         | admin123  ou Admin123 |
 | Atendente 1  | joao@imtsb.ao          | Trab12345  |
 | Atendente 2  | worker1@teste.com      | (ver BD)   |
 | Visitante    | Entrar sem conta       | —          |
