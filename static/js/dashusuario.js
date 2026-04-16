@@ -15,7 +15,6 @@
  *   ✅ Identificação de utente antes de emitir (opcional)
  * ═══════════════════════════════════════════════════════════════
  */
-
 (function () {
     "use strict";
 

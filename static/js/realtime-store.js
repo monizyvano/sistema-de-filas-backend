@@ -1,10 +1,7 @@
 /**
- * REALTIME STORE - FIX CALL NEXT
+ * REALTIME STORE
  * static/js/realtime-store.js
- * 
- * ✅ FIX: callNext retorna { senha } em vez de { data: { senha } }
  */
-
 (function () {
   "use strict";
 
@@ -16,7 +13,6 @@
   }
 
   const IMTSBStore = {
-    
     _state: {
       user: null,
       queue: [],
@@ -32,6 +28,7 @@
     },
 
     _listeners: [],
+    _pollingInterval: null,
 
     subscribe(callback) {
       this._listeners.push(callback);
@@ -46,7 +43,10 @@
     },
 
     _notify() {
-      this._listeners.forEach(fn => fn(this._state));
+      const snapshot = this._state;
+      this._listeners.forEach(function (listener) {
+        listener(snapshot);
+      });
     },
 
     getSnapshot() {
@@ -89,7 +89,7 @@
       if (stored) {
         try {
           return JSON.parse(stored);
-        } catch {
+        } catch (error) {
           return null;
         }
       }
@@ -98,6 +98,36 @@
 
     getCurrentTicket() {
       return this._state.currentTicket;
+    },
+
+    getToken() {
+      const user = this.getUser();
+      return user ? (user.token || localStorage.getItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token")) : null;
+    },
+
+    isAuthenticated() {
+      return !!this.getToken();
+    },
+
+    isLoggedIn() {
+      return this.isAuthenticated();
+    },
+
+    continueAsGuest() {
+      const session = {
+        id: null,
+        name: "Visitante",
+        email: "",
+        role: "usuario",
+        token: "",
+        balcao: null,
+        isGuest: true
+      };
+
+      localStorage.setItem("imtsb_user", JSON.stringify(session));
+      this._state.user = session;
+      this._notify();
+      return { ok: true, redirect: "/index.html" };
     },
 
     async login(email, password) {
@@ -116,22 +146,22 @@
           name: result.name,
           email: result.email,
           role: result.role,
-          token: result.token,
+          token: result.token || result.raw?.access_token || "",
           balcao: result.balcao,
           numero_balcao: result.numero_balcao || result.balcao,
-          departamento: result.departamento
+          departamento: result.departamento,
+          servico_id: result.servico_id || null,
+          isGuest: false
         };
 
         this._state.user = user;
         localStorage.setItem("imtsb_user", JSON.stringify(user));
-
         this._notify();
 
         return { ok: true, user, role: result.role };
-
       } catch (error) {
-        console.error("❌ Erro no login:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro no login:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
@@ -143,17 +173,13 @@
         const result = await ApiClient.register(payload);
 
         if (!result.ok) {
-          return { 
-            ok: false, 
-            message: result.message || "Erro no cadastro" 
-          };
+          return { ok: false, message: result.message || "Erro no cadastro" };
         }
 
         return { ok: true, data: result.data };
-
       } catch (error) {
-        console.error("❌ Erro no cadastro:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro no cadastro:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
@@ -164,39 +190,31 @@
       this._state.currentTicket = null;
 
       localStorage.removeItem("imtsb_user");
-      localStorage.removeItem("imtsb_access_token");
-      localStorage.removeItem("imtsb_refresh_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.accessTokenStorageKey || "imtsb_access_token");
+      localStorage.removeItem(window.IMTSBApiConfig?.refreshTokenStorageKey || "imtsb_refresh_token");
 
       this._notify();
-
       window.location.href = "/";
     },
 
     requireRole(allowedRoles) {
       const user = this.getUser();
-      
-      if (!user) {
-        console.warn("⚠️ Usuário não autenticado");
-        return false;
-      }
-
       const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
-      const hasPermission = roles.includes(user.role);
-      
-      if (!hasPermission) {
-        console.warn(`⚠️ Permissão negada. Necessário: ${roles.join(', ')}, Atual: ${user.role}`);
+
+      if (!user) {
+        if (roles.includes("usuario")) {
+          return { name: "Visitante", email: "", role: "usuario", isAnonymous: true };
+        }
+        window.location.href = "/logintcc.html";
+        return null;
       }
-      
-      return hasPermission;
-    },
 
-    getToken() {
-      const user = this.getUser();
-      return user ? user.token : null;
-    },
+      if (!roles.includes(user.role)) {
+        window.location.href = "/logintcc.html";
+        return null;
+      }
 
-    isAuthenticated() {
-      return !!this.getToken();
+      return user;
     },
 
     isLoggedIn() {
@@ -210,8 +228,8 @@
       try {
         const result = await ApiClient.issueTicket({
           servico_id: serviceId,
-          tipo: tipo,
-          usuario_contato: contato
+          tipo: tipo || "normal",
+          usuario_contato: contato || null
         });
 
         if (!result.ok) {
@@ -221,12 +239,10 @@
         this._state.currentTicket = result.ticket;
         await this.refreshSnapshot();
         this._notify();
-
         return { ok: true, ticket: result.ticket };
-
       } catch (error) {
-        console.error("❌ Erro ao emitir senha:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro ao emitir senha:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
@@ -243,7 +259,7 @@
         this._notify();
         return this._state.queue;
       } catch (error) {
-        console.error("❌ Erro ao atualizar fila:", error);
+        console.error("Erro ao atualizar fila:", error);
         return [];
       }
     },
@@ -261,16 +277,12 @@
         this._notify();
         return stats;
       } catch (error) {
-        console.error("❌ Erro ao atualizar stats:", error);
+        console.error("Erro ao atualizar estatisticas:", error);
         return this._state.stats;
       }
     },
 
     async callNext(serviceId, balcao) {
-      /**
-       * ✅ FIX CRÍTICO: Backend retorna { senha } diretamente
-       * NÃO retorna { data: { senha } }
-       */
       try {
         console.log("\n[CALL NEXT] Chamando próxima senha...");
         console.log("  Serviço ID:", serviceId);
@@ -285,7 +297,7 @@
           numero_balcao: balcao
         });
 
-        console.log("[CALL NEXT] Resultado:", result);
+        const senha = result?.data?.senha || result?.senha;
 
         const senha = result?.senha || result?.data?.senha;
 
@@ -305,8 +317,8 @@
         return { ok: false, message };
 
       } catch (error) {
-        console.error("❌ Erro ao chamar próxima:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro ao chamar proxima:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
@@ -322,8 +334,8 @@
         }
         return result;
       } catch (error) {
-        console.error("❌ Erro ao iniciar atendimento:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro ao iniciar atendimento:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
@@ -332,21 +344,19 @@
         return { ok: false, message: "API indisponível no modo atual" };
       }
       try {
-        const result = await ApiClient.finishAttendance(senhaId, observacoes);
+        const result = await ApiClient.finishAttendance(senhaId, observacoes || "");
         if (result.ok) {
           await this.refreshSnapshot();
           this._notify();
         }
         return result;
       } catch (error) {
-        console.error("❌ Erro ao finalizar atendimento:", error);
-        return { ok: false, message: "Erro de conexão" };
+        console.error("Erro ao finalizar atendimento:", error);
+        return { ok: false, message: "Erro de conexao" };
       }
     },
 
-    _pollingInterval: null,
-
-    startPolling(intervalMs = 5000) {
+    startPolling(intervalMs) {
       this.stopPolling();
       this._pollingInterval = setInterval(async () => {
         if (apiConfig.enabled && ApiClient?.getSnapshot) {
@@ -363,7 +373,6 @@
       if (this._pollingInterval) {
         clearInterval(this._pollingInterval);
         this._pollingInterval = null;
-        console.log("🛑 Polling parado");
       }
     }
   };

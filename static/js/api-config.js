@@ -6,6 +6,15 @@
 (function () {
   "use strict";
 
+  function resolveBaseUrl() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    const port = String(window.location.port || "");
+    const isFlaskHost = (host === "localhost" || host === "127.0.0.1") && port === "5000";
+    if (isFlaskHost) return "/api";
+    if (host === "127.0.0.1") return "http://127.0.0.1:5000/api";
+    return "http://localhost:5000/api";
+  }
+
   window.IMTSBApiConfig = {
     enabled: true,
     baseUrl: "http://localhost:5000/api",

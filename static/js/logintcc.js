@@ -1,69 +1,45 @@
-﻿/**
- * LOGINTCC.JS - VERSÃO CORRIGIDA
+/**
  * static/js/logintcc.js
- * 
- * ✅ Cadastro usando ApiClient.register()
- * ✅ Login usando IMTSBStore.login()
- * ✅ Redirect baseado em role do backend
+ * Fluxo do utente: entrar por email/telefone e cadastrar nova conta.
  */
-
-(function() {
+(function () {
   "use strict";
 
-  const store = window.IMTSBStore;
-  const adapter = window.ApiAdapter;
+  var msgEl = document.getElementById("authMsg");
+  var formEntrar = document.getElementById("formEntrar");
+  var formCadastrar = document.getElementById("formCadastrar");
+  var subTabs = document.querySelectorAll("[data-subtab]");
 
-  if (!store) {
-    console.error("❌ IMTSBStore não carregado!");
-    return;
+  function show(text, kind) {
+    if (!msgEl) return;
+    msgEl.textContent = text || "";
+    msgEl.className = "auth-msg";
+    if (kind) msgEl.classList.add(kind);
   }
 
-  // ===============================
-  // 📱 ELEMENTOS DO DOM
-  // ===============================
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const loginForm = document.getElementById('loginForm');
-  const registerForm = document.getElementById('registerForm');
-  const authMessage = document.getElementById('authMessage');
+  function setLoading(form, enabled) {
+    var button = form && form.querySelector("[type=submit]");
+    if (!button) return;
+    if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+    button.disabled = !!enabled;
+    button.textContent = enabled ? "Aguarde..." : button.dataset.originalText;
+  }
 
-  // ===============================
-  // 🎨 TABS
-  // ===============================
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
+  function switchTab(tab) {
+    subTabs.forEach(function (button) {
+      button.classList.toggle("active", button.dataset.subtab === tab);
+    });
 
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+    if (formEntrar) formEntrar.classList.toggle("hidden", tab !== "entrar");
+    if (formCadastrar) formCadastrar.classList.toggle("hidden", tab !== "cadastrar");
+    show("", "");
+  }
 
-      if (tab === 'login') {
-        loginForm.classList.remove('hidden');
-        registerForm.classList.add('hidden');
-      } else {
-        loginForm.classList.add('hidden');
-        registerForm.classList.remove('hidden');
-      }
-
-      clearMessage();
+  subTabs.forEach(function (button) {
+    button.addEventListener("click", function () {
+      switchTab(button.dataset.subtab);
     });
   });
-
-  // ===============================
-  // 📝 MENSAGENS
-  // ===============================
-  function showMessage(msg, type = 'success') {
-    if (!authMessage) return;
-    authMessage.textContent = msg;
-    authMessage.className = `auth-message ${type}`;
-    authMessage.style.display = 'block';
-  }
-
-  function clearMessage() {
-    if (authMessage) {
-      authMessage.style.display = 'none';
-      authMessage.textContent = '';
-    }
-  }
 
   function setLoading(formEl, loading) {
     if (!formEl) return;
@@ -90,8 +66,8 @@
         return;
       }
 
-      if (!confirmDados) {
-        showMessage("⚠ Confirme que os dados estão corretos", "error");
+      if (!identif) {
+        show("Preencha o email ou telefone.", "error");
         return;
       }
 
@@ -135,69 +111,81 @@
     });
   }
 
-  // ===============================
-  // ✍️ CADASTRO (CORRIGIDO)
-  // ===============================
-  if (registerForm) {
-    registerForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
+  if (formCadastrar) {
+    formCadastrar.addEventListener("submit", async function (event) {
+      event.preventDefault();
 
-      const nome = document.getElementById('rnome')?.value.trim();
-      const email = document.getElementById('remail')?.value.trim();
-      const senha = document.getElementById('rsenha')?.value;
-      const confirmDados = document.getElementById('registerConfirmDados')?.checked;
+      var checked = document.getElementById("cConfirm");
+      var nome = ((document.getElementById("cNome") || {}).value || "").trim();
+      var email = ((document.getElementById("cEmail") || {}).value || "").trim();
+      var telefone = ((document.getElementById("cTelefone") || {}).value || "").trim();
 
-      // Validações
-      if (!nome || !email || !senha) {
-        showMessage("❌ Preencha todos os campos", "error");
+      if (checked && !checked.checked) {
+        show("Confirme os dados.", "error");
         return;
       }
 
-      if (senha.length < 6) {
-        showMessage("❌ Senha deve ter no mínimo 6 caracteres", "error");
+      if (!nome) {
+        show("Nome e obrigatorio.", "error");
         return;
       }
 
-      if (!confirmDados) {
-        showMessage("⚠ Confirme que os dados estão corretos", "error");
+      if (!email && !telefone) {
+        show("Indique email ou telefone.", "error");
         return;
       }
 
-      // ✅ CORRIGIDO: Usar ApiClient.register via store
-      showMessage("🔄 Criando conta...", "info");
+      setLoading(formCadastrar, true);
+      show("A criar conta...", "");
 
-      const result = await store.register({
-        name: nome,
-        email: email,
-        password: senha
-      });
+      try {
+        var response = await fetch("/api/utentes/registar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nome: nome,
+            email: email || null,
+            telefone: telefone || null
+          })
+        });
 
-      if (!result.ok) {
-        showMessage(`❌ ${result.message}`, "error");
-        return;
-      }
+        var data = await response.json().catch(function () {
+          return {};
+        });
 
-      // Sucesso
-      showMessage("✅ Conta criada! Faça login para continuar.", "success");
-
-      // Trocar para aba de login após 2s
-      setTimeout(() => {
-        document.querySelector('[data-tab="login"]')?.click();
-        // Preencher email no login
-        if (document.getElementById('iemail')) {
-          document.getElementById('iemail').value = email;
+        if (!response.ok) {
+          show(data.erro || "Erro no registo.", "error");
+          return;
         }
-      }, 2000);
+
+        formCadastrar.reset();
+        switchTab("entrar");
+        show("Conta criada! Identifique-se para entrar.", "ok");
+      } catch (error) {
+        show("Erro de ligacao.", "error");
+      } finally {
+        setLoading(formCadastrar, false);
+      }
     });
   }
 
-  // ===============================
-  // 🔙 VOLTAR
-  // ===============================
-  window.voltarprincipal = function() {
+  var guestButton = document.getElementById("btnGuest");
+  if (guestButton) {
+    guestButton.addEventListener("click", function () {
+      localStorage.setItem("imtsb_user", JSON.stringify({
+        id: null,
+        name: "Visitante",
+        email: "",
+        role: "usuario",
+        token: "",
+        balcao: null,
+        isGuest: true
+      }));
+      window.location.href = "/index.html";
+    });
+  }
+
+  window.voltarprincipal = function () {
     window.location.href = "/principal.html";
   };
-
-  console.log("✅ logintcc.js carregado");
-
 })();

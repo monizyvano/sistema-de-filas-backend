@@ -311,11 +311,19 @@
     }, 1000);
   }
 
-  function pararTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
+  // ── Estatísticas ─────────────────────────────────────────
+  async function atualizarEstatisticas() {
+    try {
+      const resp = await fetch("/api/dashboard/trabalhador/estatisticas",
+        { headers: { "Authorization": `Bearer ${store.getToken()}` } });
+      if (resp.status === 401) { store.logout(); return; }
+      if (!resp.ok) return;
+      const s = await resp.json();
+      const g = id => document.getElementById(id);
+      if (g("waitingCount")) g("waitingCount").textContent = s.aguardando || "0";
+      if (g("servedToday"))  g("servedToday").textContent  = s.atendidos_hoje || "0";
+      if (g("avgTime"))      g("avgTime").textContent      = `~${s.tempo_medio_atendimento || 0}min`;
+    } catch (e) { console.error("❌ stats:", e); }
   }
 
   function iniciarPolling() {
@@ -325,11 +333,12 @@
     }, 7000);
   }
 
-  function pararPolling() {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      pollingInterval = null;
-    }
+  function actualizarBotoes() {
+    const temSenha = senhaAtual !== null;
+    ["btnConcluir","btnNegar"].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !temSenha;
+    });
   }
 
   window.togglePause = function () {

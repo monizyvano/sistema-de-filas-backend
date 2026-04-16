@@ -1,166 +1,79 @@
 """
-Seeders - Popular banco com dados iniciais
-Baseado no MER Corrigido
+app/utils/seeders.py — CORRIGIDO
+Senha do admin: Admin123 (com A maiúsculo — consistente com o banco actual)
 """
-from app import db
-from app.models import Servico, Atendente, Configuracao
+from app.extensions import db
+from app.models.servico import Servico
+from app.models.atendente import Atendente
+from app.models.configuracao import Configuracao
 
 
 def seed_servicos():
-    """Cria serviços conforme documentação IMTSB"""
-    print("\n📋 CRIANDO SERVIÇOS...")
-    
+    print("\n[SERVICOS] A criar serviços...")
     servicos = [
-        {
-            'nome': 'Secretaria Académica',
-            'descricao': 'Matrículas, reconfirmações, certificados, históricos escolares',
-            'tempo_medio_minutos': 12,
-            'icone': '📄',
-            'ordem_exibicao': 1
-        },
-        {
-            'nome': 'Tesouraria',
-            'descricao': 'Pagamentos de propinas, taxas, emissão de recibos',
-            'tempo_medio_minutos': 8,
-            'icone': '💰',
-            'ordem_exibicao': 2
-        },
-        {
-            'nome': 'Direcção Pedagógica',
-            'descricao': 'Atendimento pedagógico, transferências',
-            'tempo_medio_minutos': 15,
-            'icone': '👔',
-            'ordem_exibicao': 3
-        },
-        {
-            'nome': 'Biblioteca',
-            'descricao': 'Empréstimos de livros, devoluções, cartão de estudante',
-            'tempo_medio_minutos': 5,
-            'icone': '📚',
-            'ordem_exibicao': 4
-        }
+        { 'nome': 'Secretaria Académica', 'descricao': 'Matrículas, reconfirmações, certificados, históricos escolares', 'tempo_medio_minutos': 12, 'icone': '📄', 'ordem_exibicao': 1 },
+        { 'nome': 'Tesouraria',           'descricao': 'Pagamentos de propinas, taxas, emissão de recibos',             'tempo_medio_minutos':  8, 'icone': '💰', 'ordem_exibicao': 2 },
+        { 'nome': 'Direcção Pedagógica',  'descricao': 'Atendimento pedagógico, transferências, orientação',            'tempo_medio_minutos': 15, 'icone': '👔', 'ordem_exibicao': 3 },
+        { 'nome': 'Biblioteca',           'descricao': 'Empréstimo de livros',                                          'tempo_medio_minutos':  5, 'icone': '📚', 'ordem_exibicao': 4 },
+        { 'nome': 'Apoio ao Cliente',     'descricao': 'Informações gerais, dúvidas, suporte',                          'tempo_medio_minutos': 10, 'icone': '📞', 'ordem_exibicao': 5 },
     ]
-    
     for dados in servicos:
-        existe = Servico.query.filter_by(nome=dados['nome']).first()
-        if not existe:
-            servico = Servico(**dados)
-            servico.save()
-            print(f"  ✅ {dados['icone']} {servico.nome}")
+        if not Servico.query.filter_by(nome=dados['nome']).first():
+            Servico(**dados).save()
+            print(f"  ✅ {dados['icone']} {dados['nome']}")
         else:
-            print(f"  ⚠️  {dados['icone']} {existe.nome} (já existe)")
+            print(f"  ⚠️  {dados['nome']} (já existe)")
 
 
 def seed_atendentes():
-    """Cria atendentes iniciais"""
-    print("\n👥 CRIANDO ATENDENTES...")
-    
+    print("\n[ATENDENTES] A criar atendentes...")
+
+    # NOTA: senha Admin123 (A maiúsculo) — consistente com o banco actual
     atendentes = [
-        {
-            'nome': 'Administrador Sistema',
-            'email': 'admin@imtsb.ao',
-            'senha': 'admin123',  # ⚠️ TROCAR EM PRODUÇÃO!
-            'tipo': 'admin',
-            'balcao': None
-        },
-        {
-            'nome': 'João da Silva',
-            'email': 'joao.silva@imtsb.ao',
-            'senha': 'senha123',
-            'tipo': 'atendente',
-            'balcao': 1
-        },
-        {
-            'nome': 'Maria Costa',
-            'email': 'maria.costa@imtsb.ao',
-            'senha': 'senha123',
-            'tipo': 'atendente',
-            'balcao': 2
-        },
-        {
-            'nome': 'Paulo Alves',
-            'email': 'paulo.alves@imtsb.ao',
-            'senha': 'senha123',
-            'tipo': 'atendente',
-            'balcao': 3
-        }
+        { 'nome': 'Administrador Sistema', 'email': 'admin@imtsb.ao',         'senha': 'Admin123', 'tipo': 'admin',     'balcao': None },
+        { 'nome': 'João da Silva',         'email': 'joao.silva@imtsb.ao',    'senha': 'Admin123', 'tipo': 'atendente', 'balcao': 1 },
+        { 'nome': 'Maria Costa',           'email': 'maria.costa@imtsb.ao',   'senha': 'Admin123', 'tipo': 'atendente', 'balcao': 2 },
+        { 'nome': 'Paulo Alves',           'email': 'paulo.alves@imtsb.ao',   'senha': 'Admin123', 'tipo': 'atendente', 'balcao': 3 },
     ]
-    
     for dados in atendentes:
-        existe = Atendente.query.filter_by(email=dados['email']).first()
-        if not existe:
-            atendente = Atendente(**dados)
-            atendente.save()
-            tipo_emoji = '👑' if atendente.tipo == 'admin' else '👤'
-            balcao_info = f"Balcão {atendente.balcao}" if atendente.balcao else "Admin"
-            print(f"  ✅ {tipo_emoji} {atendente.nome} ({balcao_info})")
+        if not Atendente.query.filter_by(email=dados['email']).first():
+            Atendente(**dados).save()
+            emoji = '👑' if dados['tipo'] == 'admin' else '👤'
+            print(f"  ✅ {emoji} {dados['nome']}")
         else:
-            print(f"  ⚠️  {existe.nome} (já existe)")
+            print(f"  ⚠️  {dados['nome']} (já existe)")
 
 
 def seed_configuracoes():
-    """Cria configurações iniciais do sistema"""
-    print("\n⚙️  CRIANDO CONFIGURAÇÕES...")
-    
+    print("\n[CONFIGURACOES] A criar configurações...")
     configs = [
-        {
-            'chave': 'horario_abertura',
-            'valor': '08:00',
-            'tipo': 'string',
-            'descricao': 'Horário de abertura do atendimento'
-        },
-        {
-            'chave': 'horario_fechamento',
-            'valor': '16:00',
-            'tipo': 'string',
-            'descricao': 'Horário de fechamento do atendimento'
-        },
-        {
-            'chave': 'tempo_maximo_espera',
-            'valor': '60',
-            'tipo': 'int',
-            'descricao': 'Tempo máximo de espera em minutos'
-        },
-        {
-            'chave': 'permite_senha_prioritaria',
-            'valor': 'true',
-            'tipo': 'boolean',
-            'descricao': 'Permite emissão de senhas prioritárias'
-        },
-        {
-            'chave': 'numero_balcoes_ativos',
-            'valor': '3',
-            'tipo': 'int',
-            'descricao': 'Número de balcões em operação'
-        },
-        {
-            'chave': 'mensagem_boas_vindas',
-            'valor': 'Bem-vindo ao Sistema de Filas do IMTSB!',
-            'tipo': 'string',
-            'descricao': 'Mensagem exibida na home'
-        }
+        { 'chave': 'horario_abertura',       'valor': '08:00', 'tipo': 'string',  'descricao': 'Horário de abertura' },
+        { 'chave': 'horario_fechamento',      'valor': '16:00', 'tipo': 'string',  'descricao': 'Horário de encerramento' },
+        { 'chave': 'tempo_maximo_espera',     'valor': '60',    'tipo': 'int',     'descricao': 'Tempo máximo de espera em minutos' },
+        { 'chave': 'permite_senha_prioritaria','valor': 'true', 'tipo': 'boolean', 'descricao': 'Permite senhas prioritárias' },
+        { 'chave': 'numero_balcoes_ativos',   'valor': '3',     'tipo': 'int',     'descricao': 'Balcões em operação' },
+        { 'chave': 'mensagem_boas_vindas',    'valor': 'Bem-vindo ao Sistema de Filas do IMTSB!', 'tipo': 'string', 'descricao': 'Mensagem da home' },
     ]
-    
     for dados in configs:
-        existe = Configuracao.query.filter_by(chave=dados['chave']).first()
-        if not existe:
-            config = Configuracao(**dados)
-            config.save()
-            print(f"  ✅ {config.chave} = {config.valor}")
+        if not Configuracao.query.filter_by(chave=dados['chave']).first():
+            Configuracao(**dados).save()
+            print(f"  ✅ {dados['chave']}")
         else:
-            print(f"  ⚠️  {existe.chave} (já existe)")
+            print(f"  ⚠️  {dados['chave']} (já existe)")
 
 
 def run_seeders():
-    """Executa todos os seeders"""
-    print("\n" + "=" * 60)
-    print("🌱 POPULANDO BANCO DE DADOS")
-    print("=" * 60)
-    
+    print("\n" + "="*50)
+    print("🌱 POPULAR BANCO DE DADOS — IMTSB")
+    print("="*50)
     seed_servicos()
     seed_atendentes()
     seed_configuracoes()
-    
-    print("\n" + "=" * 60)
-    print("✅ BANCO POPULADO COM SUCESSO!")
-    print("=" * 60 + "\n")
+    print("\n" + "="*50)
+    print("✅ BANCO POPULADO!")
+    print("="*50)
+    print("\nCredenciais de acesso:")
+    print("  Admin:     admin@imtsb.ao       / Admin123")
+    print("  Balcão 1:  joao.silva@imtsb.ao  / Admin123")
+    print("  Balcão 2:  maria.costa@imtsb.ao / Admin123")
+    print("  Balcão 3:  paulo.alves@imtsb.ao / Admin123")
