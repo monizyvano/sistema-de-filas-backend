@@ -177,49 +177,40 @@
 
     async function atualizarFilas() {
         try {
-            const respStats   = await fetch('/api/senhas/estatisticas');
-            const stats       = await respStats.json();
-            const respServicos = await fetch('/api/servicos');
-            const servicos    = respServicos.ok ? await respServicos.json() : [];
+            const [respServicos, respSenhas] = await Promise.all([
+                fetch('/api/servicos'),
+                fetch('/api/senhas?status=aguardando&page=1&per_page=200', {
+                    headers: { 'Authorization': `Bearer ${store.getToken()}` }
+                })
+            ]);
+
+            const servicos = respServicos.ok ? await respServicos.json() : [];
+            const dadosSenhas = respSenhas.ok ? await respSenhas.json() : {};
+            const senhas = Array.isArray(dadosSenhas) ? dadosSenhas : (dadosSenhas.senhas || []);
+
+            const porServico = {};
+            senhas.forEach(s => {
+                const sid = s.servico_id || s.servico?.id || 'sem';
+                porServico[sid] = (porServico[sid] || 0) + 1;
+            });
 
             const queueList = document.getElementById('queueList');
             if (!queueList) return;
 
-            if (servicos.length === 0) {
-                queueList.innerHTML = `
-                  <div class="queue-item">
-                    <div class="queue-service">Total aguardando</div>
-                    <div class="queue-number">${stats.aguardando || 0}</div>
-                  </div>`;
+            if (!servicos.length) {
+                queueList.innerHTML = '<div class="queue-item"><div class="queue-service">Sem serviços</div><div class="queue-number">0</div></div>';
                 return;
             }
 
-            // Renderizar linha por serviço com placeholder
-            queueList.innerHTML = servicos.slice(0, 4).map(s => `
+            queueList.innerHTML = servicos.map(s => `
               <div class="queue-item">
-                <div>
-                  <div class="queue-service">${s.icone || '📋'} ${s.nome}</div>
-                </div>
-                <div class="queue-number" id="fila-serv-${s.id}">–</div>
+                <div class="queue-service">${s.icone || '📋'} ${s.nome}</div>
+                <div class="queue-number">${porServico[s.id] || 0}</div>
               </div>
             `).join('');
 
-            // Actualizar contagem real por serviço
-            for (const s of servicos) {
-                try {
-                    const r = await fetch(
-                        `/api/senhas?servico_id=${s.id}&status=aguardando`
-                    );
-                    if (r.ok) {
-                        const d  = await r.json();
-                        const el = document.getElementById(`fila-serv-${s.id}`);
-                        if (el) el.textContent = d.total || 0;
-                    }
-                } catch (_) { /* silencioso */ }
-            }
-
         } catch (error) {
-            console.error("❌ Erro ao actualizar filas:", error);
+            console.error('❌ Erro ao actualizar filas:', error);
         }
     }
 
@@ -472,7 +463,7 @@
 
     async function atualizarTrabalhadores() {
         try {
-            const response = await fetch('/api/atendentes/', {
+            const response = await fetch('/api/auth/register', {
                 headers: { 'Authorization': `Bearer ${store.getToken()}` }
             });
 
@@ -660,57 +651,53 @@
      * aqui usamos o intervalo do último mês por defeito.
      */
     window.exportData = async function () {
-        const formatoEl = document.getElementById('exportFormat');
-        const formato   = formatoEl ? formatoEl.value : 'excel';
-
-        // Calcular intervalo: último mês
-        const hoje    = new Date();
-        const umMesAtras = new Date();
-        umMesAtras.setMonth(hoje.getMonth() - 1);
-
-        const dataInicio = umMesAtras.toISOString().split('T')[0];
-        const dataFim    = hoje.toISOString().split('T')[0];
-
-        // Mostrar feedback ao utilizador
-        const btnExport = document.getElementById('exportBtn');
-        if (btnExport) {
-            btnExport.disabled    = true;
-            btnExport.textContent = 'A exportar...';
-        }
+        const formato = document.getElementById('exportFormat')?.value || 'excel';
 
         try {
-            const response = await fetch(
-                `/api/dashboard/admin/exportar?data_inicio=${dataInicio}&data_fim=${dataFim}`,
-                { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
-            );
-
+            const response = await fetch('/api/senhas?status=concluida&page=1&per_page=500', {
+                headers: { 'Authorization': `Bearer ${store.getToken()}` }
+            });
             if (!response.ok) {
-                const erro = await response.json().catch(() => ({}));
-                alert(`Erro ao exportar: ${erro.erro || response.status}`);
+                alert('Não foi possível carregar dados para exportação.');
                 return;
             }
 
-            // Obter o blob do CSV e forçar download
-            const blob     = await response.blob();
-            const url       = window.URL.createObjectURL(blob);
-            const link      = document.createElement('a');
-            link.href       = url;
-            link.download   = `relatorio_${dataInicio}_${dataFim}.csv`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
+            const data = await response.json();
+            const rows = (data.senhas || []).map(s => ({
+                Senha: s.numero,
+                Serviço: s.servico?.nome || 'Serviço',
+                Atendente: s.atendente?.nome || '—',
+                Estado: s.status,
+                Duração_min: s.tempo_atendimento_minutos || 0,
+                Concluída_em: s.atendimento_concluido_em || s.updated_at || ''
+            }));
 
-            console.log(`✅ CSV exportado: ${dataInicio} → ${dataFim}`);
-
-        } catch (error) {
-            console.error("❌ Erro ao exportar:", error);
-            alert("Erro de ligação ao servidor. Tente novamente.");
-        } finally {
-            if (btnExport) {
-                btnExport.disabled    = false;
-                btnExport.textContent = 'Exportar';
+            if (!rows.length) {
+                alert('Sem dados do dia para exportar.');
+                return;
             }
+
+            if (formato === 'excel') {
+                if (!window.XLSX) {
+                    alert('Biblioteca Excel indisponível.');
+                    return;
+                }
+                const ws = XLSX.utils.json_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Relatorio');
+                XLSX.writeFile(wb, `relatorio_imtsb_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                return;
+            }
+
+            const tableRows = rows.map(r => `<tr><td>${r.Senha}</td><td>${r.Serviço}</td><td>${r.Atendente}</td><td>${r.Estado}</td><td>${r.Duração_min}m</td></tr>`).join('');
+            const html = `<html><head><title>Relatório IMTSB</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h2>Relatório de Atendimentos (Hoje)</h2><table><thead><tr><th>Senha</th><th>Serviço</th><th>Atendente</th><th>Estado</th><th>Duração</th></tr></thead><tbody>${tableRows}</tbody></table><script>window.onload=()=>window.print();</script></body></html>`;
+            const w = window.open('', '_blank', 'width=1000,height=700');
+            if (!w) return;
+            w.document.write(html);
+            w.document.close();
+        } catch (error) {
+            console.error('❌ Erro ao exportar:', error);
+            alert('Erro de ligação ao servidor.');
         }
     };
 
@@ -724,6 +711,7 @@
         const email  = document.getElementById('newWorkerEmail')?.value?.trim();
         const senha  = document.getElementById('newWorkerPass')?.value?.trim();
         const dept   = document.getElementById('newWorkerDept')?.value;
+        const role   = document.getElementById('newWorkerRole')?.value || 'atendente';
         const msgEl  = document.getElementById('workerFormMsg');
 
         if (!nome || !email || !senha) {
@@ -745,7 +733,7 @@
         if (btnAdd) { btnAdd.disabled = true; btnAdd.textContent = 'A criar...'; }
 
         try {
-            const response = await fetch('/api/atendentes/', {
+            const response = await fetch('/api/auth/register', {
                 method:  'POST',
                 headers: {
                     'Content-Type':  'application/json',
@@ -753,7 +741,7 @@
                 },
                 body: JSON.stringify({
                     nome, email, senha,
-                    tipo:       'atendente',
+                    tipo:       role,
                     balcao:     extra.balcao,
                     servico_id: extra.servico_id
                 })
@@ -763,7 +751,7 @@
 
             if (response.ok) {
                 if (msgEl) {
-                    msgEl.textContent = `Trabalhador criado com sucesso.`;
+                    msgEl.textContent = `${role === 'admin' ? 'Administrador' : 'Trabalhador'} criado com sucesso.`;
                     msgEl.style.color = '#22c55e';
                 }
 
@@ -794,7 +782,7 @@
         } finally {
             if (btnAdd) {
                 btnAdd.disabled    = false;
-                btnAdd.textContent = 'Adicionar Trabalhador';
+                btnAdd.textContent = 'Adicionar membro';
             }
         }
     }

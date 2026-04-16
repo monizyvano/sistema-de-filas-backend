@@ -509,6 +509,7 @@ def acompanhar_senha(numero):
             "posicao":              posicao,
             "tempo_espera_estimado": tempo_estimado,
             "balcao":               senha.numero_balcao,
+            "atendente":            senha.atendente.nome if senha.atendente else None,
             "servico":              senha.servico.nome if senha.servico else 'Geral'
         }), 200
 

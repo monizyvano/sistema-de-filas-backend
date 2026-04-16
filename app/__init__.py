@@ -121,11 +121,6 @@ def create_app(config_name=None):
     @app.route('/tv')
     def painel_tv():
         return render_template('tv.html')
-    
-    @app.route('/login-staff')
-    @app.route('/login-staff.html')
-    def login_staff():
-        return render_template('login-staff.html')
 
     # ================= ROTA CATCH-ALL PARA HTML =================
 

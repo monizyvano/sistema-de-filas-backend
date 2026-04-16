@@ -23,11 +23,20 @@ class EmitirSenhaSchema(Schema):
         validate=validate.OneOf(['normal', 'prioritaria']),
         error_messages={'required': 'tipo é obrigatório'}
     )
-    usuario_contato = fields.String(required=False, allow_none=True,
-        validate=validate.Length(max=100), load_default=None)
-    utente_id = fields.Integer(required=False, allow_none=True,
-        validate=validate.Range(min=1, max=999999), load_default=None)
+    
+    usuario_contato = fields.String(
+        required=False,
+        allow_none=True,
+        validate=validate.Length(max=100, error="Contato muito longo (máx 100 caracteres)")
+    )
 
+    utente_id = fields.Integer(
+        required=False,
+        allow_none=True,
+        validate=validate.Range(min=1, max=999999, error="utente_id inválido"),
+        load_default=None
+    )
+    
     @validates('usuario_contato')
     def validate_contato(self, value):
         if value:
@@ -86,20 +95,21 @@ class BuscarFilaSchema(Schema):
 
 
 class SenhaSchema(Schema):
-    id                        = fields.Int()
-    numero                    = fields.Str()
-    tipo                      = fields.Str()
-    status                    = fields.Str()
-    servico_id                = fields.Int()
-    atendente_id              = fields.Int()
-    utente_id                 = fields.Int(allow_none=True)
-    numero_balcao             = fields.Int()
-    usuario_contato           = fields.Str()
-    emitida_em                = fields.DateTime()
-    chamada_em                = fields.DateTime()
-    atendimento_iniciado_em   = fields.DateTime()
-    atendimento_concluido_em  = fields.DateTime()
-    tempo_espera_minutos      = fields.Int()
+    """Schema de saída (resposta da API)"""
+    id = fields.Int()
+    numero = fields.Str()
+    tipo = fields.Str()
+    status = fields.Str()
+    servico_id = fields.Int()
+    atendente_id = fields.Int()
+    utente_id = fields.Int(allow_none=True)
+    numero_balcao = fields.Int()
+    usuario_contato = fields.Str()
+    emitida_em = fields.DateTime()
+    chamada_em = fields.DateTime()
+    atendimento_iniciado_em = fields.DateTime()
+    atendimento_concluido_em = fields.DateTime()
+    tempo_espera_minutos = fields.Int()
     tempo_atendimento_minutos = fields.Int()
     observacoes               = fields.Str()
     created_at                = fields.DateTime()

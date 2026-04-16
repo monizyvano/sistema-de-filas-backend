@@ -41,15 +41,28 @@
     });
   });
 
-  if (formEntrar) {
-    formEntrar.addEventListener("submit", async function (event) {
-      event.preventDefault();
+  function setLoading(formEl, loading) {
+    if (!formEl) return;
+    const submitBtn = formEl.querySelector('button[type="submit"], input[type="submit"]');
+    if (!submitBtn) return;
+    submitBtn.disabled = !!loading;
+  }
 
-      var checked = document.getElementById("confirmEntrar");
-      var identif = ((document.getElementById("clienteIdentif") || {}).value || "").trim();
+  // ===============================
+  // 🔐 LOGIN
+  // ===============================
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
 
-      if (checked && !checked.checked) {
-        show("Confirme os dados.", "error");
+      const email = document.getElementById('iemail')?.value.trim();
+      const senha = document.getElementById('isenha')?.value;
+      const tipo = document.getElementById('loginTipo')?.value;
+      const confirmDados = document.getElementById('loginConfirmDados')?.checked;
+
+      // Validações
+      if (!email || !senha) {
+        showMessage("❌ Preencha email e senha", "error");
         return;
       }
 
@@ -58,46 +71,42 @@
         return;
       }
 
-      setLoading(formEntrar, true);
-      show("A verificar...", "");
+      // Login
+      showMessage("🔄 Autenticando...", "info");
+      setLoading(loginForm, true);
 
       try {
-        var isEmail = identif.indexOf("@") !== -1;
-        var response = await fetch("/api/utentes/identificar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(isEmail ? { email: identif } : { telefone: identif })
-        });
+        const result = await store.login(email, senha);
 
-        var data = await response.json().catch(function () {
-          return {};
-        });
-
-        if (!response.ok) {
-          show(data.erro || "Conta nao encontrada. Faca o cadastro.", "error");
+        if (!result.ok) {
+          showMessage(`❌ ${result.message}`, "error");
+          setLoading(loginForm, false);
           return;
         }
 
-        var session = {
-          id: data.utente_id || data.id || null,
-          name: data.nome || identif,
-          email: data.email || (isEmail ? identif : ""),
-          role: "usuario",
-          token: "",
-          balcao: null,
-          isGuest: false
-        };
+        // Sucesso
+        showMessage("✅ Login realizado!", "success");
 
-        localStorage.setItem("imtsb_user", JSON.stringify(session));
-        show("Bem-vindo, " + session.name + "!", "ok");
+        // Redirect baseado no role retornado do backend
+        const userRole = result.role || "usuario";
 
-        setTimeout(function () {
-          window.location.href = "/index.html";
-        }, 400);
-      } catch (error) {
-        show("Erro de ligacao ao servidor.", "error");
-      } finally {
-        setLoading(formEntrar, false);
+        setTimeout(() => {
+          if (userRole === "admin") {
+            window.location.href = "/dashadm.html";
+          } else if (userRole === "trabalhador" || userRole === "atendente") {
+            window.location.href = "/dashtrabalho.html";
+          } else {
+            window.location.href = "/index.html";
+          }
+        }, 500);
+      } catch (err) {
+        console.error("[Login] Erro:", err);
+        var msgOffline = (err && err.message && err.message.toLowerCase().includes("fetch"))
+          ? "Servidor indisponível. Verifique a ligação e tente novamente."
+          : "Erro de ligação. Tente novamente.";
+        showMessage(msgOffline, "error");
+        setLoading(loginForm, false);
+        return;
       }
     });
   }

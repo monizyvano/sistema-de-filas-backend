@@ -114,6 +114,15 @@
         ? String(emailOrPayload.senha || emailOrPayload.password || "")
         : String(senhaMaybe || "");
 
+    async login(emailOrPayload, senhaParam) {
+      // Compat: aceita tanto login(email, senha) quanto login({ email, password|senha })
+      const email = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.email || "")
+        : (emailOrPayload || "");
+      const senha = typeof emailOrPayload === "object" && emailOrPayload !== null
+        ? (emailOrPayload.password || emailOrPayload.senha || "")
+        : (senhaParam || "");
+
       const result = await apiRequest("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, senha }),
@@ -187,6 +196,18 @@
       return { ok: true, ticket };
     },
 
+    async getQueue(servicoId = null) {
+      const query = servicoId
+        ? `/senhas?status=aguardando&servico_id=${servicoId}&page=1&per_page=100`
+        : "/senhas?status=aguardando&page=1&per_page=100";
+
+      const result = await apiRequest(query);
+      if (!result.ok) return [];
+
+      if (Array.isArray(result.data)) return result.data;
+      return result.data?.senhas || [];
+    },
+
     async callNext(dataFrontend) {
       const backendData = adapter && typeof adapter.adaptCallNext === "function"
         ? adapter.adaptCallNext(dataFrontend)
@@ -235,12 +256,14 @@
 
     async getSnapshot() {
       const snapshot = await apiRequest("/realtime/snapshot");
-      if (snapshot.ok) {
-        return { ok: true, data: snapshot.data };
-      }
+      if (snapshot.ok) return { ok: true, data: snapshot.data };
 
-      const queue = await this.getQueue();
-      const stats = await this.getStats();
+      // Fallback gradual: monta snapshot mínimo com endpoints já existentes.
+      const [queue, stats] = await Promise.all([
+        this.getQueue(),
+        this.getStats()
+      ]);
+
       return {
         ok: true,
         data: {
@@ -260,5 +283,12 @@
   };
 
   window.ApiClient = ApiClient;
-  window.IMTSBApiClient = ApiClient;
+
+  console.log("✅ API Client carregado (corrigido)");
+
+  // Health check inicial
+  ApiClient.healthCheck().then(status => {
+    console.log("🏥 Backend status:", status.status || "offline");
+  });
+
 })();

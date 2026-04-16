@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
@@ -32,7 +33,7 @@
                 <span id="currentDate">-</span>
             </div>
             <select id="exportFormat" class="export-format">
-                <option value="excel">Excel (CSV)</option>
+                <option value="excel">Excel (.xlsx)</option>
                 <option value="pdf">PDF</option>
             </select>
             <button class="export-btn" id="exportBtn" onclick="exportData()">
@@ -214,29 +215,19 @@
                 <h3 class="performance-title">Adicionar Trabalhador</h3>
             </div>
             <div class="worker-form-grid">
-                <input
-                    id="newWorkerName"
-                    type="text"
-                    placeholder="Nome completo do trabalhador"
-                    autocomplete="off">
-                <input
-                    id="newWorkerEmail"
-                    type="email"
-                    placeholder="Email institucional"
-                    autocomplete="off">
-                <input
-                    id="newWorkerPass"
-                    type="password"
-                    placeholder="Senha inicial"
-                    autocomplete="new-password">
+                <input id="newWorkerName" type="text" placeholder="Nome completo" autocomplete="off">
+                <input id="newWorkerEmail" type="email" placeholder="Email institucional" autocomplete="off">
+                <input id="newWorkerPass" type="password" placeholder="Senha inicial" autocomplete="new-password">
+                <select id="newWorkerRole">
+                    <option value="atendente">Trabalhador</option>
+                    <option value="admin">Administrador</option>
+                </select>
                 <select id="newWorkerDept">
                     <option value="Secretaria Academica">Balcão 1 — Secretaria Académica</option>
                     <option value="Contabilidade">Balcão 2 — Tesouraria</option>
                     <option value="Apoio ao Cliente">Balcão 3 — Apoio ao Cliente</option>
                 </select>
-                <button class="export-btn" type="button" id="btnAddWorker">
-                    Adicionar Trabalhador
-                </button>
+                <button class="export-btn" type="button" id="btnAddWorker">Adicionar membro</button>
             </div>
             <p id="workerFormMsg" style="margin-top:.5rem; font-weight:500;"></p>
 

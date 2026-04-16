@@ -1,297 +1,314 @@
-/**
- * static/js/dash.js — v4 COMPLETO
- * Controlos: chamar, concluir, negar, observações, ver pedido, recibo, fila ao vivo
- */
 (function () {
   "use strict";
 
   const store = window.IMTSBStore;
-  let senhaAtual = null, timerInterval = null, pollingInterval = null, queueInterval = null;
-  let reciboData = null; // guardado para download
+  const ANGOLA_TZ = "Africa/Luanda";
 
-  // ── Init ─────────────────────────────────────────────────
+  let senhaAtual = null;
+  let timerInterval = null;
+  let pollingInterval = null;
+
+  function nowKeyLuanda() {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date());
+  }
+
+  function keyFromDate(value) {
+    if (!value) return "";
+    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(value));
+  }
+
+  function formatTimeLuanda(value) {
+    if (!value) return "--:--";
+    return new Date(value).toLocaleTimeString("pt-PT", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: ANGOLA_TZ,
+    });
+  }
+
+  function setStatus(text, emAtendimento) {
+    const statusText = document.getElementById("statusText");
+    if (statusText) statusText.textContent = text;
+    const statusDot = document.getElementById("statusDot");
+    if (statusDot) statusDot.style.background = emAtendimento ? "#f59e0b" : "#10b981";
+  }
+
+  function renderTabs() {
+    const btns = document.querySelectorAll(".tab-switch-btn");
+    btns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-switch-btn").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(`tab-${btn.dataset.tab}`)?.classList.add("active");
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
-    if (!store.isLoggedIn()) { window.location.href = "/login-staff.html"; return; }
-    const user = store.getUser();
-    if (user.role !== "trabalhador" && user.role !== "admin") {
-      alert("Acesso negado."); window.location.href = "/"; return;
+    if (!store?.isLoggedIn()) {
+      window.location.href = "/login";
+      return;
     }
-    await carregarHeader();
-    await injectSelectorServico();
-    await atualizarEstatisticas();
-    await atualizarHistorico();
-    await atualizarFilaAoVivo();
-    iniciarPollings();
-    actualizarBotoes();
+
+    const user = store.getUser();
+    if (!["trabalhador", "admin"].includes(user.role)) {
+      window.location.href = "/";
+      return;
+    }
+
+    carregarDadosTrabalhador();
+    renderTabs();
+    await atualizarTudo();
+    iniciarPolling();
+    actualizarBotaoConcluir();
   });
 
-  // ── Header ───────────────────────────────────────────────
-  async function carregarHeader() {
-    const u = store.getUser();
-    const g = id => document.getElementById(id);
-    if (g("workerName"))   g("workerName").textContent   = u.name || "Trabalhador";
-    if (g("workerDept"))   g("workerDept").textContent   = u.departamento || "Atendimento";
-    if (g("workerAvatar")) g("workerAvatar").textContent =
-      (u.name || "T").split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2);
-    if (g("counterBadge")) {
-      const b = parseInt(u.balcao || u.numero_balcao) || null;
-      g("counterBadge").textContent = b ? `Balcão ${b}` : "Sem balcão";
-    }
+  async function atualizarTudo() {
+    await Promise.all([atualizarEstatisticas(), atualizarHistorico(), atualizarFilaAoVivo()]);
   }
 
-  // ── Selector de serviço ──────────────────────────────────
-  async function injectSelectorServico() {
-    if (document.getElementById("servicoSelectorWrapper")) return;
-    let servicos = [];
-    try { const r = await fetch("/api/servicos/"); if (r.ok) servicos = await r.json(); } catch (_) {}
-    if (!servicos.length) return;
-    const container = document.querySelector(".action-buttons");
-    if (!container) return;
-    const u       = store.getUser();
-    const wrapper = document.createElement("div");
-    wrapper.id    = "servicoSelectorWrapper";
-    wrapper.innerHTML = `
-      <label>Serviço a atender</label>
-      <select id="servicoSelector">
-        <option value="">— Seleccione o serviço —</option>
-        ${servicos.map(s => `<option value="${s.id}" ${s.id == (u.servico_id||"") ? "selected" : ""}>${s.icone||"📋"} ${s.nome}</option>`).join("")}
-      </select>`;
-    container.parentNode.insertBefore(wrapper, container);
+  function carregarDadosTrabalhador() {
+    const user = store.getUser();
+    document.getElementById("workerName").textContent = user.name || "Trabalhador";
+    document.getElementById("workerDept").textContent = user.departamento || "Atendimento";
+    const iniciais = (user.name || "T")
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+    document.getElementById("workerAvatar").textContent = iniciais;
+    const balcao = user.balcao || user.numero_balcao;
+    document.getElementById("counterBadge").textContent = balcao ? `Balcão ${balcao}` : "Sem balcão";
   }
 
-  function getServicoId() {
-    const u = store.getUser();
-    const sel = document.getElementById("servicoSelector");
-    return u.servico_id || (sel ? parseInt(sel.value) || null : null);
-  }
-
-  function getBalcao() {
-    const u = store.getUser();
-    return parseInt(u.balcao || u.numero_balcao) || null;
-  }
-
-  // ── CHAMAR ───────────────────────────────────────────────
-  window.callNextCustomer = async function () {
-    const svcId  = getServicoId();
-    const balcao = getBalcao();
-    const btn    = document.querySelector(".btn-next");
-    if (!svcId)  { alert("Seleccione um serviço."); return; }
-    if (!balcao) { alert("Sem balcão configurado. Contacte o administrador."); return; }
-    if (btn) { btn.disabled = true; btn.querySelector(".btn-icon").textContent = "⏳"; }
+  async function atualizarEstatisticas() {
     try {
-      const result = await store.callNext(svcId, balcao);
-      if (result.ok && result.senha) {
-        senhaAtual = result.senha;
-        const c = document.getElementById("currentSenhaId");
-        if (c) c.value = senhaAtual.id || "";
-        atualizarDisplayAtual(senhaAtual);
-        actualizarBotoes();
-        pararTimer(); iniciarTimer();
-        await atualizarHistorico();
-        await atualizarEstatisticas();
-        await atualizarFilaAoVivo();
-      } else {
-        alert(result.message || "Não há senhas a aguardar para este serviço.");
-      }
-    } catch (e) { alert("Erro ao chamar senha."); }
-    finally {
-      if (btn) { btn.disabled = false; btn.querySelector(".btn-icon").textContent = "🔔"; }
-    }
-  };
-
-  // ── CONCLUIR ─────────────────────────────────────────────
-  window.concludeAttendance = async function () {
-    const c   = document.getElementById("currentSenhaId");
-    const sid = c ? c.value : null;
-    const btn = document.getElementById("btnConcluir");
-    if (!sid) { alert("Nenhuma senha em atendimento."); return; }
-    if (!confirm(`Confirmar conclusão da senha ${senhaAtual?.numero || sid}?`)) return;
-    if (btn) { btn.disabled = true; btn.querySelector(".btn-icon").textContent = "⏳"; }
-    try {
-      const resp = await fetch(`/api/filas/concluir/${sid}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${store.getToken()}` }
+      const response = await fetch("/api/dashboard/trabalhador/estatisticas", {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
       });
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok) {
-        // Gerar recibo antes de limpar
-        gerarRecibo(senhaAtual);
-        senhaAtual = null;
-        if (c) c.value = "";
-        limparDisplay(); pararTimer(); actualizarBotoes();
-        await atualizarHistorico(); await atualizarEstatisticas(); await atualizarFilaAoVivo();
-      } else {
-        alert(`Erro: ${data.erro || data.message || "Não foi possível concluir"}`);
-      }
-    } catch (e) { alert("Erro de ligação."); }
-    finally {
-      if (btn) { btn.disabled = false; btn.querySelector(".btn-icon").textContent = "✅"; }
+      if (!response.ok) return;
+      const stats = await response.json();
+      document.getElementById("waitingCount").textContent = stats.aguardando || 0;
+      document.getElementById("servedToday").textContent = stats.atendidos_hoje || 0;
+      document.getElementById("avgTime").textContent = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
+    } catch (err) {
+      console.error("[worker] estatísticas", err);
     }
-  };
-
-  // ── NEGAR SENHA ──────────────────────────────────────────
-  window.openDenyModal = function () {
-    if (!senhaAtual) { alert("Nenhuma senha em atendimento."); return; }
-    const inp = document.getElementById("denyReason");
-    if (inp) inp.value = "";
-    openModal("modalNegar");
-  };
-
-  window.confirmDeny = async function () {
-    const motivo = (document.getElementById("denyReason")?.value || "").trim();
-    if (!motivo) { alert("Explique o motivo da negação."); return; }
-    const sid = document.getElementById("currentSenhaId")?.value;
-    if (!sid) { closeModal("modalNegar"); return; }
-    try {
-      const resp = await fetch(`/api/senhas/${sid}/cancelar`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${store.getToken()}` },
-        body: JSON.stringify({ motivo: `NEGADO: ${motivo}` })
-      });
-      if (resp.ok) {
-        closeModal("modalNegar");
-        senhaAtual = null;
-        document.getElementById("currentSenhaId").value = "";
-        limparDisplay(); pararTimer(); actualizarBotoes();
-        await atualizarHistorico(); await atualizarEstatisticas(); await atualizarFilaAoVivo();
-      } else {
-        const d = await resp.json().catch(() => ({}));
-        alert(d.erro || "Erro ao negar senha.");
-      }
-    } catch (e) { alert("Erro de ligação."); }
-  };
-
-  // ── OBSERVAÇÕES ──────────────────────────────────────────
-  window.openObsModal = function () {
-    if (!senhaAtual) { alert("Nenhuma senha em atendimento."); return; }
-    const inp = document.getElementById("obsInput");
-    if (inp) inp.value = senhaAtual.observacoes || "";
-    openModal("modalObs");
-  };
-
-  window.saveObs = async function () {
-    const obs = (document.getElementById("obsInput")?.value || "").trim();
-    const sid = document.getElementById("currentSenhaId")?.value;
-    if (!sid) { closeModal("modalObs"); return; }
-    try {
-      const resp = await fetch(`/api/senhas/${sid}/finalizar`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${store.getToken()}` },
-        body: JSON.stringify({ observacoes: obs })
-      });
-      if (resp.ok && senhaAtual) {
-        senhaAtual.observacoes = obs;
-        atualizarDisplayAtual(senhaAtual);
-      }
-    } catch (_) {}
-    closeModal("modalObs");
-  };
-
-  // ── VER PEDIDO / DOCUMENTOS ──────────────────────────────
-  window.openDocsModal = function () {
-    const content = document.getElementById("docsContent");
-    if (!content) return;
-
-    if (!senhaAtual) {
-      content.textContent = "Nenhuma senha em atendimento.";
-      openModal("modalDocs"); return;
-    }
-
-    // Formatar observações do formulário para leitura
-    const obs = senhaAtual.observacoes || "";
-    const linhas = obs.split(" | ");
-    const formatted = linhas.length > 1
-      ? linhas.map(l => {
-          const [k, ...v] = l.split(": ");
-          return v.length ? `${k}\n  → ${v.join(": ")}` : l;
-        }).join("\n\n")
-      : (obs || "Sem informações registadas pelo cliente.");
-
-    content.textContent = formatted;
-
-    // Info extra
-    if (senhaAtual.usuario_contato) {
-      content.textContent += `\n\nContacto: ${senhaAtual.usuario_contato}`;
-    }
-    openModal("modalDocs");
-  };
-
-  // ── RECIBO ───────────────────────────────────────────────
-  function gerarRecibo(s) {
-    if (!s) return;
-    const u = store.getUser();
-    const agora = new Date().toLocaleString("pt-PT");
-    const linhas = [
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-      "  INSTITUTO MÉDIO TÉCNICO SÃO BENEDITO",
-      "       Recibo de Atendimento",
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-      `Senha         : ${s.numero}`,
-      `Serviço       : ${s.servico?.nome || "—"}`,
-      `Tipo          : ${s.tipo === "prioritaria" ? "Prioritária" : "Normal"}`,
-      `Atendido por  : ${u.name} (Balcão ${getBalcao() || "—"})`,
-      `Emitida em    : ${s.emitida_em ? new Date(s.emitida_em).toLocaleString("pt-PT") : "—"}`,
-      `Concluída em  : ${agora}`,
-      `Espera        : ${s.tempo_espera_minutos || 0} minutos`,
-      "─────────────────────────────────────",
-    ];
-    if (s.observacoes) {
-      linhas.push(`Notas         : ${s.observacoes}`);
-      linhas.push("─────────────────────────────────────");
-    }
-    linhas.push("  Obrigado pela sua visita ao IMTSB!");
-    linhas.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    reciboData = { texto: linhas.join("\n"), numero: s.numero };
   }
 
-  window.sendReceipt = function () {
-    if (!senhaAtual) { alert("Nenhuma senha em atendimento."); return; }
-    gerarRecibo(senhaAtual);
-    const content = document.getElementById("reciboContent");
-    if (content && reciboData) content.textContent = reciboData.texto;
-    openModal("modalRecibo");
-  };
-
-  window.downloadRecibo = function () {
-    if (!reciboData) return;
-    const blob = new Blob([reciboData.texto], { type: "text/plain;charset=utf-8" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `recibo_${reciboData.numero}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    closeModal("modalRecibo");
-  };
-
-  // ── FILA AO VIVO ─────────────────────────────────────────
-  async function atualizarFilaAoVivo() {
-    const svcId = getServicoId();
-    if (!svcId) return;
+  async function atualizarHistorico() {
     try {
-      const resp = await fetch(`/api/senhas?status=aguardando&servico_id=${svcId}&per_page=20`,
-        { headers: { "Authorization": `Bearer ${store.getToken()}` } });
-      if (!resp.ok) return;
-      const { senhas = [] } = await resp.json();
-      const list = document.getElementById("queueLiveList");
-      if (!list) return;
-      if (!senhas.length) {
-        list.innerHTML = `<p style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:.5rem 0">Fila vazia</p>`;
+      const user = store.getUser();
+      const response = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const today = nowKeyLuanda();
+      const senhasHoje = (data.senhas || []).filter((s) => {
+        const ts = s.atendimento_concluido_em || s.updated_at || s.emitida_em || s.created_at;
+        return keyFromDate(ts) === today;
+      });
+
+      const activityLog = document.getElementById("activityLog");
+      if (!activityLog) return;
+      if (!senhasHoje.length) {
+        activityLog.innerHTML = '<div class="log-item"><div class="log-password">Nenhum atendimento hoje</div></div>';
         return;
       }
-      list.innerHTML = senhas.map((s, i) => `
-        <div class="q-item ${i===0 ? "minha" : s.tipo === "prioritaria" ? "prior" : "normal"}">
-          <div>
-            <div class="q-num">${s.numero}</div>
-            <div class="q-info">${s.servico?.nome || ""} · pos. ${i+1}</div>
-          </div>
-          <span class="q-badge ${s.tipo === "prioritaria" ? "p" : "n"}">
-            ${s.tipo === "prioritaria" ? "PRIOR" : "NORMAL"}
-          </span>
-        </div>`).join("");
-    } catch (e) { console.error("❌ fila ao vivo:", e); }
+
+      activityLog.innerHTML = senhasHoje
+        .map((senha) => {
+          const hora = formatTimeLuanda(senha.atendimento_concluido_em || senha.updated_at || senha.created_at);
+          const duracao = Math.round(senha.tempo_atendimento_minutos || 0);
+          const servico = senha.servico?.nome || "Serviço";
+          return `<div class="log-item completed">
+            <div class="log-password">${senha.numero} — ${servico}</div>
+            <div class="log-time">${hora} · ${duracao}m</div>
+          </div>`;
+        })
+        .join("");
+    } catch (err) {
+      console.error("[worker] histórico", err);
+    }
+  }
+
+  async function atualizarFilaAoVivo() {
+    const user = store.getUser();
+    const list = document.getElementById("liveQueueList");
+    if (!list) return;
+    try {
+      const serviceFilter = user.servico_id ? `&servico_id=${user.servico_id}` : "";
+      const response = await fetch(`/api/senhas?status=aguardando&page=1&per_page=20${serviceFilter}`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const senhas = Array.isArray(data) ? data : (data.senhas || []);
+
+      if (!senhas.length) {
+        list.innerHTML = '<div class="live-queue-empty">Sem senhas em fila.</div>';
+        return;
+      }
+
+      list.innerHTML = senhas
+        .slice(0, 8)
+        .map((s, idx) => `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
+            <span class="live-num">${s.numero}</span>
+            <span class="live-service">${s.servico?.nome || "Serviço"}</span>
+            <span class="live-tag">${idx === 0 ? "PRÓXIMA" : `${idx + 1}º`}</span>
+          </div>`)
+        .join("");
+    } catch (err) {
+      console.error("[worker] fila ao vivo", err);
+    }
+  }
+
+  window.callNextCustomer = async function () {
+    const user = store.getUser();
+    const servicoId = user.servico_id;
+    const balcao = user.balcao || user.numero_balcao;
+
+    if (!servicoId || !balcao) {
+      alert("Perfil incompleto: falta serviço ou balcão. Contacte o administrador.");
+      return;
+    }
+
+    const btn = document.querySelector(".btn-next");
+    if (btn) { btn.disabled = true; btn.textContent = "A chamar..."; }
+
+    try {
+      const result = await store.callNext(servicoId, balcao);
+      if (!result.ok || !result.senha) {
+        alert(result.message || "Nenhuma senha disponível.");
+        return;
+      }
+      senhaAtual = result.senha;
+      document.getElementById("currentSenhaId").value = senhaAtual.id || "";
+      atualizarDisplayAtual(senhaAtual);
+      actualizarBotaoConcluir();
+      iniciarTimer();
+      setStatus("Em Atendimento", true);
+      await atualizarTudo();
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao chamar próxima senha.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
+    }
+  };
+
+  window.concludeAttendance = async function () {
+    const senhaId = document.getElementById("currentSenhaId")?.value;
+    if (!senhaId) return alert("Nenhuma senha em atendimento.");
+
+    const btn = document.getElementById("btnConcluir");
+    if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
+
+    try {
+      const response = await fetch(`/api/filas/concluir/${senhaId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+      });
+      if (!response.ok) {
+        const d = await response.json().catch(() => ({}));
+        throw new Error(d.erro || "Falha ao concluir.");
+      }
+      limparAtendimentoAtual();
+      await atualizarTudo();
+    } catch (err) {
+      alert(err.message || "Erro ao concluir atendimento.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = "Concluir"; }
+    }
+  };
+
+  window.denyCurrentTicket = async function () {
+    const senhaId = document.getElementById("currentSenhaId")?.value;
+    if (!senhaId || !senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const motivo = prompt("Motivo da negação (obrigatório):");
+    if (!motivo) return;
+
+    try {
+      const response = await fetch(`/api/senhas/${senhaId}/finalizar`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+        body: JSON.stringify({ observacoes: `NEGADO pelo trabalhador: ${motivo}` }),
+      });
+      if (!response.ok) {
+        const d = await response.json().catch(() => ({}));
+        throw new Error(d.erro || "Falha ao negar.");
+      }
+      limparAtendimentoAtual();
+      await atualizarTudo();
+      alert("Senha negada e finalizada com sucesso.");
+    } catch (err) {
+      alert(err.message || "Erro ao negar senha.");
+    }
+  };
+
+  function atualizarDisplayAtual(senha) {
+    document.getElementById("currentPassword").textContent = senha.numero || "---";
+    document.getElementById("passwordType").textContent = senha.tipo === "prioritaria" ? "Atendimento Prioritário" : "Atendimento Normal";
+    document.getElementById("serviceValue").textContent = senha.servico?.nome || "Serviço";
+    document.getElementById("waitTime").textContent = `${Math.round(senha.tempo_espera_minutos || 0)} min`;
+    document.getElementById("issuedAt").textContent = formatTimeLuanda(senha.emitida_em || senha.created_at);
+    document.getElementById("obsValue").textContent = senha.observacoes || "Sem observações";
+    preencherPreviewDocumentos(senha);
+  }
+
+  function preencherPreviewDocumentos(senha) {
+    const pre = document.getElementById("docsPreviewContent");
+    if (!pre) return;
+    const dados = senha?.formulario_dados || senha?.dados_formulario || senha?.documentos || senha?.anexos || null;
+    if (!dados) {
+      pre.textContent = "Sem documentos/formulário para esta senha.";
+      return;
+    }
+    if (typeof dados === "string") {
+      pre.textContent = dados;
+      return;
+    }
+    pre.textContent = JSON.stringify(dados, null, 2);
+  }
+
+  function limparDisplayAtual() {
+    document.getElementById("currentPassword").textContent = "---";
+    document.getElementById("passwordType").textContent = "Aguardando chamada";
+    document.getElementById("serviceValue").textContent = "-";
+    document.getElementById("waitTime").textContent = "-";
+    document.getElementById("issuedAt").textContent = "-";
+    document.getElementById("obsValue").textContent = "Sem observações";
+    document.getElementById("docsPreviewContent").textContent = "Sem documentos/formulário para esta senha.";
+    document.getElementById("timer").textContent = "00:00";
+    setStatus("Disponível", false);
+  }
+
+  function limparAtendimentoAtual() {
+    senhaAtual = null;
+    document.getElementById("currentSenhaId").value = "";
+    pararTimer();
+    limparDisplayAtual();
+    actualizarBotaoConcluir();
+  }
+
+  function actualizarBotaoConcluir() {
+    const btn = document.getElementById("btnConcluir");
+    if (!btn) return;
+    btn.disabled = !senhaAtual;
+  }
+
+  function iniciarTimer() {
+    pararTimer();
+    let segundos = 0;
+    timerInterval = setInterval(() => {
+      segundos += 1;
+      const m = String(Math.floor(segundos / 60)).padStart(2, "0");
+      const s = String(segundos % 60).padStart(2, "0");
+      document.getElementById("timer").textContent = `${m}:${s}`;
+    }, 1000);
   }
 
   // ── Estatísticas ─────────────────────────────────────────
@@ -309,65 +326,11 @@
     } catch (e) { console.error("❌ stats:", e); }
   }
 
-  // ── Histórico ─────────────────────────────────────────────
-  async function atualizarHistorico() {
-    try {
-      const u = store.getUser();
-      const resp = await fetch(
-        `/api/senhas?atendente_id=${u.id}&status=concluida&page=1&per_page=8`,
-        { headers: { "Authorization": `Bearer ${store.getToken()}` } });
-      if (!resp.ok) return;
-      const { senhas = [] } = await resp.json();
-      const log = document.getElementById("activityLog");
-      if (!log) return;
-      if (!senhas.length) {
-        log.innerHTML = `<div class="log-item"><div class="log-password">Sem atendimentos hoje</div></div>`;
-        return;
-      }
-      log.innerHTML = senhas.map(s => {
-        const ts = s.atendimento_concluido_em || s.created_at;
-        const h  = ts ? new Date(ts).toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}) : "--:--";
-        const negado = (s.observacoes || "").startsWith("NEGADO:");
-        return `<div class="log-item ${negado ? "" : "completed"}" style="${negado ? "border-left-color:#ef4444" : ""}">
-          <div class="log-password">${s.numero}${negado ? " ❌" : " ✓"}${s.servico ? " · "+s.servico.nome : ""}</div>
-          <div class="log-time">${h} · ${s.tempo_atendimento_minutos||0}min</div>
-        </div>`;
-      }).join("");
-    } catch (e) { console.error("❌ histórico:", e); }
-  }
-
-  // ── Display ───────────────────────────────────────────────
-  function atualizarDisplayAtual(s) {
-    const g = id => document.getElementById(id);
-    if (g("currentPassword")) g("currentPassword").textContent = s.numero;
-    if (g("passwordType"))    g("passwordType").textContent    = s.tipo === "prioritaria" ? "⭐ Prioritário" : "Normal";
-    if (g("serviceValue"))    g("serviceValue").textContent    = s.servico?.nome || "Geral";
-    if (g("waitTime"))        g("waitTime").textContent        = `${s.tempo_espera_minutos || 0} min`;
-    if (g("issuedAt") && s.emitida_em)
-      g("issuedAt").textContent = new Date(s.emitida_em).toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
-    if (g("contactoValue"))   g("contactoValue").textContent   = s.usuario_contato || "—";
-    if (g("statusText"))      g("statusText").textContent      = "Em Atendimento";
-
-    // Mostrar info do pedido se existir
-    const obsRow = g("obsRow");
-    const obsEl  = g("obsValue");
-    if (s.observacoes && obsRow && obsEl) {
-      // Pegar só a primeira linha resumida
-      const resumo = s.observacoes.split("|").slice(0,2).join(" | ");
-      obsEl.textContent = resumo;
-      obsRow.style.display = "flex";
-    }
-  }
-
-  function limparDisplay() {
-    [["currentPassword","---"],["passwordType","Aguardando chamada"],
-     ["serviceValue","—"],["waitTime","—"],["issuedAt","—"],
-     ["contactoValue","—"],["statusText","Disponível"]
-    ].forEach(([id,v]) => { const e = document.getElementById(id); if (e) e.textContent = v; });
-    const ob = document.getElementById("obsRow");
-    if (ob) ob.style.display = "none";
-    const t = document.getElementById("timer");
-    if (t) t.textContent = "00:00";
+  function iniciarPolling() {
+    pararPolling();
+    pollingInterval = setInterval(async () => {
+      await atualizarTudo();
+    }, 7000);
   }
 
   function actualizarBotoes() {
@@ -378,57 +341,73 @@
     });
   }
 
-  // ── Timer ────────────────────────────────────────────────
-  function iniciarTimer() {
-    pararTimer(); let s = 0;
-    timerInterval = setInterval(() => {
-      s++;
-      const el = document.getElementById("timer");
-      if (el) el.textContent = `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
-    }, 1000);
-  }
-  function pararTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
-
-  // ── Pollings ─────────────────────────────────────────────
-  function iniciarPollings() {
-    pararPollings();
-    pollingInterval = setInterval(atualizarEstatisticas, 10000);
-    queueInterval   = setInterval(atualizarFilaAoVivo,   8000);
-  }
-  function pararPollings() {
-    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
-    if (queueInterval)   { clearInterval(queueInterval);   queueInterval = null; }
-  }
-
-  // ── Modal helpers ────────────────────────────────────────
-  window.openModal = function (id) {
-    const m = document.getElementById(id);
-    if (m) m.classList.add("open");
-  };
-  window.closeModal = function (id) {
-    const m = document.getElementById(id);
-    if (m) m.classList.remove("open");
-  };
-
-  // Fechar modal ao clicar fora
-  document.addEventListener("click", function (e) {
-    if (e.target.classList.contains("modal-overlay")) {
-      e.target.classList.remove("open");
-    }
-  });
-
-  // ── Funções globais ──────────────────────────────────────
   window.togglePause = function () {
     const btn = document.getElementById("pauseBtn");
     if (!btn) return;
-    if (btn.textContent.trim() === "Retomar") { iniciarPollings(); btn.textContent = "Pausar"; }
-    else { pararPollings(); btn.textContent = "Retomar"; }
+    const pausado = btn.textContent.trim() === "Retomar";
+    if (pausado) {
+      btn.textContent = "Pausar";
+      iniciarPolling();
+      if (senhaAtual) iniciarTimer();
+    } else {
+      btn.textContent = "Retomar";
+      pararPolling();
+      pararTimer();
+    }
   };
 
-  window.showStatistics = function () { window.location.href = "/dashadm.html"; };
+  window.redirectCustomer = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const novoBalcao = prompt(`Reencaminhar ${senhaAtual.numero} para qual balcão?`);
+    if (novoBalcao) alert(`Reencaminhamento registado para balcão ${novoBalcao}.`);
+  };
+
+  window.addObservation = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    const obs = prompt("Adicionar observação ao atendimento:", senhaAtual.observacoes || "");
+    if (!obs) return;
+    senhaAtual.observacoes = obs;
+    document.getElementById("obsValue").textContent = obs;
+    preencherPreviewDocumentos(senhaAtual);
+  };
+
+  window.requestDocuments = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
+    document.querySelector('[data-tab="documentos"]')?.click();
+    preencherPreviewDocumentos(senhaAtual);
+  };
+
+  window.sendReceipt = function () {
+    if (!senhaAtual) return alert("Nenhuma senha em atendimento para recibo.");
+    const html = `
+      <html><head><title>Recibo ${senhaAtual.numero}</title>
+      <style>body{font-family:Arial;padding:24px;color:#222} h2{margin:0 0 16px 0} .line{margin:8px 0}</style>
+      </head><body>
+      <h2>Recibo de Atendimento — IMTSB</h2>
+      <div class="line"><strong>Senha:</strong> ${senhaAtual.numero}</div>
+      <div class="line"><strong>Serviço:</strong> ${senhaAtual.servico?.nome || "Serviço"}</div>
+      <div class="line"><strong>Balcão:</strong> ${store.getUser().balcao || store.getUser().numero_balcao || "-"}</div>
+      <div class="line"><strong>Emitida às:</strong> ${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</div>
+      <div class="line"><strong>Observações:</strong> ${senhaAtual.observacoes || "Sem observações"}</div>
+      <hr /><small>Documento para entrega ao utente.</small>
+      <script>window.onload=()=>window.print();</script>
+      </body></html>`;
+    const w = window.open("", "_blank", "width=760,height=600");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+  };
+
+  window.showStatistics = function () {
+    window.location.href = "/dashadm.html";
+  };
 
   window.sair = function () {
-    if (confirm("Sair do sistema?")) { pararPollings(); pararTimer(); store.logout(); }
+    if (confirm("Deseja sair do sistema?")) {
+      pararPolling();
+      pararTimer();
+      store.logout();
+      window.location.href = "/login";
+    }
   };
-
 })();
