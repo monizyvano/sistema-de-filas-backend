@@ -131,7 +131,7 @@ def register():
             "atendente": atendente_schema.dump(novo)
         }), 201
     except Exception:
-        from app import db
+        from app.extensions import db
         db.session.rollback()
         return jsonify({"erro": "Erro interno do servidor"}), 500
 

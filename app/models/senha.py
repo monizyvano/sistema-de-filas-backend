@@ -20,6 +20,7 @@ class Senha(BaseModel):
     __tablename__ = 'senhas'
 
     __table_args__ = (
+        # Constraint única por número + data → reinicia diariamente
         db.UniqueConstraint('numero', 'data_emissao', name='uq_numero_data'),
         {'comment': 'Senhas de atendimento com numeração diária'}
     )

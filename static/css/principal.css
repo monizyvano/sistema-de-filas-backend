@@ -125,15 +125,57 @@ body {
   font-size: 1.6rem;
 }
 
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8rem;
+.carousel-shell {
+  position: relative;
 }
 
-.courses-list {
-  display: grid;
+.carousel-shell::before,
+.carousel-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0.85rem;
+  width: 72px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.carousel-shell::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(245, 241, 237, 0.95), rgba(245, 241, 237, 0));
+}
+
+.carousel-shell::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(245, 241, 237, 0.95), rgba(245, 241, 237, 0));
+}
+
+.carousel-track {
+  display: flex;
   gap: 1.25rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 0.35rem 0.2rem 0.85rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-beige) transparent;
+}
+
+.carousel-track::-webkit-scrollbar {
+  height: 8px;
+}
+
+.carousel-track::-webkit-scrollbar-thumb {
+  background: var(--accent-beige);
+  border-radius: 999px;
+}
+
+.carousel-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cards-grid {
+  gap: 0.8rem;
 }
 
 .course-item {
@@ -146,8 +188,10 @@ body {
   padding: 1rem;
   box-shadow: 0 2px 8px rgba(64, 25, 3, 0.1);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
+  min-width: min(540px, 82vw);
+  flex: 0 0 min(540px, 82vw);
+  scroll-snap-align: start;
 }
-
 
 .course-item:hover {
   transform: translateY(-3px);
@@ -156,9 +200,10 @@ body {
 
 .course-media {
   border-radius: 12px;
-  min-height: 220px;
+  min-height: 320px;
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
 }
@@ -167,49 +212,53 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, rgba(64, 25, 3, 0.12), rgba(191, 167, 153, 0.25));
+  background:
+    linear-gradient(180deg, rgba(23, 15, 10, 0.12), rgba(64, 25, 3, 0.38)),
+    linear-gradient(120deg, rgba(64, 25, 3, 0.1), rgba(191, 167, 153, 0.22));
 }
 
 .course-media-informatica {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("../image/informatica\ curso\ imagem.jpg");
+  background-position: center 42%;
 }
 
 .course-media-contabilidade {
-  background-image: url("../image/classroom_-_Copia.jpg");
+  background-image: url("../image/contabilidade\ curso.jpg");
+  background-position: center 38%;
 }
 
 .course-media-eletrotecnia {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("../image/energia\ e\ instalacoes.jpg");
   background-position: center top;
 }
 
 .course-media-gestao {
-  background-image: url("../image/classroom_-_Copia.jpg");
+  background-image: url("../image/gestao\ empresarial.jpg");
   background-position: center bottom;
 }
 
 .course-media-desenho {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("../image/desenhador\ prjtst.jpg");
   background-position: right center;
 }
 
 .course-media-petro {
-  background-image: url("../image/classroom_-_Copia.jpg");
+  background-image: url("../image/petroquimica.jpg");
   background-position: left center;
 }
 
 .course-media-eletronica {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("../image/telecomunicacoes-light.jpg");
   background-position: center;
 }
 
 .course-media-ambiente {
-  background-image: url("../image/classroom_-_Copia.jpg");
+  background-image: url("../image/ambiente\ e\ controlo.jpg");
   background-position: center;
 }
 
 .course-media-estatistica {
-  background-image: url("../image/classroom.jpg");
+  background-image: url("../image/estatistica\ e\ planeamento.jpg");
   background-position: center bottom;
 }
 
@@ -235,6 +284,9 @@ body {
   border-radius: 12px;
   padding: 1.2rem;
   box-shadow: 0 2px 8px rgba(64, 25, 3, 0.1);
+  min-width: min(280px, 72vw);
+  flex: 0 0 min(280px, 72vw);
+  scroll-snap-align: start;
 }
 
 .card h3 {
@@ -332,19 +384,43 @@ body.reveal-ready .reveal-item.is-visible {
 }
 
 @media (max-width: 900px) {
-  .cards-grid,
   .footer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .carousel-shell::before,
+  .carousel-shell::after {
+    width: 44px;
   }
 
   .course-item {
     grid-template-columns: 1fr;
     gap: 0.9rem;
     padding: 0.8rem;
+    min-width: 84vw;
+    flex-basis: 84vw;
   }
 
   .course-media {
-    min-height: 180px;
+    min-height: 260px;
+    background-size: cover;
+  }
+
+  .course-media-informatica,
+  .course-media-contabilidade,
+  .course-media-eletrotecnia,
+  .course-media-gestao,
+  .course-media-desenho,
+  .course-media-petro,
+  .course-media-eletronica,
+  .course-media-ambiente,
+  .course-media-estatistica {
+    background-size: cover;
+  }
+
+  .card {
+    min-width: 74vw;
+    flex-basis: 74vw;
   }
 
   .mission-layout {

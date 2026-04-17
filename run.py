@@ -84,7 +84,7 @@ if __name__ == '__main__':
             print("3. Credenciais em .env estão corretas?")
             print(f"4. DB_PASSWORD no .env: {os.getenv('DB_PASSWORD', 'NÃO DEFINIDA')}")
             sys.exit(1)
-    
+
     # Iniciar servidor
     print("\n" + "="*60)
     print("🚀 Sistema de Filas IMTSB")

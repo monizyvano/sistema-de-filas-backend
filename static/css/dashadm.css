@@ -1,4 +1,4 @@
-﻿  :root {
+  :root {
             --primary-brown: #8C6746;
             --primary-brown-dark: #401903;
             --accent-beige: #BFA799;
@@ -10,7 +10,7 @@
             --shadow-medium: 0 8px 32px rgba(64, 25, 3, 0.12);
             --text-dark: #401903;
             --text-muted: #8C6746;
-            --success-green: #10B981;
+            --success-green: #8C6746;
             --warning-orange: #F59E0B;
             --alert-red: #DC2626;
         }
@@ -207,13 +207,13 @@
         }
 
         .kpi-icon.brown { background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige)); }
-        .kpi-icon.green { background: linear-gradient(135deg, var(--success-green), #34D399); }
+        .kpi-icon.green { background: linear-gradient(135deg, var(--accent-beige), var(--neutral-gray)); }
         .kpi-icon.beige { background: linear-gradient(135deg, var(--accent-beige), var(--neutral-gray)); }
         .kpi-icon.bordeaux { background: linear-gradient(135deg, var(--accent-bordeaux), var(--primary-brown-dark)); }
 
         .kpi-trend {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success-green);
+            background: rgba(191, 167, 153, 0.18);
+            color: var(--primary-brown);
             padding: 0.35rem 0.75rem;
             border-radius: 50px;
             font-size: 0.8rem;
@@ -396,7 +396,7 @@
         .employee-avatar {
             width: 40px;
             height: 40px;
-            background: linear-gradient(135deg, var(--primary-brown), var(--success-green));
+            background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -424,8 +424,8 @@
         }
 
         .badge-excellent {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success-green);
+            background: rgba(191, 167, 153, 0.18);
+            color: var(--primary-brown);
         }
 
         .badge-good {
@@ -462,7 +462,7 @@
         }
         /* (o teu dashadm.css original aqui em cima...) */
 
-/* Botão Sair (Admin) */
+/* Bot�o Sair (Admin) */
 .logout-btn{
     background: rgba(78, 41, 8, 0.73);
     border: 1px solid rgba(64,25,3,.25);
@@ -504,6 +504,7 @@
 .remove-worker-btn:hover {
     background: #fee2e2;
 }
+
 
 
 

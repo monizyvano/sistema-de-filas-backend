@@ -325,11 +325,12 @@
     }, 7000);
   }
 
-  function pararPolling() {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      pollingInterval = null;
-    }
+  function actualizarBotoes() {
+    const temSenha = senhaAtual !== null;
+    ["btnConcluir","btnNegar"].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !temSenha;
+    });
   }
 
   window.togglePause = function () {

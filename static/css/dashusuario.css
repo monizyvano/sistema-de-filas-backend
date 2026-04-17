@@ -1,4 +1,4 @@
-ï»¿@charset "UTF-8";
+@charset "UTF-8";
 /* ==== MOBILE FIRST========= */
 
 *{
@@ -18,7 +18,7 @@
             --glass-border: rgba(191, 167, 153, 0.2);
             --text-dark: #401903;
             --text-muted: #8C6746;
-            --success-green: #10B981;
+            --success-green: #8C6746;
             --color-error: #DC2626;
             --shadow-sm: 0 2px 8px rgba(64, 25, 3, 0.08);
             --shadow-md: 0 4px 16px rgba(64, 25, 3, 0.12);
@@ -278,7 +278,7 @@ h1, h2, h3, h4, h5, h6 {
     width: 10px;
     height: 10px;
     border-radius: 999px;
-    background: var(--success-green);
+    background: var(--primary-brown);
 }
 .arrow-icon{
     font-size: 1.75rem;
@@ -360,7 +360,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ==========================
-   BOTÃ•ES SAIR + SELEÃ‡ÃƒO
+   BOTÕES SAIR + SELEÇÃO
 ========================== */
 .btn-logout{
     padding: .6rem 1rem;
@@ -402,7 +402,7 @@ h1, h2, h3, h4, h5, h6 {
     margin-top: 8px;
     font-weight: 700;
 }
-.ticket-message.ok{ color: var(--success-green); }
+.ticket-message.ok{ color: var(--primary-brown); }
 .ticket-message.warn{ color: var(--color-error); }
 
 .service-docs-box{
@@ -660,6 +660,7 @@ h1, h2, h3, h4, h5, h6 {
     margin-left: 3px;
     vertical-align: middle;
 }
+
 
 
 

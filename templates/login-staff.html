@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acesso Staff — IMTSB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/login-staff.css">
+</head>
+<body>
+
+<div class="card">
+
+  <!-- Banner -->
+  <div class="banner">
+    <a class="back-link" href="/logintcc.html">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M10 3L5 8l5 5"/>
+      </svg>
+      Acesso de clientes
+    </a>
+    <div class="badge">Área Restrita</div>
+    <div class="banner-title">Acesso de Staff</div>
+    <div class="banner-sub">
+      Exclusivo para trabalhadores e administradores<br>do Instituto Médio Técnico São Benedito.
+    </div>
+  </div>
+
+  <!-- Formulário -->
+  <div class="body">
+
+    <div id="authMsg" class="auth-msg"></div>
+
+    <form id="formStaff" autocomplete="on" novalidate>
+
+      <div class="field">
+        <label>Perfil</label>
+        <select id="loginTipo">
+          <option value="trabalhador">Trabalhador</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Email institucional</label>
+        <input type="email" id="iemail"
+               placeholder="nome@imtsb.ao"
+               required autocomplete="email" maxlength="80">
+      </div>
+
+      <div class="field">
+        <label>Senha</label>
+        <input type="password" id="isenha"
+               placeholder="••••••••"
+               required minlength="6" maxlength="32"
+               autocomplete="current-password">
+      </div>
+
+      <label class="check-line">
+        <input type="checkbox" id="loginConfirmDados">
+        Confirmo os dados de acesso.
+      </label>
+
+      <button type="submit" class="btn-submit">Entrar no sistema →</button>
+
+    </form>
+
+    <div class="client-link">
+      Não é staff? <a href="/logintcc.html">Acesso de cliente →</a>
+    </div>
+
+  </div>
+</div>
+
+<script src="/static/js/api-config.js"></script>
+<script src="/static/js/api-adapter.js"></script>
+<script src="/static/js/api-client.js"></script>
+<script src="/static/js/realtime-store.js"></script>
+<script src="/static/js/login-staff.js"></script>
+</body>
+</html>
