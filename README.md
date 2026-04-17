@@ -1,151 +1,140 @@
-# 🎯 Sistema de Filas IMTSB - Backend
-
-Sistema Inteligente de Gerenciamento de Filas e Atendimento desenvolvido para o Instituto Médio Técnico São Benedito.
-
-## 👥 Equipe
-
-- **Yvano Moniz** - Backend Developer
-- **Jefferson André** - Database Administrator  
-- **Reginalda Almeida** - Frontend Developer
-
-## 🚀 Tecnologias
-
-- **Python 3.13**
-- **Flask 3.0** - Framework web
-- **MySQL 8.0** - Banco de dados
-- **JWT** - Autenticação
-- **Marshmallow** - Validação
-- **Swagger** - Documentação
-
-## 📦 Instalação
-
-### 1. Clonar repositório
-
-```bash
-git clone [url-do-repositorio]
-cd sistema-de-filas-backend
-```
-
-### 2. Criar ambiente virtual
-
-```bash
-python -m venv venv
-venv\\Scripts\\activate  # Windows
-source venv/bin/activate  # Linux/Mac
-```
-
-### 3. Instalar dependências
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configurar variáveis de ambiente
-
-```bash
-copy .env.example .env
-# Editar .env com suas configurações
-```
-
-### 5. Inicializar banco de dados
-
-```bash
-flask db upgrade
-python -c "from app.utils.seeders import popular_banco; popular_banco()"
-```
-
-### 6. Executar servidor
-
-```bash
-python run.py
-```
-
-Servidor rodando em: `http://localhost:5000`
-
-## 📚 Documentação
-
-- **Swagger UI:** http://localhost:5000/docs
-- **Health Check:** http://localhost:5000/api/auth/health
-
-## 🧪 Testes
-
-```bash
-# Executar todos os testes
-pytest
-
-# Com coverage
-pytest --cov=app --cov-report=html
-```
-
-## 📊 Funcionalidades
-
-### ✅ Implementadas
-
-- Autenticação JWT
-- Emissão de senhas (Normal e Prioritária)
-- Gestão de filas
-- Atendimento completo (Chamar, Iniciar, Finalizar)
-- Estatísticas em tempo real
-- Rate limiting (proteção anti-spam)
-- Validações robustas
-- Logs estruturados
-- Cache de performance
-- Health check
-
-### 🔄 Em desenvolvimento
-
-- Priorização automática de senhas
-- Notificações SMS/Email
-- Relatórios avançados
-- WebSocket para tempo real
-
-## 🔐 Credenciais Padrão
-
-**Admin:**
-- Email: `admin@imtsb.ao`
-- Senha: `admin123`
-
-⚠️ **IMPORTANTE:** Alterar credenciais em produção!
-
-## 📁 Estrutura do Projeto
-
-```
-sistema-de-filas-backend/
-├── app/
-│   ├── controllers/      # Rotas da API
-│   ├── models/           # Models do banco
-│   ├── services/         # Lógica de negócio
-│   ├── schemas/          # Validações
-│   └── utils/            # Utilitários
-├── tests/                # Testes automatizados
-├── logs/                 # Logs do sistema
-├── migrations/           # Migrações do banco
-├── run.py               # Ponto de entrada
-└── requirements.txt     # Dependências
-```
-
-## 📈 Performance
-
-- **Estatísticas:** < 3ms (com cache)
-- **Buscar fila:** < 1ms
-- **Emitir senha:** < 100ms
-
-## 🤝 Contribuindo
-
-1. Fork o projeto
-2. Crie sua branch (`git checkout -b feature/NovaFuncionalidade`)
-3. Commit suas mudanças (`git commit -m 'Adiciona nova funcionalidade'`)
-4. Push para a branch (`git push origin feature/NovaFuncionalidade`)
-5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto foi desenvolvido como Trabalho de Conclusão de Curso (TCC) do IMTSB.
-
-## 📞 Suporte
-
-Para dúvidas ou suporte, entre em contato com a equipe de desenvolvimento.
+# Sistema de Filas — IMTSB
+**Instituto Médio Técnico São Benedito — Luanda, Angola**
+Trabalho de Fim de Curso
 
 ---
 
-**Desenvolvido com ❤️ pela equipe do TCC 2026 - IMTSB**
+## Descrição
+
+Sistema web de gestão de filas de atendimento para o IMTSB.
+Permite emitir senhas, acompanhar chamadas em tempo real e
+gerir o atendimento por serviço e balcão.
+
+**Três papéis:**
+- **Visitante** — emite senha, acompanha chamada, avalia atendimento
+- **Atendente** — chama próxima senha, atende, emite recibo
+- **Administrador** — KPIs, gráficos, histórico, gestão de atendentes
+
+---
+
+## Tecnologias
+
+| Camada    | Tecnologia                          |
+|-----------|-------------------------------------|
+| Backend   | Python 3 · Flask 3 · SQLAlchemy     |
+| Base dados| MySQL 8                             |
+| Auth      | Flask-JWT-Extended                  |
+| Frontend  | HTML5 · CSS3 · JavaScript (ES6)    |
+
+---
+
+## Requisitos
+
+- Python 3.10+
+- MySQL 8.0+
+- pip
+
+---
+
+## Instalação
+
+```bash
+# 1. Clonar o repositório
+git clone https://github.com/monizyvano/sistema-de-filas-backend.git
+cd sistema-de-filas-backend
+
+# 2. Criar e activar ambiente virtual
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/Mac
+
+# 3. Instalar dependências
+pip install -r requirements.txt
+
+# 4. Configurar base de dados
+# Criar BD no MySQL:
+# CREATE DATABASE sistema_filas_imtsb CHARACTER SET utf8mb4;
+
+# 5. Configurar variáveis de ambiente
+# Criar ficheiro .env na raiz:
+# FLASK_APP=run.py
+# FLASK_ENV=development
+# DATABASE_URL=mysql+pymysql://root:senha@localhost/sistema_filas_imtsb
+# JWT_SECRET_KEY=chave-secreta-aqui
+
+# 6. Aplicar migrações
+flask db upgrade
+
+# 7. Correr seeders (dados iniciais)
+flask seed
+
+# 8. Iniciar servidor
+flask run
+```
+
+O sistema estará disponível em **http://localhost:5000**
+
+---
+
+## Contas de Acesso
+
+| Papel        | Email                  | Senha      |
+|--------------|------------------------|------------|
+| Admin        | admin@imtsb.ao         | admin123   |
+| Atendente 1  | joao@imtsb.ao          | Trab12345  |
+| Atendente 2  | worker1@teste.com      | (ver BD)   |
+| Visitante    | Entrar sem conta       | —          |
+
+---
+
+## Estrutura do Projecto
+
+sistema-de-filas-backend/
+├── app/
+│   ├── controllers/        # Lógica de negócio
+│   │   └── compat/         # Camada de compatibilidade frontend
+│   ├── models/             # Modelos SQLAlchemy
+│   ├── routes/             # Blueprints Flask
+│   │   └── compat/         # Rotas compatíveis com o frontend
+│   └── services/           # Serviços (FilaService, etc.)
+├── static/
+│   ├── css/                # Estilos
+│   ├── js/                 # JavaScript (api-client, store, dashboards)
+│   └── image/              # Imagens
+├── templates/              # HTML (index, dashboards, formulários)
+├── migrations/             # Migrações Alembic
+├── requirements.txt
+└── README.md
+
+
+---
+
+## Endpoints principais da API
+
+| Método | Endpoint                    | Descrição                  |
+|--------|-----------------------------|----------------------------|
+| POST   | /api/auth/login             | Autenticação               |
+| GET    | /api/auth/health            | Estado do servidor         |
+| POST   | /api/tickets                | Emitir senha               |
+| POST   | /api/tickets/call-next      | Chamar próxima senha       |
+| POST   | /api/tickets/conclude       | Concluir atendimento       |
+| POST   | /api/tickets/rate           | Avaliar atendimento        |
+| GET    | /api/realtime/snapshot      | Snapshot em tempo real     |
+| GET    | /api/stats                  | Estatísticas do dia        |
+| GET    | /api/workers                | Lista de atendentes        |
+
+---
+
+## Serviços disponíveis
+
+| Balcão | Serviço               |
+|--------|-----------------------|
+| 1      | Secretaria Académica  |
+| 2      | Tesouraria            |
+| 3      | Apoio ao Cliente      |
+
+Senhas prioritárias (P001+) para pedidos de declaração.
+
+---
+
+*Desenvolvido como Trabalho de Fim de Curso — IMTSB, Angola, 2026*
