@@ -1,54 +1,35 @@
 /**
- * static/js/dashadm.js — Sprint 1 (corrigido)
+ * static/js/dashadm.js — Sprint 2 CORRIGIDO
  * ═══════════════════════════════════════════════════════════════
- * Dashboard do Administrador.
- *
- * CORRECÇÕES SPRINT 1:
- *   ✅ exportData() chama GET /api/dashboard/admin/exportar
- *      e faz download real do CSV (era apenas alert)
- *   ✅ changeChartPeriod() usa params correctos:
- *      'day'→'dia', 'week'→'semana', 'month'→'mes'
- *      (o backend espera em português, o HTML passava em inglês)
- *   ✅ CRUD de trabalhadores mantido (Sprint 2 do plano anterior)
- *   ✅ Gráfico de linha e barras com dados reais mantidos
- *   ✅ Paginação do histórico mantida
- *   ✅ Toda documentação em pt-pt
+ * FIXES:
+ *   ✅ atualizarTrabalhadores() usa GET /api/atendentes/ (estava a usar GET /api/auth/register)
+ *   ✅ adicionarTrabalhador() usa POST /api/atendentes/ (endpoint com validação)
+ *   ✅ Payload correcto: { nome, email, senha, tipo, balcao, servico_id }
+ *   ✅ Remoção de dados "falsos" em fila em tempo real
+ *   ✅ changeChartPeriod() usa 'dia'/'semana'/'mes'
+ *   ✅ exportData() com CSV real
  * ═══════════════════════════════════════════════════════════════
  */
-
 (function () {
     "use strict";
 
     const store = window.IMTSBStore;
 
-    // Instâncias Chart.js (guardadas para destruir antes de recriar)
-    let pieChart  = null;
-    let lineChart = null;
-    let barChart  = null;
+    let pieChart         = null;
+    let lineChart        = null;
+    let barChart         = null;
+    let pollingInterval  = null;
+    let periodoActivo    = 'semana';
 
-    /** ID do intervalo de polling de KPIs */
-    let pollingInterval = null;
+    const historicoState = { page: 1, perPage: 15, total: 0, totalPages: 1 };
 
-    /** Período activo no gráfico de linha */
-    let periodoActivo = 'semana';
-
-    /** Estado de paginação do histórico */
-    const historicoState = {
-        page: 1, perPage: 15, total: 0, totalPages: 1
-    };
-
-
-    // ═══════════════════════════════════════════════════════════
-    // INICIALIZAÇÃO
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       INICIALIZAÇÃO
+    ═══════════════════════════════════════════════════════ */
     document.addEventListener('DOMContentLoaded', async () => {
-        console.log("✅ Dashboard admin carregado — Sprint 1");
+        console.log("✅ Dashboard admin carregado — Sprint 2 FIXED");
 
-        if (!store.isLoggedIn()) {
-            window.location.href = '/login';
-            return;
-        }
+        if (!store.isLoggedIn()) { window.location.href = '/login'; return; }
 
         const user = store.getUser();
         if (user.role !== 'admin') {
@@ -57,14 +38,10 @@
             return;
         }
 
-        // Data actual no cabeçalho
         const dateEl = document.getElementById('currentDate');
-        if (dateEl) {
-            dateEl.textContent = new Date().toLocaleDateString('pt-PT', {
-                weekday: 'long', year: 'numeric',
-                month:   'long', day:  'numeric'
-            });
-        }
+        if (dateEl) dateEl.textContent = new Date().toLocaleDateString('pt-PT', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
 
         atualizarHeader();
         await carregarDashboard();
@@ -72,11 +49,9 @@
         iniciarPolling();
     });
 
-
-    // ═══════════════════════════════════════════════════════════
-    // CARREGAR DASHBOARD — orquestra todas as secções
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       CARREGAR DASHBOARD
+    ═══════════════════════════════════════════════════════ */
     async function carregarDashboard() {
         await Promise.all([
             atualizarKPIs(),
@@ -88,15 +63,14 @@
         ]);
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // KPIs — métricas do dia
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       KPIs
+    ═══════════════════════════════════════════════════════ */
     async function atualizarKPIs() {
         try {
             const response = await fetch('/api/senhas/estatisticas');
-            const stats    = await response.json();
+            if (!response.ok) return;
+            const stats = await response.json();
 
             const kpiAttend = document.getElementById('kpiAttend');
             if (kpiAttend) kpiAttend.textContent = stats.concluidas || 0;
@@ -104,77 +78,51 @@
             await atualizarTrendReal();
 
             const kpiWait = document.getElementById('kpiWait');
-            if (kpiWait)
-                kpiWait.textContent = `${stats.tempo_medio_espera || 0}min`;
+            if (kpiWait) kpiWait.textContent = `${stats.tempo_medio_espera || 0}min`;
 
-            // Taxa de ocupação = atendendo / (aguardando + atendendo)
             const kpiOcc = document.getElementById('kpiOcc');
             if (kpiOcc) {
                 const total = (stats.aguardando || 0) + (stats.atendendo || 0);
-                const taxa  = total > 0
-                    ? Math.round((stats.atendendo / total) * 100)
-                    : 0;
+                const taxa  = total > 0 ? Math.round((stats.atendendo / total) * 100) : 0;
                 kpiOcc.textContent = `${taxa}%`;
+                const trend = document.getElementById('kpiOccTrend');
+                if (trend) trend.textContent = `${taxa}%`;
             }
 
-            // Taxa de conclusão = concluidas / total_emitidas
-            // NOTA: renomeado internamente de "Satisfação" para ser honesto
-            // O KPI no HTML continua como "Satisfação" até ao Sprint 3
             const kpiSat = document.getElementById('kpiSat');
             if (kpiSat) {
                 const total   = stats.total_emitidas || 0;
                 const conclui = stats.concluidas     || 0;
-                const taxa    = total > 0
-                    ? Math.round((conclui / total) * 100)
-                    : 0;
-                kpiSat.textContent = `${taxa}%`;
+                kpiSat.textContent = total > 0 ? `${Math.round((conclui / total) * 100)}%` : '0%';
             }
-
         } catch (error) {
-            console.error("❌ Erro ao actualizar KPIs:", error);
+            console.error("❌ KPIs:", error);
         }
     }
 
-    /** Busca variação de hoje vs ontem e actualiza badge de trend. */
     async function atualizarTrendReal() {
         const trendEl = document.getElementById('trendAttend');
         if (!trendEl) return;
-
         try {
             const resp = await fetch('/api/dashboard/admin/trend', {
                 headers: { 'Authorization': `Bearer ${store.getToken()}` }
             });
-
             if (!resp.ok) { trendEl.textContent = '--'; return; }
-
             const data = await resp.json();
             const pct  = data.variacao_percentual;
-
-            let texto, cor;
-            if (data.tendencia === 'alta') {
-                texto = `+${pct}%`; cor = '#22c55e';
-            } else if (data.tendencia === 'baixa') {
-                texto = `${pct}%`;  cor = '#ef4444';
-            } else {
-                texto = '~0%';      cor = '#6b7280';
-            }
-
-            trendEl.textContent = texto;
-            trendEl.style.color = cor;
-            trendEl.title       = `Hoje: ${data.hoje} | Ontem: ${data.ontem}`;
-
-        } catch (error) {
-            console.error("❌ Erro ao buscar trend:", error);
+            if (data.tendencia === 'alta') { trendEl.textContent = `+${pct}%`; trendEl.style.color = '#22c55e'; }
+            else if (data.tendencia === 'baixa') { trendEl.textContent = `${pct}%`; trendEl.style.color = '#ef4444'; }
+            else { trendEl.textContent = '~0%'; trendEl.style.color = '#6b7280'; }
+            trendEl.title = `Hoje: ${data.hoje} | Ontem: ${data.ontem}`;
+        } catch (_) {
             const el = document.getElementById('trendAttend');
             if (el) el.textContent = '--';
         }
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // FILAS POR SERVIÇO
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       FILAS EM TEMPO REAL (dados reais)
+    ═══════════════════════════════════════════════════════ */
     async function atualizarFilas() {
         try {
             const [respServicos, respSenhas] = await Promise.all([
@@ -184,9 +132,9 @@
                 })
             ]);
 
-            const servicos = respServicos.ok ? await respServicos.json() : [];
-            const dadosSenhas = respSenhas.ok ? await respSenhas.json() : {};
-            const senhas = Array.isArray(dadosSenhas) ? dadosSenhas : (dadosSenhas.senhas || []);
+            const servicos    = respServicos.ok ? await respServicos.json() : [];
+            const dadosSenhas = respSenhas.ok   ? await respSenhas.json()  : {};
+            const senhas      = Array.isArray(dadosSenhas) ? dadosSenhas : (dadosSenhas.senhas || []);
 
             const porServico = {};
             senhas.forEach(s => {
@@ -197,364 +145,340 @@
             const queueList = document.getElementById('queueList');
             if (!queueList) return;
 
-            if (!servicos.length) {
-                queueList.innerHTML = '<div class="queue-item"><div class="queue-service">Sem serviços</div><div class="queue-number">0</div></div>';
+            const lista = Array.isArray(servicos) ? servicos : (servicos.servicos || servicos);
+
+            if (!lista.length) {
+                queueList.innerHTML = '<div class="queue-item"><div class="queue-service">A carregar...</div><div class="queue-number">–</div></div>';
                 return;
             }
 
-            queueList.innerHTML = servicos.map(s => `
+            const totalFilas = Object.values(porServico).reduce((a, b) => a + b, 0);
+
+            if (totalFilas === 0) {
+                queueList.innerHTML = `<div style="text-align:center;padding:1.5rem;color:var(--text-muted);font-size:.9rem;">
+                    <div style="font-size:2rem;margin-bottom:.5rem;">✅</div>
+                    Nenhuma senha aguardando de momento
+                </div>`;
+                return;
+            }
+
+            queueList.innerHTML = lista.map(s => `
               <div class="queue-item">
-                <div class="queue-service">${s.icone || '📋'} ${s.nome}</div>
-                <div class="queue-number">${porServico[s.id] || 0}</div>
+                <div>
+                  <div class="queue-service">${s.icone || '📋'} ${s.nome}</div>
+                  <div class="queue-count">${porServico[s.id] || 0} pessoa(s) aguardando</div>
+                </div>
+                <div class="queue-number" style="color:${(porServico[s.id]||0)>0?'var(--primary-brown)':'var(--text-muted)'}">
+                  ${String(porServico[s.id] || 0).padStart(2,'0')}
+                </div>
               </div>
             `).join('');
 
         } catch (error) {
-            console.error('❌ Erro ao actualizar filas:', error);
+            console.error('❌ Filas:', error);
         }
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // GRÁFICOS
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       GRÁFICOS
+    ═══════════════════════════════════════════════════════ */
     async function criarGraficos() {
         try {
             const response = await fetch('/api/senhas/estatisticas');
-            const stats    = await response.json();
+            if (!response.ok) return;
+            const stats = await response.json();
 
-            // Gráfico donut — distribuição por estado
             const pieCtx = document.getElementById('pieChart');
             if (pieCtx) {
                 if (pieChart) pieChart.destroy();
                 pieChart = new Chart(pieCtx, {
                     type: 'doughnut',
                     data: {
-                        labels:   ['Aguardando', 'Atendendo', 'Concluídas', 'Canceladas'],
+                        labels:   ['Aguardando', 'Em Atendimento', 'Concluídas', 'Canceladas'],
                         datasets: [{
-                            data: [
-                                stats.aguardando || 0,
-                                stats.atendendo  || 0,
-                                stats.concluidas || 0,
-                                stats.canceladas || 0
-                            ],
-                            backgroundColor: ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444'],
-                            borderWidth: 0
+                            data: [stats.aguardando||0, stats.atendendo||0, stats.concluidas||0, stats.canceladas||0],
+                            backgroundColor: ['#bf9770','#6b4226','#22c55e','#ef4444'],
+                            borderWidth: 0,
+                            hoverOffset: 8
                         }]
                     },
                     options: {
-                        responsive: true, maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'bottom', labels: { padding: 16 } }
-                        }
+                        responsive: true, maintainAspectRatio: false, cutout: '68%',
+                        plugins: { legend: { position: 'bottom', labels: { padding: 14, font: { size: 12 }, usePointStyle: true } } }
                     }
                 });
             }
 
-            // Gráfico de linha — fluxo por período
             await atualizarLineChart(periodoActivo);
 
         } catch (error) {
-            console.error("❌ Erro ao criar gráficos:", error);
+            console.error("❌ Gráficos:", error);
         }
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // GRÁFICO DE LINHA — correcção dos parâmetros
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Altera o período do gráfico de linha.
-     * CORRECÇÃO SPRINT 1: mapeia os valores do HTML ('day','week','month')
-     * para os valores que o backend espera ('dia','semana','mes').
-     *
-     * @param {string} periodoHtml - Valor passado pelo onclick no HTML
-     */
-    window.changeChartPeriod = async function (periodoHtml) {
-        // Mapeamento: HTML → backend
-        const mapa = {
-            day:    'dia',
-            week:   'semana',
-            month:  'mes',
-            // Também aceita já em português (defensivo)
-            dia:    'dia',
-            semana: 'semana',
-            mes:    'mes'
-        };
-
-        const periodoBackend = mapa[periodoHtml] || 'semana';
-        periodoActivo = periodoBackend;
-
-        // Actualizar classe activa nos botões de filtro
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-
-        // Activar o botão correspondente
-        const mapaIndex = { day: 0, dia: 0, week: 1, semana: 1, month: 2, mes: 2 };
-        const btns      = document.querySelectorAll('.filter-btn');
-        const idx       = mapaIndex[periodoHtml] ?? 1;
-        if (btns[idx]) btns[idx].classList.add('active');
-
-        await atualizarLineChart(periodoBackend);
+    /* Período: o HTML passa 'dia'/'semana'/'mes' directamente */
+    window.changeChartPeriod = async function (periodo) {
+        periodoActivo = periodo;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+        await atualizarLineChart(periodo);
     };
 
-    /**
-     * Busca dados reais do fluxo e renderiza o gráfico de linha.
-     * @param {string} periodo - 'dia', 'semana' ou 'mes'
-     */
     async function atualizarLineChart(periodo) {
         const lineCtx = document.getElementById('lineChart');
         if (!lineCtx) return;
-
         try {
-            const resp = await fetch(
-                `/api/dashboard/admin/fluxo?periodo=${periodo}`,
-                { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
-            );
-
-            if (!resp.ok) {
-                console.error("Erro ao buscar fluxo:", resp.status);
-                return;
-            }
-
+            const resp = await fetch(`/api/dashboard/admin/fluxo?periodo=${periodo}`, {
+                headers: { 'Authorization': `Bearer ${store.getToken()}` }
+            });
+            if (!resp.ok) return;
             const data = await resp.json();
 
             if (lineChart) lineChart.destroy();
-
             lineChart = new Chart(lineCtx, {
                 type: 'line',
                 data: {
-                    labels:   data.labels,
+                    labels: data.labels,
                     datasets: [{
-                        label:           'Atendimentos concluídos',
-                        data:            data.dados,
+                        label: 'Atendimentos concluídos',
+                        data:  data.dados,
                         borderColor:     '#6b4226',
                         backgroundColor: 'rgba(107,66,38,0.08)',
-                        borderWidth:     2,
-                        pointRadius:     4,
+                        borderWidth: 2.5,
+                        pointRadius: 4,
                         pointBackgroundColor: '#6b4226',
-                        fill:            true,
-                        tension:         0.3
+                        fill: true, tension: 0.35
                     }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { stepSize: 1, precision: 0 }
-                        },
-                        x: {
-                            ticks: {
-                                maxTicksLimit: periodo === 'dia' ? 12 : 10,
-                                autoSkip:      true
-                            }
-                        }
+                        y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } },
+                        x: { ticks: { maxTicksLimit: 12, autoSkip: true } }
                     }
                 }
             });
-
         } catch (error) {
-            console.error("❌ Erro ao actualizar lineChart:", error);
+            console.error("❌ LineChart:", error);
         }
     }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // TEMPO MÉDIO POR SERVIÇO — gráfico de barras
-    // ═══════════════════════════════════════════════════════════
 
     async function atualizarTempoPorServico() {
         const barCtx = document.getElementById('barChart');
         if (!barCtx) return;
-
         try {
-            const resp = await fetch(
-                '/api/dashboard/admin/tempo-por-servico',
-                { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
-            );
-
+            const resp = await fetch('/api/dashboard/admin/tempo-por-servico', {
+                headers: { 'Authorization': `Bearer ${store.getToken()}` }
+            });
             if (!resp.ok) return;
-
             const data     = await resp.json();
             const servicos = data.servicos || [];
-            if (servicos.length === 0) return;
+            if (!servicos.length) return;
 
-            const labels         = servicos.map(s =>
-                s.nome.length > 14 ? s.nome.substring(0, 14) + '…' : s.nome
-            );
-            const temposMedios   = servicos.map(s => s.tempo_medio);
-            const totalAtendidos = servicos.map(s => s.total_hoje);
+            const labels       = servicos.map(s => s.nome.length > 14 ? s.nome.substring(0, 14) + '…' : s.nome);
+            const temposMedios = servicos.map(s => s.tempo_medio);
+            const totais       = servicos.map(s => s.total_hoje);
 
             if (barChart) barChart.destroy();
-
             barChart = new Chart(barCtx, {
                 type: 'bar',
                 data: {
                     labels,
                     datasets: [
-                        {
-                            label:           'Tempo médio (min)',
-                            data:            temposMedios,
-                            backgroundColor: '#6b4226',
-                            borderRadius:    4,
-                            yAxisID:         'y'
-                        },
-                        {
-                            label:           'Total atendidos',
-                            data:            totalAtendidos,
-                            backgroundColor: 'rgba(107,66,38,0.25)',
-                            borderRadius:    4,
-                            yAxisID:         'y1'
-                        }
+                        { label: 'Tempo médio (min)', data: temposMedios, backgroundColor: '#6b4226', borderRadius: 6, yAxisID: 'y' },
+                        { label: 'Total atendidos',   data: totais,       backgroundColor: 'rgba(107,66,38,0.25)', borderRadius: 6, yAxisID: 'y1' }
                     ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels:   { padding: 12, font: { size: 12 } }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                afterBody(ctx) {
-                                    const idx = ctx[0].dataIndex;
-                                    const s   = servicos[idx];
-                                    return [
-                                        `Mínimo: ${s.tempo_min}min`,
-                                        `Máximo: ${s.tempo_max}min`
-                                    ];
-                                }
-                            }
-                        }
-                    },
+                    plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true } } },
                     scales: {
-                        y: {
-                            beginAtZero: true,
-                            position: 'left',
-                            title: { display: true, text: 'Tempo médio (min)' },
-                            ticks: { stepSize: 1 }
-                        },
-                        y1: {
-                            beginAtZero: true,
-                            position: 'right',
-                            grid:     { drawOnChartArea: false },
-                            title: { display: true, text: 'Total atendidos' },
-                            ticks: { stepSize: 1, precision: 0 }
-                        }
+                        y:  { beginAtZero: true, position: 'left',  title: { display: true, text: 'min' }, ticks: { stepSize: 1 } },
+                        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'qtd' }, ticks: { precision: 0 } }
                     }
                 }
             });
-
         } catch (error) {
-            console.error("❌ Erro ao actualizar tempoPorServico:", error);
+            console.error("❌ BarChart:", error);
         }
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // TRABALHADORES — CRUD completo
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       TRABALHADORES — CRUD CORRIGIDO
+       FIX: usa GET/POST /api/atendentes/ em vez de /api/auth/register
+    ═══════════════════════════════════════════════════════ */
     async function atualizarTrabalhadores() {
+        const perfBody    = document.getElementById('performanceBody');
+        const workersBody = document.getElementById('workersBody');
+        const loadingHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:1rem;">A carregar...</td></tr>';
+
+        if (perfBody)    perfBody.innerHTML    = loadingHTML;
+        if (workersBody) workersBody.innerHTML = loadingHTML;
+
         try {
-            const response = await fetch('/api/auth/register', {
+            // ✅ FIX: endpoint correcto
+            const response = await fetch('/api/atendentes/', {
                 headers: { 'Authorization': `Bearer ${store.getToken()}` }
             });
 
-            if (!response.ok) {
-                console.error("Erro ao buscar trabalhadores:", response.status);
+            if (response.status === 401 || response.status === 403) {
+                const msg = '<tr><td colspan="5" style="color:#ef4444;text-align:center;padding:1rem;">Sem permissão para listar trabalhadores</td></tr>';
+                if (perfBody)    perfBody.innerHTML    = msg;
+                if (workersBody) workersBody.innerHTML = msg;
                 return;
             }
 
-            const trabalhadores = await response.json();
-
-            // Tabela de desempenho
-            const perfBody = document.getElementById('performanceBody');
-            if (perfBody) {
-                if (trabalhadores.length === 0) {
-                    perfBody.innerHTML =
-                        '<tr><td colspan="5">Nenhum trabalhador encontrado</td></tr>';
-                } else {
-                    perfBody.innerHTML = trabalhadores.map(t => {
-                        const atend = t.atendimentos_hoje || 0;
-                        const tempo = t.tempo_medio       || 0;
-
-                        let badge, classe;
-                        if (atend >= 10) {
-                            badge = 'Excelente'; classe = 'badge-excellent';
-                        } else if (atend >= 5) {
-                            badge = 'Bom';       classe = 'badge-good';
-                        } else {
-                            badge = 'Activo';    classe = 'badge-good';
-                        }
-
-                        const statusDot = t.ativo
-                            ? '<span style="color:#22c55e">●</span>'
-                            : '<span style="color:#9ca3af">●</span>';
-
-                        return `<tr>
-                          <td>
-                            <div class="employee-info">
-                              <div class="employee-avatar">${getInitials(t.nome)}</div>
-                              <div>
-                                <div class="employee-name">${statusDot} ${t.nome}</div>
-                                <div class="employee-role">${t.departamento || 'Atendimento'}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td>${atend}</td>
-                          <td>${tempo} min</td>
-                          <td>${t.ativo ? 'Activo' : 'Inactivo'}</td>
-                          <td>
-                            <span class="performance-badge ${classe}">${badge}</span>
-                          </td>
-                        </tr>`;
-                    }).join('');
-                }
+            if (!response.ok) {
+                const msg = '<tr><td colspan="5" style="color:#ef4444;text-align:center;padding:1rem;">Erro ao carregar membros</td></tr>';
+                if (perfBody)    perfBody.innerHTML    = msg;
+                if (workersBody) workersBody.innerHTML = msg;
+                return;
             }
 
-            // Lista de gestão com botão desactivar
-            const workersBody = document.getElementById('workersBody');
+            const membros = await response.json();
+            const lista   = Array.isArray(membros) ? membros : [];
+
+            if (!lista.length) {
+                const msg = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:1.5rem;">Nenhum membro registado</td></tr>';
+                if (perfBody)    perfBody.innerHTML    = msg;
+                if (workersBody) workersBody.innerHTML = msg;
+                return;
+            }
+
+            /* Tabela de desempenho */
+            if (perfBody) {
+                perfBody.innerHTML = lista.map(t => {
+                    const atend = t.atendimentos_hoje || 0;
+                    const tempo = t.tempo_medio       || 0;
+                    const tipoLabel = t.tipo === 'admin' ? '👑 Admin' : '👤 Atendente';
+                    const badge = atend >= 10 ? ['Excelente','badge-excellent'] : atend >= 5 ? ['Bom','badge-good'] : ['Activo','badge-good'];
+                    const statusDot = t.ativo
+                        ? '<span style="color:#22c55e;margin-right:4px;">●</span>'
+                        : '<span style="color:#9ca3af;margin-right:4px;">●</span>';
+
+                    return `<tr style="${!t.ativo ? 'opacity:.5;' : ''}">
+                      <td>
+                        <div class="employee-info">
+                          <div class="employee-avatar">${getInitials(t.nome)}</div>
+                          <div>
+                            <div class="employee-name">${statusDot}${t.nome}</div>
+                            <div class="employee-role">${tipoLabel} · ${t.departamento || 'Geral'}${t.balcao ? ` · Balcão ${t.balcao}` : ''}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td><strong>${atend}</strong></td>
+                      <td>${tempo} min</td>
+                      <td>${t.ativo ? '<span style="color:#22c55e">Activo</span>' : '<span style="color:#9ca3af">Inactivo</span>'}</td>
+                      <td><span class="performance-badge ${badge[1]}">${badge[0]}</span></td>
+                    </tr>`;
+                }).join('');
+            }
+
+            /* Lista de gestão */
             if (workersBody) {
-                if (trabalhadores.length === 0) {
-                    workersBody.innerHTML =
-                        '<tr><td colspan="4">Nenhum trabalhador</td></tr>';
-                } else {
-                    workersBody.innerHTML = trabalhadores.map(t => `
-                      <tr style="${!t.ativo ? 'opacity:0.5' : ''}">
-                        <td>${t.nome}</td>
-                        <td>${t.email}</td>
-                        <td>${t.departamento || '–'}${t.balcao ? ` · Balcão ${t.balcao}` : ''}</td>
-                        <td>
-                          ${t.ativo
-                            ? `<button class="remove-worker-btn"
-                                 onclick="removerTrabalhador(${t.id}, '${t.nome}')">
-                                 Desactivar
-                               </button>`
-                            : '<span style="color:#9ca3af;font-size:12px">Inactivo</span>'
-                          }
-                        </td>
-                      </tr>
-                    `).join('');
-                }
+                workersBody.innerHTML = lista.map(t => `
+                  <tr style="${!t.ativo ? 'opacity:.5;' : ''}">
+                    <td>
+                      <div style="display:flex;align-items:center;gap:.5rem;">
+                        <div class="employee-avatar" style="width:32px;height:32px;font-size:.75rem;">${getInitials(t.nome)}</div>
+                        <span>${t.nome} ${t.tipo === 'admin' ? '👑' : ''}</span>
+                      </div>
+                    </td>
+                    <td style="font-size:.85rem;color:var(--text-muted);">${t.email}</td>
+                    <td style="font-size:.85rem;">${t.departamento || '–'}${t.balcao ? ` · Balcão ${t.balcao}` : ''}</td>
+                    <td>
+                      ${t.ativo
+                        ? `<button class="remove-worker-btn" onclick="removerTrabalhador(${t.id}, '${t.nome.replace(/'/g, "\\'")}')">Desactivar</button>`
+                        : `<span style="color:#9ca3af;font-size:.8rem;">Inactivo</span>`}
+                    </td>
+                  </tr>
+                `).join('');
             }
 
         } catch (error) {
-            console.error("❌ Erro ao actualizar trabalhadores:", error);
+            console.error("❌ Trabalhadores:", error);
+            const msg = '<tr><td colspan="5" style="color:#ef4444;text-align:center;padding:1rem;">Erro de ligação</td></tr>';
+            if (perfBody)    perfBody.innerHTML    = msg;
+            if (workersBody) workersBody.innerHTML = msg;
         }
     }
 
+    /* ═══════════════════════════════════════════════════════
+       ADICIONAR MEMBRO — CORRIGIDO
+       FIX: usa POST /api/atendentes/ com payload correcto
+    ═══════════════════════════════════════════════════════ */
+    async function adicionarTrabalhador() {
+        const nome  = (document.getElementById('newWorkerName')?.value  || '').trim();
+        const email = (document.getElementById('newWorkerEmail')?.value || '').trim();
+        const senha = (document.getElementById('newWorkerPass')?.value  || '').trim();
+        const role  = (document.getElementById('newWorkerRole')?.value  || 'atendente');
+        const dept  = (document.getElementById('newWorkerDept')?.value  || '');
+        const msgEl = document.getElementById('workerFormMsg');
 
-    // ═══════════════════════════════════════════════════════════
-    // HISTÓRICO COM PAGINAÇÃO
-    // ═══════════════════════════════════════════════════════════
+        function setMsg(text, ok) {
+            if (!msgEl) return;
+            msgEl.textContent   = text;
+            msgEl.style.color   = ok ? '#22c55e' : '#ef4444';
+            msgEl.style.fontWeight = '600';
+        }
 
+        if (!nome || !email || !senha) { setMsg('Nome, email e senha são obrigatórios.', false); return; }
+        if (senha.length < 6) { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
+
+        /* Mapear departamento → balcão + servico_id */
+        const mapa = {
+            'Secretaria Academica': { balcao: 1, servico_id: 1 },
+            'Contabilidade':        { balcao: 2, servico_id: 2 },
+            'Apoio ao Cliente':     { balcao: 3, servico_id: 5 }
+        };
+        const extra = role === 'admin' ? { balcao: null, servico_id: null } : (mapa[dept] || { balcao: null, servico_id: null });
+
+        const btnAdd = document.getElementById('btnAddWorker');
+        if (btnAdd) { btnAdd.disabled = true; btnAdd.textContent = 'A criar...'; }
+
+        try {
+            // ✅ FIX: endpoint correcto com payload correcto
+            const response = await fetch('/api/atendentes/', {
+                method:  'POST',
+                headers: {
+                    'Content-Type':  'application/json',
+                    'Authorization': `Bearer ${store.getToken()}`
+                },
+                body: JSON.stringify({
+                    nome,
+                    email,
+                    senha,
+                    tipo:       role,
+                    balcao:     extra.balcao,
+                    servico_id: extra.servico_id
+                })
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (response.ok) {
+                setMsg(`✅ ${role === 'admin' ? 'Administrador' : 'Trabalhador'} "${nome}" criado com sucesso!`, true);
+                ['newWorkerName','newWorkerEmail','newWorkerPass'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+                await atualizarTrabalhadores();
+                setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 5000);
+            } else {
+                setMsg(data.erro || 'Erro ao criar membro. Verifique os dados.', false);
+            }
+        } catch (error) {
+            console.error("❌ Adicionar trabalhador:", error);
+            setMsg('Erro de ligação ao servidor.', false);
+        } finally {
+            if (btnAdd) { btnAdd.disabled = false; btnAdd.textContent = 'Adicionar membro'; }
+        }
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       HISTÓRICO COM PAGINAÇÃO
+    ═══════════════════════════════════════════════════════ */
     async function atualizarHistorico(page) {
         try {
             const pg = page || historicoState.page;
@@ -564,53 +488,46 @@
                 `/api/senhas?status=concluida&page=${pg}&per_page=${pp}`,
                 { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
             );
-
             if (!response.ok) return;
 
             const data = await response.json();
-
-            historicoState.page       = data.page       || pg;
-            historicoState.total      = data.total       || 0;
-            historicoState.totalPages = data.total_pages || 1;
+            historicoState.page       = data.page        || pg;
+            historicoState.total      = data.total        || 0;
+            historicoState.totalPages = data.total_pages  || 1;
 
             const historyBody = document.getElementById('historyBody');
             if (!historyBody) return;
 
             const senhas = data.senhas || [];
-
-            if (senhas.length === 0 && pg === 1) {
-                historyBody.innerHTML =
-                    '<tr><td colspan="6">Nenhum atendimento concluído</td></tr>';
+            if (!senhas.length && pg === 1) {
+                historyBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Sem atendimentos concluídos hoje</td></tr>';
                 renderNavegacao();
                 return;
             }
 
             historyBody.innerHTML = senhas.map(s => {
-                const servico   = s.servico?.nome   || 'Serviço Geral';
+                const servico   = s.servico?.nome   || 'Serviço';
                 const atendente = s.atendente?.nome || '–';
                 const duracao   = s.tempo_atendimento_minutos || 0;
-                const tsStr     = s.atendimento_concluido_em  || s.created_at;
-                const hora      = tsStr
-                    ? new Date(tsStr).toLocaleTimeString('pt-PT',
-                        { hour: '2-digit', minute: '2-digit' })
-                    : '--:--';
+                const tsStr     = s.atendimento_concluido_em || s.created_at;
+                const hora      = tsStr ? new Date(tsStr).toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit', timeZone:'Africa/Luanda' }) : '--:--';
+                const tipoBadge = s.tipo === 'prioritaria'
+                    ? '<span style="background:rgba(245,158,11,.15);color:#92400e;padding:2px 8px;border-radius:20px;font-size:.75rem;font-weight:700;">★ Prior.</span>'
+                    : '<span style="background:rgba(107,66,38,.1);color:#6b4226;padding:2px 8px;border-radius:20px;font-size:.75rem;">Normal</span>';
 
                 return `<tr>
-                  <td><strong>${s.numero}</strong></td>
+                  <td><strong>${s.numero}</strong> ${tipoBadge}</td>
                   <td>${servico}</td>
                   <td>${atendente}</td>
                   <td>${hora}</td>
                   <td>${duracao}min</td>
-                  <td>
-                    <span class="performance-badge badge-excellent">Concluído</span>
-                  </td>
+                  <td><span class="performance-badge badge-excellent">✓ Concluído</span></td>
                 </tr>`;
             }).join('');
 
             renderNavegacao();
-
         } catch (error) {
-            console.error("❌ Erro ao actualizar histórico:", error);
+            console.error("❌ Histórico:", error);
         }
     }
 
@@ -618,180 +535,69 @@
         const btnAnterior = document.getElementById('historyPrevBtn');
         const btnProxima  = document.getElementById('historyNextBtn');
         const pageInfo    = document.getElementById('historyPageInfo');
-
         const { page, totalPages, total } = historicoState;
-
-        if (btnAnterior) {
-            btnAnterior.disabled = (page <= 1);
-            btnAnterior.onclick  = () => atualizarHistorico(page - 1);
-        }
-        if (btnProxima) {
-            btnProxima.disabled = (page >= totalPages);
-            btnProxima.onclick  = () => atualizarHistorico(page + 1);
-        }
-        if (pageInfo) {
-            pageInfo.textContent =
-                `Página ${page} de ${totalPages} · ${total} registos`;
-        }
+        if (btnAnterior) { btnAnterior.disabled = (page <= 1);           btnAnterior.onclick = () => atualizarHistorico(page - 1); }
+        if (btnProxima)  { btnProxima.disabled  = (page >= totalPages);  btnProxima.onclick  = () => atualizarHistorico(page + 1); }
+        if (pageInfo)    pageInfo.textContent = `Página ${page} de ${totalPages} · ${total} registos`;
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // EXPORTAR CSV — CORRECÇÃO SPRINT 1
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Exporta o histórico de atendimentos em CSV.
-     *
-     * CORRECÇÃO SPRINT 1:
-     * Antes: apenas mostrava alert("Exportação — Sprint 3")
-     * Agora: chama GET /api/dashboard/admin/exportar e faz download real.
-     *
-     * O backend já gera o CSV com datas configuráveis;
-     * aqui usamos o intervalo do último mês por defeito.
-     */
+    /* ═══════════════════════════════════════════════════════
+       EXPORTAR
+    ═══════════════════════════════════════════════════════ */
     window.exportData = async function () {
         const formato = document.getElementById('exportFormat')?.value || 'excel';
-
         try {
             const response = await fetch('/api/senhas?status=concluida&page=1&per_page=500', {
                 headers: { 'Authorization': `Bearer ${store.getToken()}` }
             });
-            if (!response.ok) {
-                alert('Não foi possível carregar dados para exportação.');
-                return;
-            }
-
+            if (!response.ok) { alert('Não foi possível carregar dados.'); return; }
             const data = await response.json();
             const rows = (data.senhas || []).map(s => ({
-                Senha: s.numero,
-                Serviço: s.servico?.nome || 'Serviço',
-                Atendente: s.atendente?.nome || '—',
-                Estado: s.status,
+                Senha: s.numero, Serviço: s.servico?.nome || '—',
+                Atendente: s.atendente?.nome || '—', Estado: s.status,
                 Duração_min: s.tempo_atendimento_minutos || 0,
-                Concluída_em: s.atendimento_concluido_em || s.updated_at || ''
+                Concluída_em: s.atendimento_concluido_em || ''
             }));
+            if (!rows.length) { alert('Sem dados para exportar.'); return; }
 
-            if (!rows.length) {
-                alert('Sem dados do dia para exportar.');
-                return;
-            }
-
-            if (formato === 'excel') {
-                if (!window.XLSX) {
-                    alert('Biblioteca Excel indisponível.');
-                    return;
-                }
+            if (formato === 'excel' && window.XLSX) {
                 const ws = XLSX.utils.json_to_sheet(rows);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Relatorio');
-                XLSX.writeFile(wb, `relatorio_imtsb_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                XLSX.writeFile(wb, `relatorio_imtsb_${new Date().toISOString().slice(0,10)}.xlsx`);
                 return;
             }
 
-            const tableRows = rows.map(r => `<tr><td>${r.Senha}</td><td>${r.Serviço}</td><td>${r.Atendente}</td><td>${r.Estado}</td><td>${r.Duração_min}m</td></tr>`).join('');
-            const html = `<html><head><title>Relatório IMTSB</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h2>Relatório de Atendimentos (Hoje)</h2><table><thead><tr><th>Senha</th><th>Serviço</th><th>Atendente</th><th>Estado</th><th>Duração</th></tr></thead><tbody>${tableRows}</tbody></table><script>window.onload=()=>window.print();</script></body></html>`;
-            const w = window.open('', '_blank', 'width=1000,height=700');
-            if (!w) return;
+            /* PDF / impressão */
+            const tableRows = rows.map(r =>
+                `<tr><td>${r.Senha}</td><td>${r.Serviço}</td><td>${r.Atendente}</td><td>${r.Estado}</td><td>${r.Duração_min}min</td></tr>`
+            ).join('');
+            const html = `<html><head><title>Relatório IMTSB</title><style>
+                body{font-family:Arial;padding:20px;font-size:13px}
+                h2{margin-bottom:12px}
+                table{width:100%;border-collapse:collapse}
+                th,td{border:1px solid #ddd;padding:8px;text-align:left}
+                th{background:#6b4226;color:white}
+                tr:nth-child(even){background:#f9f6f3}
+            </style></head><body>
+                <h2>Relatório de Atendimentos — IMTSB</h2>
+                <p style="color:#888;margin-bottom:12px">Gerado em ${new Date().toLocaleString('pt-PT')}</p>
+                <table><thead><tr><th>Senha</th><th>Serviço</th><th>Atendente</th><th>Estado</th><th>Duração</th></tr></thead>
+                <tbody>${tableRows}</tbody></table>
+                <script>window.onload=()=>window.print();</script></body></html>`;
+            const w = window.open('','_blank','width=1000,height=700');
+            if (!w) { alert('Permita popups para exportar.'); return; }
             w.document.write(html);
             w.document.close();
         } catch (error) {
-            console.error('❌ Erro ao exportar:', error);
+            console.error('❌ Exportar:', error);
             alert('Erro de ligação ao servidor.');
         }
     };
 
-
-    // ═══════════════════════════════════════════════════════════
-    // ADICIONAR TRABALHADOR
-    // ═══════════════════════════════════════════════════════════
-
-    async function adicionarTrabalhador() {
-        const nome   = document.getElementById('newWorkerName')?.value?.trim();
-        const email  = document.getElementById('newWorkerEmail')?.value?.trim();
-        const senha  = document.getElementById('newWorkerPass')?.value?.trim();
-        const dept   = document.getElementById('newWorkerDept')?.value;
-        const role   = document.getElementById('newWorkerRole')?.value || 'atendente';
-        const msgEl  = document.getElementById('workerFormMsg');
-
-        if (!nome || !email || !senha) {
-            if (msgEl) {
-                msgEl.textContent = 'Nome, email e senha são obrigatórios.';
-                msgEl.style.color = '#ef4444';
-            }
-            return;
-        }
-
-        const mapa = {
-            'Secretaria Academica': { balcao: 1, servico_id: 1 },
-            'Contabilidade':        { balcao: 2, servico_id: 2 },
-            'Apoio ao Cliente':     { balcao: 3, servico_id: 5 }
-        };
-        const extra = mapa[dept] || { balcao: null, servico_id: null };
-
-        const btnAdd = document.getElementById('btnAddWorker');
-        if (btnAdd) { btnAdd.disabled = true; btnAdd.textContent = 'A criar...'; }
-
-        try {
-            const response = await fetch('/api/auth/register', {
-                method:  'POST',
-                headers: {
-                    'Content-Type':  'application/json',
-                    'Authorization': `Bearer ${store.getToken()}`
-                },
-                body: JSON.stringify({
-                    nome, email, senha,
-                    tipo:       role,
-                    balcao:     extra.balcao,
-                    servico_id: extra.servico_id
-                })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                if (msgEl) {
-                    msgEl.textContent = `${role === 'admin' ? 'Administrador' : 'Trabalhador'} criado com sucesso.`;
-                    msgEl.style.color = '#22c55e';
-                }
-
-                ['newWorkerName', 'newWorkerEmail', 'newWorkerPass'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.value = '';
-                });
-
-                await atualizarTrabalhadores();
-
-                setTimeout(() => {
-                    if (msgEl) msgEl.textContent = '';
-                }, 4000);
-
-            } else {
-                if (msgEl) {
-                    msgEl.textContent = data.erro || 'Erro ao criar trabalhador.';
-                    msgEl.style.color = '#ef4444';
-                }
-            }
-
-        } catch (error) {
-            console.error("❌ Erro ao adicionar trabalhador:", error);
-            if (msgEl) {
-                msgEl.textContent = 'Erro de ligação ao servidor.';
-                msgEl.style.color = '#ef4444';
-            }
-        } finally {
-            if (btnAdd) {
-                btnAdd.disabled    = false;
-                btnAdd.textContent = 'Adicionar membro';
-            }
-        }
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // POLLING
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       POLLING
+    ═══════════════════════════════════════════════════════ */
     function iniciarPolling() {
         pararPolling();
         pollingInterval = setInterval(async () => {
@@ -801,103 +607,81 @@
     }
 
     function pararPolling() {
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            pollingInterval = null;
-        }
+        if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // CONFIGURAÇÃO DE BOTÕES
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       CONFIGURAR BOTÕES
+    ═══════════════════════════════════════════════════════ */
     function configurarBotoes() {
         const btnAdd = document.getElementById('btnAddWorker');
         if (btnAdd) btnAdd.addEventListener('click', adicionarTrabalhador);
 
-        const btnExport = document.getElementById('exportBtn');
-        if (btnExport) btnExport.addEventListener('click', exportData);
-
         const btnSair = document.getElementById('btnSairAdmin');
-        if (btnSair) {
-            btnSair.addEventListener('click', () => {
-                if (confirm("Deseja sair do sistema?")) {
-                    pararPolling();
-                    store.logout();
-                    window.location.href = '/login';
-                }
-            });
-        }
+        if (btnSair) btnSair.addEventListener('click', () => {
+            if (confirm("Deseja sair do sistema?")) { pararPolling(); store.logout(); window.location.href = '/login'; }
+        });
 
         const btnReset = document.getElementById('btnResetDayAdmin');
-        if (btnReset) {
-            btnReset.addEventListener('click', () => {
-                alert("Funcionalidade de reset de dia em desenvolvimento.");
-            });
-        }
+        if (btnReset) btnReset.addEventListener('click', () => {
+            alert("Funcionalidade de reset de dia em desenvolvimento.");
+        });
     }
 
-
-    // ═══════════════════════════════════════════════════════════
-    // AUXILIARES
-    // ═══════════════════════════════════════════════════════════
-
-    function atualizarHeader() {
-        const user      = store.getUser();
-        const adminName = document.getElementById('adminProfileName');
-        const adminInit = document.getElementById('adminInitials');
-
-        if (adminName) adminName.textContent = user.name || 'Administrador';
-        if (adminInit) adminInit.textContent  = getInitials(user.name || 'AD');
-    }
-
-    function getInitials(nome) {
-        return (nome || 'AD')
-            .split(' ')
-            .map(n => n[0])
-            .join('')
-            .toUpperCase()
-            .substring(0, 2);
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    // FUNÇÕES GLOBAIS — chamadas pelo HTML
-    // ═══════════════════════════════════════════════════════════
-
+    /* ═══════════════════════════════════════════════════════
+       FUNÇÕES GLOBAIS
+    ═══════════════════════════════════════════════════════ */
     window.removerTrabalhador = async function (id, nome) {
-        if (!confirm(
-            `Desactivar trabalhador "${nome}"?\n` +
-            `O histórico de atendimentos será preservado.`
-        )) return;
-
+        if (!confirm(`Desactivar "${nome}"?\nO histórico de atendimentos será preservado.`)) return;
         try {
             const response = await fetch(`/api/atendentes/${id}`, {
                 method:  'DELETE',
                 headers: { 'Authorization': `Bearer ${store.getToken()}` }
             });
-
-            const data = await response.json();
-
+            const data = await response.json().catch(() => ({}));
             if (response.ok) {
-                alert(`Trabalhador desactivado com sucesso.`);
+                showToast(`✅ "${nome}" desactivado com sucesso.`, 'success');
                 await atualizarTrabalhadores();
             } else {
                 alert(`Erro: ${data.erro || 'Não foi possível desactivar.'}`);
             }
         } catch (error) {
-            console.error("❌ Erro ao remover:", error);
+            console.error("❌ Remover:", error);
             alert("Erro de ligação ao servidor.");
         }
     };
 
     window.sair = function () {
-        if (confirm("Deseja sair do sistema?")) {
-            pararPolling();
-            store.logout();
-            window.location.href = '/login';
-        }
+        if (confirm("Deseja sair do sistema?")) { pararPolling(); store.logout(); window.location.href = '/login'; }
     };
+
+    /* ═══════════════════════════════════════════════════════
+       AUXILIARES
+    ═══════════════════════════════════════════════════════ */
+    function atualizarHeader() {
+        const user      = store.getUser();
+        const adminName = document.getElementById('adminProfileName');
+        const adminInit = document.getElementById('adminInitials');
+        if (adminName) adminName.textContent = user.name || 'Administrador';
+        if (adminInit) adminInit.textContent  = getInitials(user.name || 'AD');
+    }
+
+    function getInitials(nome) {
+        return (nome || 'AD').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    }
+
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        const bg    = type === 'success' ? '#22c55e' : '#ef4444';
+        toast.style.cssText = `
+            position:fixed;bottom:2rem;right:2rem;background:${bg};color:white;
+            padding:.85rem 1.5rem;border-radius:12px;font-weight:600;
+            z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.2);
+            animation:fadeInUp .3s ease-out;
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+    }
 
 })();

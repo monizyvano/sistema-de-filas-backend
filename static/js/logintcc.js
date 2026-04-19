@@ -1,144 +1,131 @@
 /**
  * static/js/logintcc.js
- * Fluxo do utente: entrar por email/telefone e cadastrar nova conta.
+ * Fluxo do cliente/utente: identificação e registo.
+ *
+ * FIXES aplicados:
+ *  - Removida referência a `loginForm` (não existe no HTML) — usa `formEntrar`
+ *  - Removida função `setLoading` duplicada
+ *  - Removido código misturado da versão anterior (store.login com password)
+ *  - Fluxo correcto: identificação por email/telefone SEM password (utentes)
  */
 (function () {
   "use strict";
 
-  var msgEl = document.getElementById("authMsg");
-  var formEntrar = document.getElementById("formEntrar");
+  /* ── Referências ao DOM ─────────────────────────────────── */
+  var msgEl        = document.getElementById("authMsg");
+  var formEntrar   = document.getElementById("formEntrar");
   var formCadastrar = document.getElementById("formCadastrar");
-  var subTabs = document.querySelectorAll("[data-subtab]");
+  var subTabs      = document.querySelectorAll("[data-subtab]");
+
+  /* ── Utilitários ─────────────────────────────────────────── */
 
   function show(text, kind) {
     if (!msgEl) return;
     msgEl.textContent = text || "";
-    msgEl.className = "auth-msg";
+    msgEl.className   = "auth-msg";
     if (kind) msgEl.classList.add(kind);
   }
 
-  function setLoading(form, enabled) {
-    var button = form && form.querySelector("[type=submit]");
-    if (!button) return;
-    if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
-    button.disabled = !!enabled;
-    button.textContent = enabled ? "Aguarde..." : button.dataset.originalText;
+  function setLoading(formEl, loading) {
+    if (!formEl) return;
+    var btn = formEl.querySelector("button[type='submit'], input[type='submit']");
+    if (!btn) return;
+    if (!btn._origText) btn._origText = btn.tagName === "INPUT" ? btn.value : btn.textContent;
+    btn.disabled = !!loading;
+    if (btn.tagName === "INPUT") {
+      btn.value = loading ? "Aguarde..." : btn._origText;
+    } else {
+      btn.textContent = loading ? "Aguarde..." : btn._origText;
+    }
   }
 
   function switchTab(tab) {
-    subTabs.forEach(function (button) {
-      button.classList.toggle("active", button.dataset.subtab === tab);
+    subTabs.forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.subtab === tab);
     });
-
-    if (formEntrar) formEntrar.classList.toggle("hidden", tab !== "entrar");
+    if (formEntrar)    formEntrar.classList.toggle("hidden",    tab !== "entrar");
     if (formCadastrar) formCadastrar.classList.toggle("hidden", tab !== "cadastrar");
     show("", "");
   }
 
-  subTabs.forEach(function (button) {
-    button.addEventListener("click", function () {
-      switchTab(button.dataset.subtab);
-    });
+  subTabs.forEach(function (btn) {
+    btn.addEventListener("click", function () { switchTab(btn.dataset.subtab); });
   });
 
-  function setLoading(formEl, loading) {
-    if (!formEl) return;
-    const submitBtn = formEl.querySelector('button[type="submit"], input[type="submit"]');
-    if (!submitBtn) return;
-    submitBtn.disabled = !!loading;
-  }
+  /* ── Formulário Entrar (identificação por email/telefone) ── */
 
-  function setLoading(formEl, loading) {
-    if (!formEl) return;
-    const submitBtn = formEl.querySelector('button[type="submit"], input[type="submit"]');
-    if (!submitBtn) return;
-    submitBtn.disabled = !!loading;
-  }
-
-  // ===============================
-  // 🔐 LOGIN
-  // ===============================
-  if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
+  if (formEntrar) {
+    formEntrar.addEventListener("submit", async function (e) {
       e.preventDefault();
 
-      const email = document.getElementById('iemail')?.value.trim();
-      const senha = document.getElementById('isenha')?.value;
-      const tipo = document.getElementById('loginTipo')?.value;
-      const confirmDados = document.getElementById('loginConfirmDados')?.checked;
-
-      // Validações
-      if (!email || !senha) {
-        showMessage("❌ Preencha email e senha", "error");
+      var confirmEl = document.getElementById("confirmEntrar");
+      if (confirmEl && !confirmEl.checked) {
+        show("Confirme que os dados estão correctos.", "error");
         return;
       }
 
+      var identif = ((document.getElementById("clienteIdentif") || {}).value || "").trim();
       if (!identif) {
-        show("Preencha o email ou telefone.", "error");
+        show("Indique o email ou telefone.", "error");
         return;
       }
 
-      // Login
-      showMessage("🔄 Autenticando...", "info");
-      setLoading(loginForm, true);
+      setLoading(formEntrar, true);
+      show("A identificar...", "");
 
       try {
-        const result = await store.login(email, senha);
+        var isEmail = identif.includes("@");
 
-        if (!result.ok) {
-          showMessage(`❌ ${result.message}`, "error");
-          setLoading(loginForm, false);
-          return;
-        }
+        // Guardar sessão de utente em localStorage e redirecionar
+        var session = {
+          id:       null,
+          name:     isEmail ? identif.split("@")[0] : ("Utente " + identif),
+          email:    isEmail ? identif.toLowerCase()  : "",
+          telefone: isEmail ? ""                      : identif,
+          role:     "usuario",
+          token:    "",
+          balcao:   null,
+          isGuest:  false
+        };
 
-        // Sucesso
-        showMessage("✅ Login realizado!", "success");
+        localStorage.setItem("imtsb_user", JSON.stringify(session));
+        show("Bem-vindo!", "ok");
 
-        // Redirect baseado no role retornado do backend
-        const userRole = result.role || "usuario";
+        setTimeout(function () {
+          window.location.href = "/index.html";
+        }, 350);
 
-        setTimeout(() => {
-          if (userRole === "admin") {
-            window.location.href = "/dashadm.html";
-          } else if (userRole === "trabalhador" || userRole === "atendente") {
-            window.location.href = "/dashtrabalho.html";
-          } else {
-            window.location.href = "/index.html";
-          }
-        }, 500);
       } catch (err) {
-        console.error("[Login] Erro:", err);
-        var msgOffline = (err && err.message && err.message.toLowerCase().includes("fetch"))
-          ? "Servidor indisponível. Verifique a ligação e tente novamente."
-          : "Erro de ligação. Tente novamente.";
-        showMessage(msgOffline, "error");
-        setLoading(loginForm, false);
-        return;
+        console.error("[logintcc] Entrar:", err);
+        show("Erro ao identificar. Tente novamente.", "error");
+      } finally {
+        setLoading(formEntrar, false);
       }
     });
   }
 
-  if (formCadastrar) {
-    formCadastrar.addEventListener("submit", async function (event) {
-      event.preventDefault();
+  /* ── Formulário Cadastrar ────────────────────────────────── */
 
-      var checked = document.getElementById("cConfirm");
-      var nome = ((document.getElementById("cNome") || {}).value || "").trim();
-      var email = ((document.getElementById("cEmail") || {}).value || "").trim();
+  if (formCadastrar) {
+    formCadastrar.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      var confirmEl = document.getElementById("cConfirm");
+      if (confirmEl && !confirmEl.checked) {
+        show("Confirme os dados antes de cadastrar.", "error");
+        return;
+      }
+
+      var nome     = ((document.getElementById("cNome")     || {}).value || "").trim();
+      var email    = ((document.getElementById("cEmail")    || {}).value || "").trim();
       var telefone = ((document.getElementById("cTelefone") || {}).value || "").trim();
 
-      if (checked && !checked.checked) {
-        show("Confirme os dados.", "error");
-        return;
-      }
-
       if (!nome) {
-        show("Nome e obrigatorio.", "error");
+        show("O nome é obrigatório.", "error");
         return;
       }
-
       if (!email && !telefone) {
-        show("Indique email ou telefone.", "error");
+        show("Indique pelo menos email ou telefone.", "error");
         return;
       }
 
@@ -147,52 +134,56 @@
 
       try {
         var response = await fetch("/api/utentes/registar", {
-          method: "POST",
+          method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nome: nome,
-            email: email || null,
+          body:    JSON.stringify({
+            nome:     nome,
+            email:    email    || null,
             telefone: telefone || null
           })
         });
 
-        var data = await response.json().catch(function () {
-          return {};
-        });
+        var data = await response.json().catch(function () { return {}; });
 
         if (!response.ok) {
-          show(data.erro || "Erro no registo.", "error");
+          show(data.erro || "Erro no registo. Tente novamente.", "error");
           return;
         }
 
         formCadastrar.reset();
         switchTab("entrar");
-        show("Conta criada! Identifique-se para entrar.", "ok");
-      } catch (error) {
-        show("Erro de ligacao.", "error");
+        show("Conta criada com sucesso! Agora identifique-se para entrar.", "ok");
+
+      } catch (err) {
+        console.error("[logintcc] Cadastrar:", err);
+        show("Erro de ligação ao servidor.", "error");
       } finally {
         setLoading(formCadastrar, false);
       }
     });
   }
 
-  var guestButton = document.getElementById("btnGuest");
-  if (guestButton) {
-    guestButton.addEventListener("click", function () {
+  /* ── Botão Continuar Sem Conta ───────────────────────────── */
+
+  var btnGuest = document.getElementById("btnGuest");
+  if (btnGuest) {
+    btnGuest.addEventListener("click", function () {
       localStorage.setItem("imtsb_user", JSON.stringify({
-        id: null,
-        name: "Visitante",
-        email: "",
-        role: "usuario",
-        token: "",
-        balcao: null,
+        id:      null,
+        name:    "Visitante",
+        email:   "",
+        role:    "usuario",
+        token:   "",
+        balcao:  null,
         isGuest: true
       }));
       window.location.href = "/index.html";
     });
   }
 
+  /* ── Função global voltarprincipal (chamada pelo HTML) ────── */
   window.voltarprincipal = function () {
     window.location.href = "/principal.html";
   };
+
 })();

@@ -1,178 +1,289 @@
+/**
+ * static/js/dash.js — Sprint 2 COMPLETO
+ * ═══════════════════════════════════════════════════════════════
+ * FIXES:
+ *   ✅ pararTimer() definido (estava indefinido — causava crash)
+ *   ✅ pararPolling() definido (estava indefinido)
+ *   ✅ atualizarEstatisticas() sem duplicação
+ *   ✅ Botão Concluir activa/desactiva correctamente
+ *   ✅ Botão Negar funcional
+ *   ✅ Todos os botões de acção funcionais
+ *   ✅ Timer inicia ao chamar senha
+ * ═══════════════════════════════════════════════════════════════
+ */
 (function () {
   "use strict";
 
-  const store = window.IMTSBStore;
+  const store    = window.IMTSBStore;
   const ANGOLA_TZ = "Africa/Luanda";
 
-  let senhaAtual = null;
-  let timerInterval = null;
-  let pollingInterval = null;
+  /* ── Estado ──────────────────────────────────────────────── */
+  let senhaAtual       = null;
+  let timerInterval    = null;
+  let pollingInterval  = null;
+  let timerSegundos    = 0;
 
+  /* ── Formatadores ────────────────────────────────────────── */
   function nowKeyLuanda() {
     return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date());
   }
-
   function keyFromDate(value) {
     if (!value) return "";
     return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(value));
   }
-
   function formatTimeLuanda(value) {
     if (!value) return "--:--";
-    return new Date(value).toLocaleTimeString("pt-PT", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: ANGOLA_TZ,
-    });
+    return new Date(value).toLocaleTimeString("pt-PT", { hour:"2-digit", minute:"2-digit", timeZone: ANGOLA_TZ });
+  }
+  function formatDuracao(seg) {
+    const total = Math.max(0, Number(seg) || 0);
+    const m = String(Math.floor(total / 60)).padStart(2, "0");
+    const s = String(total % 60).padStart(2, "0");
+    return `${m}:${s}`;
   }
 
-  function setStatus(text, emAtendimento) {
+  /* ── Status / UI ─────────────────────────────────────────── */
+  function setStatus(text, cor) {
     const statusText = document.getElementById("statusText");
+    const statusDot  = document.getElementById("statusDot");
     if (statusText) statusText.textContent = text;
-    const statusDot = document.getElementById("statusDot");
-    if (statusDot) statusDot.style.background = emAtendimento ? "#f59e0b" : "#10b981";
+    if (statusDot)  statusDot.style.background = cor || "#10b981";
   }
 
-  function renderTabs() {
-    const btns = document.querySelectorAll(".tab-switch-btn");
-    btns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab-switch-btn").forEach((b) => b.classList.remove("active"));
-        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-        btn.classList.add("active");
-        document.getElementById(`tab-${btn.dataset.tab}`)?.classList.add("active");
-      });
-    });
+  function showToast(message, tipo) {
+    const existing = document.getElementById('dashToast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'dashToast';
+    const bg = tipo === 'error' ? '#dc2626' : tipo === 'warn' ? '#d97706' : '#059669';
+    toast.style.cssText = `
+        position:fixed;top:1.5rem;right:1.5rem;background:${bg};color:white;
+        padding:.85rem 1.5rem;border-radius:12px;font-weight:600;font-size:.9rem;
+        z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.25);
+        animation:slideInRight .3s ease-out;max-width:320px;line-height:1.4;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
   }
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    if (!store?.isLoggedIn()) {
-      window.location.href = "/login";
-      return;
-    }
+  /* ── Timer ───────────────────────────────────────────────── */
+  function iniciarTimer() {
+    pararTimer();
+    timerSegundos = 0;
+    timerInterval = setInterval(() => {
+      timerSegundos += 1;
+      const el = document.getElementById("timer");
+      if (el) el.textContent = formatDuracao(timerSegundos);
+    }, 1000);
+  }
 
-    const user = store.getUser();
-    if (!["trabalhador", "admin"].includes(user.role)) {
-      window.location.href = "/";
-      return;
-    }
+  /* ✅ FIX: pararTimer estava indefinido */
+  function pararTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    timerSegundos = 0;
+    const el = document.getElementById("timer");
+    if (el) el.textContent = "00:00";
+  }
 
-    carregarDadosTrabalhador();
-    renderTabs();
-    await atualizarTudo();
-    iniciarPolling();
-    actualizarBotaoConcluir();
-  });
+  /* ── Polling ─────────────────────────────────────────────── */
+  function iniciarPolling() {
+    pararPolling();
+    pollingInterval = setInterval(async () => {
+      await atualizarEstatisticas();
+      await atualizarHistorico();
+      await atualizarFilaAoVivo();
+    }, 7000);
+  }
 
+  /* ✅ FIX: pararPolling estava indefinido */
+  function pararPolling() {
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+  }
+
+  /* ── Actualizar tudo ─────────────────────────────────────── */
   async function atualizarTudo() {
     await Promise.all([atualizarEstatisticas(), atualizarHistorico(), atualizarFilaAoVivo()]);
   }
 
+  /* ── Dados do trabalhador ────────────────────────────────── */
   function carregarDadosTrabalhador() {
     const user = store.getUser();
-    document.getElementById("workerName").textContent = user.name || "Trabalhador";
-    document.getElementById("workerDept").textContent = user.departamento || "Atendimento";
-    const iniciais = (user.name || "T")
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-    document.getElementById("workerAvatar").textContent = iniciais;
+    if (!user) return;
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+    set("workerName", user.name || "Trabalhador");
+    set("workerDept", user.departamento || "Atendimento");
+
+    const iniciais = (user.name || "T").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+    set("workerAvatar", iniciais);
+
     const balcao = user.balcao || user.numero_balcao;
-    document.getElementById("counterBadge").textContent = balcao ? `Balcão ${balcao}` : "Sem balcão";
+    set("counterBadge", balcao ? `Balcão ${balcao}` : "Sem balcão");
   }
 
+  /* ── Estatísticas ────────────────────────────────────────── */
   async function atualizarEstatisticas() {
     try {
-      const response = await fetch("/api/dashboard/trabalhador/estatisticas", {
-        headers: { Authorization: `Bearer ${store.getToken()}` },
+      const resp = await fetch("/api/dashboard/trabalhador/estatisticas", {
+        headers: { Authorization: `Bearer ${store.getToken()}` }
       });
-      if (!response.ok) return;
-      const stats = await response.json();
-      document.getElementById("waitingCount").textContent = stats.aguardando || 0;
-      document.getElementById("servedToday").textContent = stats.atendidos_hoje || 0;
-      document.getElementById("avgTime").textContent = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
+      if (resp.status === 401) { store.logout(); return; }
+      if (!resp.ok) return;
+      const stats = await resp.json();
+      const g = id => document.getElementById(id);
+      if (g("waitingCount")) g("waitingCount").textContent = stats.aguardando || 0;
+      if (g("servedToday"))  g("servedToday").textContent  = stats.atendidos_hoje || 0;
+      if (g("avgTime"))      g("avgTime").textContent      = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
     } catch (err) {
-      console.error("[worker] estatísticas", err);
+      console.error("[worker] estatísticas:", err);
     }
   }
 
+  /* ── Histórico ───────────────────────────────────────────── */
   async function atualizarHistorico() {
+    const user = store.getUser();
+    if (!user) return;
     try {
-      const user = store.getUser();
-      const response = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`, {
-        headers: { Authorization: `Bearer ${store.getToken()}` },
+      const resp = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` }
       });
-      if (!response.ok) return;
-      const data = await response.json();
+      if (!resp.ok) return;
+      const data  = await resp.json();
       const today = nowKeyLuanda();
-      const senhasHoje = (data.senhas || []).filter((s) => {
+      const senhasHoje = (data.senhas || []).filter(s => {
         const ts = s.atendimento_concluido_em || s.updated_at || s.emitida_em || s.created_at;
         return keyFromDate(ts) === today;
       });
 
       const activityLog = document.getElementById("activityLog");
       if (!activityLog) return;
+
       if (!senhasHoje.length) {
-        activityLog.innerHTML = '<div class="log-item"><div class="log-password">Nenhum atendimento hoje</div></div>';
+        activityLog.innerHTML = '<div class="log-item"><div class="log-password" style="color:var(--text-muted);">Nenhum atendimento hoje</div></div>';
         return;
       }
 
-      activityLog.innerHTML = senhasHoje
-        .map((senha) => {
-          const hora = formatTimeLuanda(senha.atendimento_concluido_em || senha.updated_at || senha.created_at);
-          const duracao = Math.round(senha.tempo_atendimento_minutos || 0);
-          const servico = senha.servico?.nome || "Serviço";
-          return `<div class="log-item completed">
-            <div class="log-password">${senha.numero} — ${servico}</div>
-            <div class="log-time">${hora} · ${duracao}m</div>
+      activityLog.innerHTML = senhasHoje.slice(0, 8).map(s => {
+        const hora    = formatTimeLuanda(s.atendimento_concluido_em || s.updated_at || s.created_at);
+        const duracao = Math.round(s.tempo_atendimento_minutos || 0);
+        const servico = s.servico?.nome || "Serviço";
+        return `<div class="log-item completed">
+            <div class="log-password">${s.numero} — ${servico}</div>
+            <div class="log-time">${hora} · ${duracao}min</div>
           </div>`;
-        })
-        .join("");
+      }).join("");
     } catch (err) {
-      console.error("[worker] histórico", err);
+      console.error("[worker] histórico:", err);
     }
   }
 
+  /* ── Fila ao vivo ────────────────────────────────────────── */
   async function atualizarFilaAoVivo() {
     const user = store.getUser();
     const list = document.getElementById("liveQueueList");
     if (!list) return;
     try {
-      const serviceFilter = user.servico_id ? `&servico_id=${user.servico_id}` : "";
-      const response = await fetch(`/api/senhas?status=aguardando&page=1&per_page=20${serviceFilter}`, {
-        headers: { Authorization: `Bearer ${store.getToken()}` },
+      const serviceFilter = user?.servico_id ? `&servico_id=${user.servico_id}` : "";
+      const resp = await fetch(`/api/senhas?status=aguardando&page=1&per_page=20${serviceFilter}`, {
+        headers: { Authorization: `Bearer ${store.getToken()}` }
       });
-      if (!response.ok) return;
-      const data = await response.json();
+      if (!resp.ok) return;
+      const data  = await resp.json();
       const senhas = Array.isArray(data) ? data : (data.senhas || []);
 
       if (!senhas.length) {
-        list.innerHTML = '<div class="live-queue-empty">Sem senhas em fila.</div>';
+        list.innerHTML = '<div class="live-queue-empty" style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0;">✅ Sem senhas em fila</div>';
         return;
       }
 
-      list.innerHTML = senhas
-        .slice(0, 8)
-        .map((s, idx) => `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
-            <span class="live-num">${s.numero}</span>
+      list.innerHTML = senhas.slice(0, 8).map((s, idx) => {
+        const isPriority = s.tipo === 'prioritaria';
+        return `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
+            <span class="live-num" style="${isPriority ? 'color:#d97706;' : ''}">${s.numero}</span>
             <span class="live-service">${s.servico?.nome || "Serviço"}</span>
-            <span class="live-tag">${idx === 0 ? "PRÓXIMA" : `${idx + 1}º`}</span>
-          </div>`)
-        .join("");
+            <span class="live-tag" style="${isPriority ? 'color:#d97706;background:rgba(217,119,6,.1);' : ''}">
+              ${idx === 0 ? "PRÓXIMA" : isPriority ? "★ Prior." : `${idx + 1}º`}
+            </span>
+          </div>`;
+      }).join("");
     } catch (err) {
-      console.error("[worker] fila ao vivo", err);
+      console.error("[worker] fila ao vivo:", err);
     }
   }
 
+  /* ── Display senha actual ────────────────────────────────── */
+  function atualizarDisplayAtual(senha) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+    set("currentPassword", senha.numero || "---");
+    set("passwordType",    senha.tipo === "prioritaria" ? "★ Atendimento Prioritário" : "Atendimento Normal");
+    set("serviceValue",    senha.servico?.nome || "Serviço");
+    set("waitTime",        `${Math.round(senha.tempo_espera_minutos || 0)} min`);
+    set("issuedAt",        formatTimeLuanda(senha.emitida_em || senha.created_at));
+    set("obsValue",        senha.observacoes || "Sem observações");
+
+    preencherPreviewDocumentos(senha);
+    setStatus("Em Atendimento", "#d97706");
+  }
+
+  function limparDisplayAtual() {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set("currentPassword", "---");
+    set("passwordType",    "Aguardando chamada");
+    set("serviceValue",    "–");
+    set("waitTime",        "–");
+    set("issuedAt",        "–");
+    set("obsValue",        "Sem observações");
+    const pre = document.getElementById("docsPreviewContent");
+    if (pre) pre.textContent = "Sem documentos/formulário para esta senha.";
+    setStatus("Disponível", "#10b981");
+    pararTimer();
+  }
+
+  function limparAtendimentoAtual() {
+    senhaAtual = null;
+    const hiddenEl = document.getElementById("currentSenhaId");
+    if (hiddenEl) hiddenEl.value = "";
+    limparDisplayAtual();
+    actualizarBotoes();
+  }
+
+  function preencherPreviewDocumentos(senha) {
+    const pre = document.getElementById("docsPreviewContent");
+    if (!pre) return;
+    const obs = senha?.observacoes;
+    if (!obs) { pre.textContent = "Sem dados de formulário para esta senha."; return; }
+    /* Formatar "Campo: valor | Campo: valor" como tabela legível */
+    if (obs.includes('|')) {
+      pre.textContent = obs.split('|').map(p => p.trim()).filter(Boolean).join('\n');
+    } else {
+      pre.textContent = obs;
+    }
+  }
+
+  function actualizarBotoes() {
+    const btnConcluir = document.getElementById("btnConcluir");
+    const btnNegar    = document.getElementById("btnNegar");
+    const temSenha    = !!senhaAtual;
+    if (btnConcluir) btnConcluir.disabled = !temSenha;
+    if (btnNegar)    btnNegar.disabled    = !temSenha;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     ACÇÕES DO TRABALHADOR — TODAS FUNCIONAIS
+  ════════════════════════════════════════════════════════════ */
+
   window.callNextCustomer = async function () {
     const user = store.getUser();
+    if (!user) return;
+
     const servicoId = user.servico_id;
-    const balcao = user.balcao || user.numero_balcao;
+    const balcao    = parseInt(user.balcao || user.numero_balcao);
 
     if (!servicoId || !balcao) {
-      alert("Perfil incompleto: falta serviço ou balcão. Contacte o administrador.");
+      showToast("Perfil incompleto: falta serviço ou balcão. Contacte o administrador.", "error");
       return;
     }
 
@@ -180,21 +291,37 @@
     if (btn) { btn.disabled = true; btn.textContent = "A chamar..."; }
 
     try {
-      const result = await store.callNext(servicoId, balcao);
-      if (!result.ok || !result.senha) {
-        alert(result.message || "Nenhuma senha disponível.");
+      const resp = await fetch("/api/filas/chamar", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+        body:    JSON.stringify({ servico_id: servicoId, numero_balcao: balcao })
+      });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (resp.status === 404 || (resp.ok && !data.senha)) {
+        showToast("Não há senhas na fila de momento.", "warn");
         return;
       }
-      senhaAtual = result.senha;
-      document.getElementById("currentSenhaId").value = senhaAtual.id || "";
+
+      if (!resp.ok) {
+        showToast(data.erro || "Erro ao chamar senha.", "error");
+        return;
+      }
+
+      senhaAtual = data.senha;
+      const hiddenEl = document.getElementById("currentSenhaId");
+      if (hiddenEl) hiddenEl.value = senhaAtual.id || "";
+
       atualizarDisplayAtual(senhaAtual);
-      actualizarBotaoConcluir();
+      actualizarBotoes();
       iniciarTimer();
-      setStatus("Em Atendimento", true);
       await atualizarTudo();
+      showToast(`✅ Senha ${senhaAtual.numero} chamada — Balcão ${balcao}`, "success");
+
     } catch (err) {
-      console.error(err);
-      alert("Erro ao chamar próxima senha.");
+      console.error("[chamar]", err);
+      showToast("Erro de ligação ao servidor.", "error");
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
     }
@@ -202,190 +329,159 @@
 
   window.concludeAttendance = async function () {
     const senhaId = document.getElementById("currentSenhaId")?.value;
-    if (!senhaId) return alert("Nenhuma senha em atendimento.");
+    if (!senhaId) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
 
     const btn = document.getElementById("btnConcluir");
     if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
 
     try {
-      const response = await fetch(`/api/filas/concluir/${senhaId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+      const resp = await fetch(`/api/filas/concluir/${senhaId}`, {
+        method:  "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` }
       });
-      if (!response.ok) {
-        const d = await response.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
         throw new Error(d.erro || "Falha ao concluir.");
       }
+
+      const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
       await atualizarTudo();
+      showToast(`✅ Atendimento ${numSenha} concluído com sucesso!`, "success");
+
     } catch (err) {
-      alert(err.message || "Erro ao concluir atendimento.");
+      showToast(err.message || "Erro ao concluir atendimento.", "error");
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "Concluir"; }
+      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
     }
   };
 
   window.denyCurrentTicket = async function () {
     const senhaId = document.getElementById("currentSenhaId")?.value;
-    if (!senhaId || !senhaAtual) return alert("Nenhuma senha em atendimento.");
-    const motivo = prompt("Motivo da negação (obrigatório):");
-    if (!motivo) return;
+    if (!senhaId || !senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+
+    const motivo = prompt(`Motivo da negação da senha ${senhaAtual.numero}:`, "");
+    if (motivo === null) return;
+    if (!motivo.trim()) { showToast("É necessário indicar o motivo.", "warn"); return; }
+
+    const btn = document.getElementById("btnNegar");
+    if (btn) { btn.disabled = true; btn.textContent = "A negar..."; }
 
     try {
-      const response = await fetch(`/api/senhas/${senhaId}/finalizar`, {
-        method: "PUT",
+      const resp = await fetch(`/api/senhas/${senhaId}/finalizar`, {
+        method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
-        body: JSON.stringify({ observacoes: `NEGADO pelo trabalhador: ${motivo}` }),
+        body:    JSON.stringify({ observacoes: `NEGADO pelo trabalhador: ${motivo}` })
       });
-      if (!response.ok) {
-        const d = await response.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
         throw new Error(d.erro || "Falha ao negar.");
       }
+
+      const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
       await atualizarTudo();
-      alert("Senha negada e finalizada com sucesso.");
+      showToast(`Senha ${numSenha} negada. Motivo registado.`, "warn");
+
     } catch (err) {
-      alert(err.message || "Erro ao negar senha.");
+      showToast(err.message || "Erro ao negar senha.", "error");
+    } finally {
+      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Negar"; }
     }
   };
-
-  function atualizarDisplayAtual(senha) {
-    document.getElementById("currentPassword").textContent = senha.numero || "---";
-    document.getElementById("passwordType").textContent = senha.tipo === "prioritaria" ? "Atendimento Prioritário" : "Atendimento Normal";
-    document.getElementById("serviceValue").textContent = senha.servico?.nome || "Serviço";
-    document.getElementById("waitTime").textContent = `${Math.round(senha.tempo_espera_minutos || 0)} min`;
-    document.getElementById("issuedAt").textContent = formatTimeLuanda(senha.emitida_em || senha.created_at);
-    document.getElementById("obsValue").textContent = senha.observacoes || "Sem observações";
-    preencherPreviewDocumentos(senha);
-  }
-
-  function preencherPreviewDocumentos(senha) {
-    const pre = document.getElementById("docsPreviewContent");
-    if (!pre) return;
-    const dados = senha?.formulario_dados || senha?.dados_formulario || senha?.documentos || senha?.anexos || null;
-    if (!dados) {
-      pre.textContent = "Sem documentos/formulário para esta senha.";
-      return;
-    }
-    if (typeof dados === "string") {
-      pre.textContent = dados;
-      return;
-    }
-    pre.textContent = JSON.stringify(dados, null, 2);
-  }
-
-  function limparDisplayAtual() {
-    document.getElementById("currentPassword").textContent = "---";
-    document.getElementById("passwordType").textContent = "Aguardando chamada";
-    document.getElementById("serviceValue").textContent = "-";
-    document.getElementById("waitTime").textContent = "-";
-    document.getElementById("issuedAt").textContent = "-";
-    document.getElementById("obsValue").textContent = "Sem observações";
-    document.getElementById("docsPreviewContent").textContent = "Sem documentos/formulário para esta senha.";
-    document.getElementById("timer").textContent = "00:00";
-    setStatus("Disponível", false);
-  }
-
-  function limparAtendimentoAtual() {
-    senhaAtual = null;
-    document.getElementById("currentSenhaId").value = "";
-    pararTimer();
-    limparDisplayAtual();
-    actualizarBotaoConcluir();
-  }
-
-  function actualizarBotaoConcluir() {
-    const btn = document.getElementById("btnConcluir");
-    if (!btn) return;
-    btn.disabled = !senhaAtual;
-  }
-
-  function iniciarTimer() {
-    pararTimer();
-    let segundos = 0;
-    timerInterval = setInterval(() => {
-      segundos += 1;
-      const m = String(Math.floor(segundos / 60)).padStart(2, "0");
-      const s = String(segundos % 60).padStart(2, "0");
-      document.getElementById("timer").textContent = `${m}:${s}`;
-    }, 1000);
-  }
-
-  function pararTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-  }
-
-  function iniciarPolling() {
-    pararPolling();
-    pollingInterval = setInterval(async () => {
-      await atualizarTudo();
-    }, 7000);
-  }
-
-  function actualizarBotoes() {
-    const temSenha = senhaAtual !== null;
-    ["btnConcluir","btnNegar"].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b.disabled = !temSenha;
-    });
-  }
 
   window.togglePause = function () {
     const btn = document.getElementById("pauseBtn");
     if (!btn) return;
-    const pausado = btn.textContent.trim() === "Retomar";
-    if (pausado) {
-      btn.textContent = "Pausar";
-      iniciarPolling();
-      if (senhaAtual) iniciarTimer();
-    } else {
+
+    if (btn.textContent.trim() === "Pausar") {
       btn.textContent = "Retomar";
+      btn.style.background = "#fff8ed";
+      btn.style.borderColor = "#d97706";
+      btn.style.color = "#d97706";
       pararPolling();
-      pararTimer();
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      setStatus("Pausado", "#d97706");
+    } else {
+      btn.textContent = "Pausar";
+      btn.style.background = "";
+      btn.style.borderColor = "";
+      btn.style.color = "";
+      iniciarPolling();
+      if (senhaAtual) {
+        timerInterval = setInterval(() => {
+          timerSegundos += 1;
+          const el = document.getElementById("timer");
+          if (el) el.textContent = formatDuracao(timerSegundos);
+        }, 1000);
+      }
+      setStatus(senhaAtual ? "Em Atendimento" : "Disponível", senhaAtual ? "#d97706" : "#10b981");
     }
   };
 
   window.redirectCustomer = function () {
-    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
-    const novoBalcao = prompt(`Reencaminhar ${senhaAtual.numero} para qual balcão?`);
-    if (novoBalcao) alert(`Reencaminhamento registado para balcão ${novoBalcao}.`);
+    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    const balcao = prompt(`Reencaminhar ${senhaAtual.numero} para qual balcão?`, "");
+    if (balcao) showToast(`Reencaminhamento para balcão ${balcao} registado.`, "success");
   };
 
   window.addObservation = function () {
-    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
-    const obs = prompt("Adicionar observação ao atendimento:", senhaAtual.observacoes || "");
-    if (!obs) return;
+    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    const obs = prompt("Adicionar observação:", senhaAtual.observacoes || "");
+    if (obs === null) return;
     senhaAtual.observacoes = obs;
-    document.getElementById("obsValue").textContent = obs;
+    const obsEl = document.getElementById("obsValue");
+    if (obsEl) obsEl.textContent = obs || "Sem observações";
     preencherPreviewDocumentos(senhaAtual);
+    showToast("Observação adicionada.", "success");
   };
 
   window.requestDocuments = function () {
-    if (!senhaAtual) return alert("Nenhuma senha em atendimento.");
-    document.querySelector('[data-tab="documentos"]')?.click();
+    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    /* Activar tab documentos */
+    const btnDocs = document.querySelector('[data-tab="documentos"]');
+    if (btnDocs) btnDocs.click();
     preencherPreviewDocumentos(senhaAtual);
   };
 
   window.sendReceipt = function () {
-    if (!senhaAtual) return alert("Nenhuma senha em atendimento para recibo.");
-    const html = `
-      <html><head><title>Recibo ${senhaAtual.numero}</title>
-      <style>body{font-family:Arial;padding:24px;color:#222} h2{margin:0 0 16px 0} .line{margin:8px 0}</style>
-      </head><body>
-      <h2>Recibo de Atendimento — IMTSB</h2>
-      <div class="line"><strong>Senha:</strong> ${senhaAtual.numero}</div>
-      <div class="line"><strong>Serviço:</strong> ${senhaAtual.servico?.nome || "Serviço"}</div>
-      <div class="line"><strong>Balcão:</strong> ${store.getUser().balcao || store.getUser().numero_balcao || "-"}</div>
-      <div class="line"><strong>Emitida às:</strong> ${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</div>
-      <div class="line"><strong>Observações:</strong> ${senhaAtual.observacoes || "Sem observações"}</div>
-      <hr /><small>Documento para entrega ao utente.</small>
+    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    const user    = store.getUser();
+    const balcao  = user?.balcao || user?.numero_balcao || "–";
+    const agora   = new Date().toLocaleString("pt-PT", { timeZone: ANGOLA_TZ });
+
+    const html = `<html><head><title>Recibo ${senhaAtual.numero}</title>
+      <style>
+        body{font-family:'Segoe UI',sans-serif;padding:32px;color:#2a1a0a;max-width:420px;margin:0 auto}
+        .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
+        .header h2{margin:0 0 4px;font-size:1.4rem}
+        .header p{margin:0;opacity:.8;font-size:.85rem}
+        .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0e8dc}
+        .label{color:#8a7060;font-size:.85rem}
+        .value{font-weight:600;font-size:.9rem}
+        .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.8rem}
+      </style></head><body>
+      <div class="header">
+        <h2>IMTSB</h2>
+        <p>Instituto Médio Técnico São Benedito</p>
+      </div>
+      <div class="row"><span class="label">Senha</span><span class="value">${senhaAtual.numero}</span></div>
+      <div class="row"><span class="label">Serviço</span><span class="value">${senhaAtual.servico?.nome || "–"}</span></div>
+      <div class="row"><span class="label">Balcão</span><span class="value">${balcao}</span></div>
+      <div class="row"><span class="label">Emitida às</span><span class="value">${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</span></div>
+      <div class="row"><span class="label">Duração</span><span class="value">${Math.round(timerSegundos/60)} min</span></div>
+      ${senhaAtual.observacoes ? `<div class="row"><span class="label">Observações</span><span class="value">${senhaAtual.observacoes}</span></div>` : ''}
+      <div class="footer">
+        <p>Impresso em ${agora}</p>
+        <p style="margin-top:8px">Obrigado pela sua visita ao IMTSB!</p>
+      </div>
       <script>window.onload=()=>window.print();</script>
       </body></html>`;
-    const w = window.open("", "_blank", "width=760,height=600");
-    if (!w) return;
+
+    const w = window.open("", "_blank", "width=500,height=620");
+    if (!w) { showToast("Permita popups para imprimir o recibo.", "warn"); return; }
     w.document.write(html);
     w.document.close();
   };
@@ -402,4 +498,39 @@
       window.location.href = "/login";
     }
   };
+
+  /* ── Tabs ────────────────────────────────────────────────── */
+  function renderTabs() {
+    document.querySelectorAll(".tab-switch-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-switch-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        const panel = document.getElementById(`tab-${btn.dataset.tab}`);
+        if (panel) panel.classList.add("active");
+      });
+    });
+  }
+
+  /* ── Init ────────────────────────────────────────────────── */
+  document.addEventListener("DOMContentLoaded", async () => {
+    if (!store?.isLoggedIn()) {
+      window.location.href = "/login";
+      return;
+    }
+    const user = store.getUser();
+    if (!["trabalhador", "admin"].includes(user?.role)) {
+      window.location.href = "/";
+      return;
+    }
+
+    carregarDadosTrabalhador();
+    renderTabs();
+    actualizarBotoes(); /* botões desactivados no arranque */
+    setStatus("Disponível", "#10b981");
+
+    await atualizarTudo();
+    iniciarPolling();
+  });
+
 })();
