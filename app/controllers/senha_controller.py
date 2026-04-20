@@ -10,7 +10,7 @@ ALTERAÇÕES:
 ═══════════════════════════════════════════════════════════════
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from app.services.senha_service import SenhaService
 from app.schemas.senha_schema import (
     EmitirSenhaSchema,
@@ -22,6 +22,9 @@ from app.schemas.senha_schema import (
 from app.utils.rate_limiter import rate_limit
 from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.models.senha import Senha
+from app.extensions import db
+import os, uuid
 
 senha_bp = Blueprint('senha', __name__)
 
@@ -273,3 +276,94 @@ def cancelar_senha(senha_id):
         return jsonify({"erro": str(e)}), 400
     except Exception:
         return jsonify({"erro": "Erro interno do servidor"}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# POST /api/senhas/:id/anexar   — Upload de documento
+# ═══════════════════════════════════════════════════════════════
+
+EXTENSOES_PERMITIDAS = {'pdf','png','jpg','jpeg','gif','doc','docx','xls','xlsx','txt'}
+
+def _ext_permitida(nome):
+    return '.' in nome and nome.rsplit('.',1)[1].lower() in EXTENSOES_PERMITIDAS
+
+@senha_bp.route('/<int:senha_id>/anexar', methods=['POST'])
+def anexar_ficheiro(senha_id):
+    """
+    POST /api/senhas/:id/anexar
+    Recebe ficheiro multipart/form-data e associa à senha.
+    Campo do formulário: 'ficheiro'
+    """
+    try:
+        senha = Senha.query.get(senha_id)
+        if not senha:
+            return jsonify({"erro": "Senha não encontrada"}), 404
+
+        if 'ficheiro' not in request.files:
+            return jsonify({"erro": "Nenhum ficheiro enviado"}), 400
+
+        f = request.files['ficheiro']
+        if not f.filename:
+            return jsonify({"erro": "Nome de ficheiro inválido"}), 400
+
+        if not _ext_permitida(f.filename):
+            return jsonify({"erro": f"Extensão não permitida. Use: {', '.join(sorted(EXTENSOES_PERMITIDAS))}"}), 400
+
+        ext          = f.filename.rsplit('.',1)[1].lower()
+        nome_seguro  = f"s{senha_id}_{uuid.uuid4().hex[:8]}.{ext}"
+        pasta        = current_app.config.get('UPLOAD_FOLDER', 'app/static/uploads')
+        os.makedirs(pasta, exist_ok=True)
+        f.save(os.path.join(pasta, nome_seguro))
+
+        # Guardar referência nas observacoes
+        obs_antiga = senha.observacoes or ''
+        # Remove entrada FICHEIRO anterior se existir
+        partes     = [p for p in obs_antiga.split(' | ') if p.strip() and not p.startswith('FICHEIRO:')]
+        partes.insert(0, f'FICHEIRO:{nome_seguro}')
+        senha.observacoes = ' | '.join(partes)
+        db.session.commit()
+
+        print(f"[OK] Ficheiro '{nome_seguro}' → senha {senha.numero}")
+        return jsonify({"mensagem": "Ficheiro anexado", "ficheiro": nome_seguro,
+                        "url": f"/api/senhas/{senha_id}/ficheiro"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"[ERROR] Anexar ficheiro: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({"erro": "Erro ao processar ficheiro"}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# GET /api/senhas/:id/ficheiro  — Download do documento
+# ═══════════════════════════════════════════════════════════════
+
+@senha_bp.route('/<int:senha_id>/ficheiro', methods=['GET'])
+def descarregar_ficheiro(senha_id):
+    """
+    GET /api/senhas/:id/ficheiro
+    Faz download do ficheiro associado à senha.
+    """
+    try:
+        senha = Senha.query.get(senha_id)
+        if not senha or not senha.observacoes:
+            return jsonify({"erro": "Sem ficheiro associado"}), 404
+
+        nome = None
+        for parte in senha.observacoes.split(' | '):
+            if parte.startswith('FICHEIRO:'):
+                nome = parte.replace('FICHEIRO:','').strip()
+                break
+
+        if not nome:
+            return jsonify({"erro": "Sem ficheiro associado"}), 404
+
+        pasta = os.path.abspath(current_app.config.get('UPLOAD_FOLDER', 'app/static/uploads'))
+        if not os.path.exists(os.path.join(pasta, nome)):
+            return jsonify({"erro": "Ficheiro não encontrado no servidor"}), 404
+
+        return send_from_directory(pasta, nome, as_attachment=True)
+
+    except Exception as e:
+        print(f"[ERROR] Download ficheiro: {e}")
+        return jsonify({"erro": "Erro ao descarregar ficheiro"}), 500

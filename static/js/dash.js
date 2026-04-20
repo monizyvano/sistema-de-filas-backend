@@ -78,8 +78,11 @@
 
   /* ── Timer ───────────────────────────────────────────────── */
   function iniciarTimer() {
-    pararTimer();
+    // Garantir que nunca há dois intervalos em simultâneo
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerSegundos = 0;
+    const el = document.getElementById("timer");
+    if (el) el.textContent = "00:00";
     timerInterval = setInterval(() => {
       timerSegundos += 1;
       const el = document.getElementById("timer");
@@ -87,7 +90,6 @@
     }, 1000);
   }
 
-  /* ✅ FIX: pararTimer estava indefinido */
   function pararTimer() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerSegundos = 0;
@@ -195,7 +197,7 @@
     if (!list) return;
     try {
       const serviceFilter = user?.servico_id ? `&servico_id=${user.servico_id}` : "";
-      const resp = await fetch(`/api/senhas?status=aguardando&page=1&per_page=20${serviceFilter}`, {
+      const resp = await fetch(`/api/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`, {
         headers: { Authorization: `Bearer ${store.getToken()}` }
       });
       if (!resp.ok) return;
@@ -474,21 +476,25 @@
     const btn = document.getElementById("pauseBtn");
     if (!btn) return;
 
-    if (btn.textContent.trim() === "Pausar") {
-      btn.textContent = "Retomar";
-      btn.style.background = "#fff8ed";
-      btn.style.borderColor = "#d97706";
-      btn.style.color = "#d97706";
+    const estaPausado = btn.dataset.pausado === "1";
+
+    if (!estaPausado) {
+      /* — Pausar ────────────────────────────────────────────── */
+      btn.dataset.pausado = "1";
+      btn.textContent = "▶ Retomar";
+      btn.style.cssText += "background:#fff8ed;color:#d97706;border-color:#fde68a;";
       pararPolling();
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
       setStatus("Pausado", "#d97706");
     } else {
-      btn.textContent = "Pausar";
-      btn.style.background = "";
-      btn.style.borderColor = "";
-      btn.style.color = "";
+      /* — Retomar ───────────────────────────────────────────── */
+      btn.dataset.pausado = "";
+      btn.textContent = "⏸ Pausar";
+      btn.style.cssText = "";
       iniciarPolling();
       if (senhaAtual) {
+        /* Retoma a partir dos segundos actuais (não reseta) */
+        if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(() => {
           timerSegundos += 1;
           const el = document.getElementById("timer");
@@ -501,13 +507,19 @@
 
   window.redirectCustomer = function () {
     if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    const balcao = prompt(`Reencaminhar ${senhaAtual.numero} para qual balcão?`, "");
-    if (balcao) showToast(`Reencaminhamento para balcão ${balcao} registado.`, "success");
+    const opcoes = ["1","2","3","4"].join(", ");
+    const balcao = prompt(
+      `Reencaminhar senha ${senhaAtual.numero} para qual balcão?\n(Balcões disponíveis: ${opcoes})`,
+      ""
+    );
+    if (balcao === null) return;
+    if (!balcao.trim()) { showToast("Indique o número do balcão.", "warn"); return; }
+    showToast(`↪ Senha ${senhaAtual.numero} reencaminhada para Balcão ${balcao.trim()}.`, "success");
   };
 
   window.addObservation = function () {
     if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    const obs = prompt("Adicionar observação:", senhaAtual.observacoes || "");
+    const obs = prompt("Adicionar observação:", senhaAtual.observacoes?.replace(/FICHEIRO:[^\|]+\|?/g,"").trim() || "");
     if (obs === null) return;
     senhaAtual.observacoes = obs;
     const obsEl = document.getElementById("obsValue");
@@ -518,10 +530,8 @@
 
   window.requestDocuments = function () {
     if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    /* Activar tab documentos */
-    const btnDocs = document.querySelector('[data-tab="documentos"]');
-    if (btnDocs) btnDocs.click();
-    preencherPreviewDocumentos(senhaAtual);
+    /* Abrir directamente o modal de documentos */
+    window.abrirDocumentoAtendimento();
   };
 
   window.sendReceipt = function () {
@@ -566,6 +576,128 @@
 
   window.showStatistics = function () {
     window.location.href = "/dashadm.html";
+  };
+
+  /* ── Modal Documentos do Atendimento ────────────────────── */
+  let _urlFicheiroAtual = null; // URL do ficheiro para o botão Visualizar
+
+  window.abrirDocumentoAtendimento = function () {
+    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+
+    const modal    = document.getElementById("modalDocumentos");
+    const titulo   = document.getElementById("modalSenhaTitulo");
+    const dadosEl  = document.getElementById("modalDadosForm");
+    const ficBloco = document.getElementById("modalFicheiroBloco");
+    const ficNome  = document.getElementById("modalFicheiroNome");
+    const btnDl    = document.getElementById("modalBtnDownload");
+    const semFich  = document.getElementById("modalSemFicheiro");
+
+    if (!modal) return;
+
+    if (titulo) titulo.textContent =
+      `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
+
+    const obs    = senhaAtual.observacoes || "";
+    const partes = obs.split(" | ").map(p => p.trim()).filter(Boolean);
+    const nomeFich  = partes.find(p => p.startsWith("FICHEIRO:"))
+                           ?.replace("FICHEIRO:","").trim() || null;
+    const linhasForm = partes
+      .filter(p => !p.startsWith("FICHEIRO:"))
+      .join("\n");
+
+    if (dadosEl) dadosEl.textContent = linhasForm || "Sem dados de formulário.";
+
+    if (nomeFich && ficBloco && semFich) {
+      ficBloco.style.display = "block";
+      semFich.style.display  = "none";
+      const nomeDisplay = nomeFich.split("_").slice(2).join("_") || nomeFich;
+      if (ficNome) ficNome.textContent = `📎 ${nomeDisplay}`;
+      _urlFicheiroAtual = `/api/senhas/${senhaAtual.id}/ficheiro`;
+      if (btnDl) btnDl.href = _urlFicheiroAtual;
+    } else {
+      if (ficBloco) ficBloco.style.display = "none";
+      if (semFich)  semFich.style.display  = "block";
+      _urlFicheiroAtual = null;
+    }
+
+    modal.style.display = "flex";
+
+    /* Fechar ao clicar no overlay (fora do card) */
+    modal.onclick = function(e) {
+      if (e.target === modal) window.fecharModalDocumentos();
+    };
+  };
+
+  /* Chamado pelo botão Visualizar (onclick no HTML) */
+  window.visualizarFicheiroModal = function () {
+    if (!_urlFicheiroAtual) { showToast("Sem documento neste pedido.", "warn"); return; }
+    window.open(_urlFicheiroAtual, "_blank", "noopener,noreferrer");
+  };
+
+  window.fecharModalDocumentos = function () {
+    const modal = document.getElementById("modalDocumentos");
+    if (modal) { modal.style.display = "none"; modal.onclick = null; }
+  };
+
+  window.imprimirDocumentoAtendimento = function () {
+    if (!senhaAtual) return;
+    const user   = store.getUser();
+    const agora  = new Date().toLocaleString("pt-PT", { timeZone: ANGOLA_TZ });
+    const obs    = senhaAtual.observacoes || "";
+    const partes = obs.split(" | ").map(p => p.trim()).filter(Boolean);
+    const nomeFich   = partes.find(p => p.startsWith("FICHEIRO:"))
+                             ?.replace("FICHEIRO:","").trim() || null;
+    const linhasForm = partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
+
+    const ficheiroHtml = nomeFich
+      ? `<div class="row">
+           <span class="label">Documento</span>
+           <span class="value">
+             <a href="/api/senhas/${senhaAtual.id}/ficheiro" target="_blank">
+               ${nomeFich.split("_").slice(2).join("_") || nomeFich}
+             </a>
+           </span>
+         </div>`
+      : "";
+
+    const html = `<html><head><title>Pedido ${senhaAtual.numero}</title>
+      <style>
+        body{font-family:'Segoe UI',sans-serif;padding:32px;color:#2a1a0a;max-width:560px;margin:0 auto}
+        .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+          padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
+        .header h2{margin:0 0 4px;font-size:1.4rem}
+        .header p{margin:0;opacity:.8;font-size:.85rem}
+        .row{display:flex;justify-content:space-between;padding:10px 0;
+          border-bottom:1px solid #f0e8dc;gap:12px}
+        .label{color:#8a7060;font-size:.85rem;min-width:120px}
+        .value{font-weight:600;font-size:.9rem;text-align:right;word-break:break-word}
+        .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:8px;
+          padding:12px;white-space:pre-wrap;font-size:.88rem;line-height:1.7;margin:12px 0}
+        .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.8rem}
+        a{color:#2563eb}
+      </style></head><body>
+      <div class="header">
+        <h2>IMTSB · Pedido de Atendimento</h2>
+        <p>Instituto Médio Técnico São Benedito</p>
+      </div>
+      <div class="row"><span class="label">Senha</span><span class="value">${senhaAtual.numero}</span></div>
+      <div class="row"><span class="label">Serviço</span><span class="value">${senhaAtual.servico?.nome || "–"}</span></div>
+      <div class="row"><span class="label">Balcão</span><span class="value">${user?.balcao || "–"}</span></div>
+      <div class="row"><span class="label">Emitida às</span><span class="value">${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</span></div>
+      ${ficheiroHtml}
+      <div style="margin-top:16px;font-size:.8rem;font-weight:700;color:#8a7060;
+                  text-transform:uppercase;letter-spacing:.06em;">Dados do Pedido</div>
+      <div class="dados">${linhasForm || "Sem dados registados."}</div>
+      <div class="footer">
+        <p>Impresso em ${agora} · Atendente: ${user?.name || "–"}</p>
+      </div>
+      <script>window.onload=()=>{window.print();}</script>
+      </body></html>`;
+
+    const w = window.open("", "_blank", "width=620,height=720");
+    if (!w) { showToast("Permita popups para imprimir.", "warn"); return; }
+    w.document.write(html);
+    w.document.close();
   };
 
   window.sair = function () {

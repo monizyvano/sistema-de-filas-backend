@@ -104,7 +104,7 @@
                         <button class="btn-action btn-pause" onclick="togglePause()" id="pauseBtn">
                             ⏸ Pausar
                         </button>
-                        <button class="btn-action btn-redirect" onclick="redirectCustomer()">
+                       <button class="btn-action btn-redirect" onclick="redirectCustomer()">
                             ↪ Redirecionar
                         </button>
                         <button class="btn-action btn-docs" onclick="addObservation()">
@@ -122,11 +122,100 @@
                         <button class="btn-action btn-redirect" onclick="sendReceipt()" style="justify-content:flex-start;padding:.85rem 1rem;">
                             🖨 Imprimir Recibo
                         </button>
-                        <button class="btn-action btn-pause" onclick="showStatistics()" style="justify-content:flex-start;padding:.85rem 1rem;">
-                            📊 Ver Estatísticas
+                        <button class="btn-action btn-conclude" onclick="abrirDocumentoAtendimento()" style="justify-content:flex-start;padding:.85rem 1rem;">
+                            📁 Documentos do Atendimento
                         </button>
                     </div>
                 </div>
+
+            <!-- MODAL — Documentos do Atendimento -->
+            <div id="modalDocumentos" style="
+                display:none;position:fixed;inset:0;z-index:9999;
+                background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+                align-items:center;justify-content:center;padding:1rem;
+            ">
+                <div style="
+                    background:white;border-radius:20px;max-width:560px;width:100%;
+                    max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35);
+                ">
+                    <!-- Cabeçalho -->
+                    <div style="
+                        background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+                        padding:1.25rem 1.5rem;border-radius:20px 20px 0 0;
+                        display:flex;align-items:center;justify-content:space-between;
+                    ">
+                        <div>
+                            <div style="font-size:.75rem;opacity:.8;text-transform:uppercase;letter-spacing:.08em;">
+                                IMTSB · Documentos do Atendimento
+                            </div>
+                            <div id="modalSenhaTitulo" style="font-size:1.3rem;font-weight:800;margin-top:.2rem;">—</div>
+                        </div>
+                        <button onclick="fecharModalDocumentos()" style="
+                            background:rgba(255,255,255,.2);border:none;color:white;
+                            width:36px;height:36px;border-radius:50%;cursor:pointer;
+                            font-size:1.2rem;display:flex;align-items:center;justify-content:center;
+                        ">✕</button>
+                    </div>
+
+                    <!-- Corpo -->
+                    <div style="padding:1.5rem;">
+
+                        <!-- Dados do formulário -->
+                        <div style="margin-bottom:1rem;">
+                            <div style="font-size:.72rem;font-weight:700;color:#8c6746;
+                                        text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
+                                Dados do Formulário
+                            </div>
+                            <div id="modalDadosForm" style="
+                                background:#fdf8f5;border:1px solid #e8d5c4;border-radius:12px;
+                                padding:1rem;font-size:.88rem;line-height:1.8;color:#3e2510;
+                                white-space:pre-wrap;min-height:60px;
+                            ">—</div>
+                        </div>
+
+                        <!-- Documento anexado -->
+                        <div id="modalFicheiroBloco" style="
+                            background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;
+                            padding:1rem;display:none;margin-bottom:1rem;
+                        ">
+                            <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;
+                                        text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
+                                Documento Anexado
+                            </div>
+                            <div id="modalFicheiroNome" style="font-size:.88rem;color:#1e3a5f;margin-bottom:.75rem;">—</div>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                                <a id="modalBtnDownload" href="#" download style="
+                                    background:#2563eb;color:white;padding:.5rem 1.1rem;
+                                    border-radius:10px;font-size:.85rem;font-weight:700;
+                                    text-decoration:none;display:inline-block;
+                                ">⬇ Download</a>
+                               <!-- <button id="modalBtnVisualizar" onclick="visualizarFicheiroModal()" style="
+                                    background:#e0f2fe;color:#0369a1;padding:.5rem 1.1rem;
+                                    border-radius:10px;font-size:.85rem;font-weight:700;
+                                    border:none;cursor:pointer;display:inline-block;
+                                ">👁 Visualizar</button> -->
+                            </div>
+                        </div>
+
+                        <!-- Sem ficheiro -->
+                        <div id="modalSemFicheiro" style="
+                            background:#f9f4ef;border:1px dashed #d9cabc;border-radius:12px;
+                            padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;
+                        ">
+                            Sem documento anexado neste pedido.
+                        </div>
+
+                        <!-- Botão imprimir -->
+                        <div style="margin-top:1rem;text-align:right;">
+                            <button onclick="imprimirDocumentoAtendimento()" style="
+                                background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+                                border:none;padding:.65rem 1.4rem;border-radius:12px;
+                                font-size:.9rem;font-weight:700;cursor:pointer;
+                            ">🖨 Imprimir Tudo</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
             </div>
         </div>
 
@@ -152,13 +241,13 @@
                 </div>
             </div>
 
-            <!-- Fila ao vivo -->
+            <!-- Fila ao vivo 
             <div class="card">
                 <div class="card-title">⚡ Fila Ao Vivo</div>
                 <div class="live-queue-list" id="liveQueueList">
                     <div class="live-queue-empty" style="color:var(--text-muted);font-size:.85rem;padding:.25rem 0;">A carregar...</div>
                 </div>
-            </div>
+            </div> -->
 
             <!-- Histórico hoje -->
             <div class="card">

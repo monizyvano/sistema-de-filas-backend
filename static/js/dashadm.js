@@ -548,7 +548,15 @@
                   <td>${atendente}</td>
                   <td>${hora}</td>
                   <td>${duracao}min</td>
-                  <td><span class="performance-badge badge-excellent">✓ Concluído</span></td>
+                  <td style="display:flex;gap:.4rem;align-items:center;">
+                    <span class="performance-badge badge-excellent">✓ Concluído</span>
+                    <button onclick="verDetalhesSenha(${s.id},'${s.numero}','${servico}')" style="
+                      background:#f0e8dc;border:none;border-radius:8px;
+                      padding:.25rem .6rem;font-size:.78rem;font-weight:700;
+                      color:#6b4226;cursor:pointer;" title="Ver dados do pedido">
+                      👁 Ver
+                    </button>
+                  </td>
                 </tr>`;
             }).join('');
 
@@ -680,6 +688,172 @@
 
     window.sair = function () {
         if (confirm("Deseja sair do sistema?")) { pararPolling(); store.logout(); window.location.href = '/login'; }
+    };
+
+    /* ═══════════════════════════════════════════════════════
+       MODAL DETALHES DO PEDIDO (Histórico Admin)
+    ═══════════════════════════════════════════════════════ */
+
+    /* Estado do modal para impressão */
+    let _dadosModalAdmin = null;
+
+    window.verDetalhesSenha = async function (id, numero, servico) {
+        const modal = document.getElementById('modalDetalhesAdmin');
+        if (!modal) return;
+
+        /* Abrir modal com estado de carregamento */
+        document.getElementById('mda-titulo').textContent  = `Senha ${numero} · ${servico}`;
+        document.getElementById('mda-form').textContent    = 'A carregar...';
+        document.getElementById('mda-servico').textContent = servico;
+        document.getElementById('mda-atendente').textContent = '–';
+        document.getElementById('mda-hora').textContent    = '–';
+        document.getElementById('mda-duracao').textContent = '–';
+        document.getElementById('mda-fich-bloco').style.display = 'none';
+        document.getElementById('mda-sem-fich').style.display   = 'block';
+        modal.style.display = 'flex';
+
+        try {
+            const resp = await fetch(`/api/senhas/${id}`, {
+                headers: { 'Authorization': `Bearer ${store.getToken()}` }
+            });
+            if (!resp.ok) {
+                document.getElementById('mda-form').textContent = 'Erro ao carregar dados.';
+                return;
+            }
+            const s = await resp.json();
+            _dadosModalAdmin = s;
+
+            /* — Meta ──────────────────────────────────────────── */
+            const horaStr = s.emitida_em
+                ? new Date(s.emitida_em.endsWith('Z') ? s.emitida_em : s.emitida_em + 'Z')
+                    .toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit', timeZone:'Africa/Luanda' })
+                : '–';
+
+            document.getElementById('mda-atendente').textContent =
+                s.atendente?.nome || '–';
+            document.getElementById('mda-hora').textContent     = horaStr;
+            document.getElementById('mda-duracao').textContent  =
+                s.tempo_atendimento_minutos ? `${s.tempo_atendimento_minutos} min` : '–';
+
+            /* — Dados do formulário ────────────────────────────── */
+            const obs    = s.observacoes || '';
+            const partes = obs.split(' | ').map(p => p.trim()).filter(Boolean);
+            const nomeFich   = partes.find(p => p.startsWith('FICHEIRO:'))
+                                     ?.replace('FICHEIRO:', '').trim() || null;
+            const linhasForm = partes
+                .filter(p => !p.startsWith('FICHEIRO:'))
+                .join('\n');
+
+            document.getElementById('mda-form').textContent =
+                linhasForm || 'Sem dados de formulário registados.';
+
+            /* — Documento ─────────────────────────────────────── */
+            if (nomeFich) {
+                const nomeDisplay = nomeFich.split('_').slice(2).join('_') || nomeFich;
+                const url = `/api/senhas/${id}/ficheiro`;
+                document.getElementById('mda-fich-nome').textContent = `📎 ${nomeDisplay}`;
+                document.getElementById('mda-btn-dl').href  = url;
+                /* Visualizar: window.open para evitar bloqueio de popups em <a> */
+                document.getElementById('mda-btn-vis').onclick = () =>
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                document.getElementById('mda-fich-bloco').style.display = 'block';
+                document.getElementById('mda-sem-fich').style.display   = 'none';
+            } else {
+                document.getElementById('mda-fich-bloco').style.display = 'none';
+                document.getElementById('mda-sem-fich').style.display   = 'block';
+            }
+
+        } catch (err) {
+            console.error('❌ verDetalhesSenha:', err);
+            document.getElementById('mda-form').textContent = 'Erro de ligação.';
+        }
+    };
+
+    window.fecharModalAdmin = function () {
+        const modal = document.getElementById('modalDetalhesAdmin');
+        if (modal) modal.style.display = 'none';
+        _dadosModalAdmin = null;
+    };
+
+    /* Fechar ao clicar fora */
+    document.addEventListener('click', function (e) {
+        const modal = document.getElementById('modalDetalhesAdmin');
+        if (modal && e.target === modal) { window.fecharModalAdmin(); }
+    });
+
+    window.imprimirDetalheAdmin = function () {
+        const s = _dadosModalAdmin;
+        if (!s) return;
+
+        const obs    = s.observacoes || '';
+        const partes = obs.split(' | ').map(p => p.trim()).filter(Boolean);
+        const nomeFich   = partes.find(p => p.startsWith('FICHEIRO:'))
+                                 ?.replace('FICHEIRO:', '').trim() || null;
+        const linhasForm = partes.filter(p => !p.startsWith('FICHEIRO:')).join('\n');
+
+        const horaStr = s.emitida_em
+            ? new Date(s.emitida_em.endsWith('Z') ? s.emitida_em : s.emitida_em + 'Z')
+                .toLocaleString('pt-PT', { timeZone:'Africa/Luanda',
+                    day:'2-digit', month:'2-digit', year:'numeric',
+                    hour:'2-digit', minute:'2-digit' })
+            : '–';
+        const agora = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
+
+        const ficheiroHtml = nomeFich
+            ? `<div class="row">
+                 <span class="label">Documento</span>
+                 <span class="value">
+                   <a href="/api/senhas/${s.id}/ficheiro" target="_blank">
+                     ${nomeFich.split('_').slice(2).join('_') || nomeFich}
+                   </a>
+                 </span>
+               </div>`
+            : '';
+
+        const html = `<html><head><title>Pedido ${s.numero}</title>
+          <style>
+            body{font-family:'Segoe UI',sans-serif;padding:32px;color:#2a1a0a;max-width:560px;margin:0 auto}
+            .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+              padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
+            .header h2{margin:0 0 4px;font-size:1.35rem}
+            .header p{margin:0;opacity:.8;font-size:.82rem}
+            .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+            .cell{background:#fdf8f5;border-radius:8px;padding:10px 12px}
+            .cell .lbl{font-size:.72rem;color:#8a7060;text-transform:uppercase;
+              letter-spacing:.05em;margin-bottom:3px}
+            .cell .val{font-weight:700;font-size:.9rem;color:#3e2510}
+            .dados-label{font-size:.72rem;font-weight:700;color:#8a7060;
+              text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+            .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:8px;
+              padding:12px;white-space:pre-wrap;font-size:.88rem;line-height:1.7;margin-bottom:16px}
+            .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.78rem}
+            a{color:#2563eb}
+          </style></head><body>
+          <div class="header">
+            <h2>IMTSB · Pedido de Atendimento</h2>
+            <p>Instituto Médio Técnico São Benedito · Emitido pelo Administrador</p>
+          </div>
+          <div class="grid">
+            <div class="cell"><div class="lbl">Senha</div><div class="val">${s.numero}</div></div>
+            <div class="cell"><div class="lbl">Serviço</div><div class="val">${s.servico?.nome || '–'}</div></div>
+            <div class="cell"><div class="lbl">Atendente</div><div class="val">${s.atendente?.nome || '–'}</div></div>
+            <div class="cell"><div class="lbl">Emitida às</div><div class="val">${horaStr}</div></div>
+            <div class="cell"><div class="lbl">Duração</div><div class="val">${s.tempo_atendimento_minutos ? s.tempo_atendimento_minutos + ' min' : '–'}</div></div>
+            <div class="cell"><div class="lbl">Tipo</div><div class="val">${s.tipo === 'prioritaria' ? '★ Prioritária' : 'Normal'}</div></div>
+          </div>
+          ${ficheiroHtml}
+          <div class="dados-label">Dados do Pedido</div>
+          <div class="dados">${linhasForm || 'Sem dados registados.'}</div>
+          <div class="footer">
+            <p>Impresso em ${agora} · Sistema de Filas IMTSB</p>
+          </div>
+          <script>window.onload=()=>window.print();<\/script>
+          </body></html>`;
+
+        const w = window.open('', '_blank', 'width=640,height=750');
+        if (!w) { showToast('Permita popups para imprimir.', 'error'); return; }
+        w.document.write(html);
+        w.document.close();
     };
 
     /* ═══════════════════════════════════════════════════════

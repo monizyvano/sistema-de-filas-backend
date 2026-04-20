@@ -171,10 +171,36 @@
       if (tempoEl)  tempoEl.textContent = 'Concluído';
       if (estadoEl) estadoEl.textContent = 'Atendimento concluído com sucesso';
 
+      /* Display principal */
+      const numEl = document.getElementById('currentTicket');
+      if (numEl) { numEl.style.color = '#22c55e'; }
       const statusEl = document.getElementById('currentStatus');
       if (statusEl) { statusEl.textContent = '✓ Concluída'; statusEl.style.color = '#22c55e'; }
 
-      if (mudou) mostrarMensagem('✅ O seu atendimento foi concluído. Obrigado!', 'ok');
+      /* Banner de conclusão (só na primeira detecção) */
+      if (mudou) {
+        mostrarMensagem('✅ Atendimento concluído! Obrigado pela sua visita ao IMTSB.', 'ok');
+
+        /* Banner verde (mesmo sistema do banner de chamada) */
+        const existing = document.getElementById('callBanner');
+        if (existing) existing.remove();
+        const banner = document.createElement('div');
+        banner.id = 'callBanner';
+        banner.innerHTML = `
+          <div class="call-banner-inner" style="background:linear-gradient(135deg,#065f46,#059669);">
+            <div class="call-banner-icon">✅</div>
+            <div class="call-banner-text">
+              <div class="call-banner-senha">Senha <strong>${dados.numero}</strong></div>
+              <div class="call-banner-instrucao">Atendimento concluído!</div>
+              <div class="call-banner-atendente">Obrigado pela sua visita ao IMTSB</div>
+            </div>
+            <button class="call-banner-close" onclick="document.getElementById('callBanner')?.remove()">✕</button>
+          </div>`;
+        /* Reutilizar o mesmo estilo do banner de chamada */
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:linear-gradient(135deg,#065f46,#059669);color:white;box-shadow:0 8px 32px rgba(0,0,0,.35);animation:slideDown .4s cubic-bezier(.16,1,.3,1);';
+        document.body.prepend(banner);
+        setTimeout(() => banner.remove(), 8000);
+      }
 
       pararAcompanhamento();
       setTimeout(() => { limparSenhaLocal(); atualizarDisplaySenha(); }, 8000);

@@ -249,6 +249,121 @@
     </main>
 
     <!-- ===================================================
+         MODAL — Detalhes do Pedido (Histórico Admin)
+    =================================================== -->
+    <div id="modalDetalhesAdmin" style="
+        display:none;position:fixed;inset:0;z-index:9999;
+        background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+        align-items:center;justify-content:center;padding:1rem;
+    ">
+        <div style="
+            background:white;border-radius:20px;max-width:580px;width:100%;
+            max-height:88vh;overflow-y:auto;
+            box-shadow:0 24px 64px rgba(0,0,0,.35);
+        ">
+            <!-- Cabeçalho -->
+            <div style="
+                background:linear-gradient(135deg,#3e2510,#6b4226);
+                color:white;padding:1.25rem 1.5rem;
+                border-radius:20px 20px 0 0;
+                display:flex;align-items:center;justify-content:space-between;
+            ">
+                <div>
+                    <div style="font-size:.72rem;opacity:.8;text-transform:uppercase;letter-spacing:.08em;">
+                        IMTSB · Dados do Pedido
+                    </div>
+                    <div id="mda-titulo" style="font-size:1.25rem;font-weight:800;margin-top:.2rem;">—</div>
+                </div>
+                <button onclick="fecharModalAdmin()" style="
+                    background:rgba(255,255,255,.2);border:none;color:white;
+                    width:36px;height:36px;border-radius:50%;cursor:pointer;
+                    font-size:1.1rem;display:flex;align-items:center;justify-content:center;
+                ">✕</button>
+            </div>
+
+            <!-- Corpo -->
+            <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+
+                <!-- Meta da senha -->
+                <div style="
+                    display:grid;grid-template-columns:1fr 1fr;gap:.5rem;
+                ">
+                    <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
+                                    letter-spacing:.06em;margin-bottom:.2rem;">Serviço</div>
+                        <div id="mda-servico" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
+                    </div>
+                    <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
+                                    letter-spacing:.06em;margin-bottom:.2rem;">Atendente</div>
+                        <div id="mda-atendente" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
+                    </div>
+                    <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
+                                    letter-spacing:.06em;margin-bottom:.2rem;">Emitida às</div>
+                        <div id="mda-hora" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
+                    </div>
+                    <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
+                                    letter-spacing:.06em;margin-bottom:.2rem;">Duração</div>
+                        <div id="mda-duracao" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
+                    </div>
+                </div>
+
+                <!-- Dados do formulário -->
+                <div>
+                    <div style="font-size:.72rem;font-weight:700;color:#8c6746;
+                                text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
+                        Dados do Formulário
+                    </div>
+                    <div id="mda-form" style="
+                        background:#fdf8f5;border:1px solid #e8d5c4;border-radius:12px;
+                        padding:1rem;font-size:.88rem;line-height:1.85;color:#3e2510;
+                        white-space:pre-wrap;min-height:56px;
+                    ">A carregar...</div>
+                </div>
+
+                <!-- Documento anexado -->
+                <div id="mda-fich-bloco" style="
+                    background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;
+                    padding:1rem;display:none;
+                ">
+                    <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;
+                                text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
+                        Documento Anexado
+                    </div>
+                    <div id="mda-fich-nome" style="font-size:.88rem;color:#1e3a5f;margin-bottom:.75rem;">—</div>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                        <a id="mda-btn-dl"  href="#" target="_blank" download style="
+                            background:#2563eb;color:white;padding:.5rem 1.1rem;
+                            border-radius:10px;font-size:.85rem;font-weight:700;
+                            text-decoration:none;">⬇ Download</a>
+                        <button id="mda-btn-vis" style="
+                            background:#e0f2fe;color:#0369a1;padding:.5rem 1.1rem;
+                            border-radius:10px;font-size:.85rem;font-weight:700;
+                            border:none;cursor:pointer;">👁 Visualizar</button>
+                    </div>
+                </div>
+
+                <!-- Sem ficheiro -->
+                <div id="mda-sem-fich" style="
+                    background:#f9f4ef;border:1px dashed #d9cabc;border-radius:12px;
+                    padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;
+                ">Sem documento anexado.</div>
+
+                <!-- Botão imprimir -->
+                <div style="text-align:right;">
+                    <button id="mda-btn-imprimir" onclick="imprimirDetalheAdmin()" style="
+                        background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+                        border:none;padding:.65rem 1.4rem;border-radius:12px;
+                        font-size:.9rem;font-weight:700;cursor:pointer;
+                    ">🖨 Imprimir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================
          SCRIPTS
     =================================================== -->
     <script src="/static/js/api-config.js"></script>
