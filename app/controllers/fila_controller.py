@@ -133,6 +133,75 @@ def obter_painel_fila(servico_id):
         return jsonify(FilaService.obter_painel(servico_id)), 200
     except Exception as e:
         return jsonify({'erro': 'Erro ao obter painel'}), 500
+    
+# ── GET /api/filas/status  (PÚBLICO, sem JWT) ────────────────
+ 
+@fila_bp.route('/status', methods=['GET'])
+def obter_status_todas_filas():
+    """
+    GET /api/filas/status
+ 
+    Devolve o número de senhas aguardando por cada serviço activo.
+    Rota pública — não requer JWT.
+    Usada pelo dashboard admin e ecrã de TV para tempo real.
+ 
+    Resposta (200):
+        {
+            "filas": [
+                {
+                    "servico_id":   1,
+                    "nome":         "Secretaria Académica",
+                    "icone":        "📄",
+                    "aguardando":   3,
+                    "atendendo":    1
+                },
+                ...
+            ],
+            "total_aguardando": 7,
+            "total_atendendo":  2
+        }
+    """
+    try:
+        from app.models import Servico, Senha
+        from sqlalchemy import func
+ 
+        servicos = Servico.query.filter_by(ativo=True).order_by(Servico.ordem_exibicao).all()
+ 
+        filas   = []
+        total_a = 0
+        total_e = 0
+ 
+        for s in servicos:
+            aguardando = Senha.query.filter_by(
+                servico_id=s.id,
+                status='aguardando'
+            ).count()
+ 
+            atendendo = Senha.query.filter(
+                Senha.servico_id == s.id,
+                Senha.status.in_(['chamando', 'atendendo'])
+            ).count()
+ 
+            total_a += aguardando
+            total_e += atendendo
+ 
+            filas.append({
+                "servico_id":  s.id,
+                "nome":        s.nome,
+                "icone":       s.icone or "📋",
+                "aguardando":  aguardando,
+                "atendendo":   atendendo
+            })
+ 
+        return jsonify({
+            "filas":             filas,
+            "total_aguardando":  total_a,
+            "total_atendendo":   total_e
+        }), 200
+ 
+    except Exception as e:
+        print(f"[ERROR] obter_status_todas_filas: {e}")
+        return jsonify({'erro': 'Erro ao obter status das filas'}), 500
 
 
 # ── PUT /api/filas/cancelar/:id ──────────────────────────────

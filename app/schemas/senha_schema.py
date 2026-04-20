@@ -36,7 +36,15 @@ class EmitirSenhaSchema(Schema):
         validate=validate.Range(min=1, max=999999, error="utente_id inválido"),
         load_default=None
     )
-    
+
+    # ✅ FIX Sprint 3 — dados do formulário (SERVIÇO: X | Campo: valor | ...)
+    observacoes = fields.String(
+        required=False,
+        allow_none=True,
+        validate=validate.Length(max=2000, error="Observações muito longas"),
+        load_default=None
+    )
+
     @validates('usuario_contato')
     def validate_contato(self, value):
         if value:

@@ -111,15 +111,15 @@ class Senha(BaseModel):
             'utente_id': self.utente_id,
             'numero_balcao': self.numero_balcao,
             'usuario_contato': self.usuario_contato,
-            'emitida_em': self.emitida_em.isoformat() if self.emitida_em else None,
-            'chamada_em': self.chamada_em.isoformat() if self.chamada_em else None,
-            'atendimento_iniciado_em': self.atendimento_iniciado_em.isoformat() if self.atendimento_iniciado_em else None,
-            'atendimento_concluido_em': self.atendimento_concluido_em.isoformat() if self.atendimento_concluido_em else None,
+            'emitida_em': (self.emitida_em.isoformat() + 'Z') if self.emitida_em else None,
+            'chamada_em': (self.chamada_em.isoformat() + 'Z') if self.chamada_em else None,
+            'atendimento_iniciado_em': (self.atendimento_iniciado_em.isoformat() + 'Z') if self.atendimento_iniciado_em else None,
+            'atendimento_concluido_em': (self.atendimento_concluido_em.isoformat() + 'Z') if self.atendimento_concluido_em else None,
             'tempo_espera_minutos': self.tempo_espera_minutos,
             'tempo_atendimento_minutos': self.tempo_atendimento_minutos,
             'observacoes': self.observacoes,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'created_at':(self.created_at.isoformat() + 'Z') if self.created_at else None,
+            'updated_at': (self.updated_at.isoformat() + 'Z') if self.updated_at else None,
         }
 
         if include_relationships:

@@ -25,11 +25,16 @@ class SenhaService:
 
     @staticmethod
     def emitir_senha(servico_id: int, tipo: str = 'normal',
-                     usuario_contato: str = None, utente_id: int = None) -> Senha:
+                     usuario_contato: str = None, utente_id: int = None,
+                     observacoes: str = None) -> Senha:
         """
         Cria e persiste uma nova senha de atendimento.
         Numeração diária: N001, N002, ... reinicia a cada dia.
         Prioritárias usam prefixo 'P'.
+
+        Args:
+            observacoes: Dados do formulário do utente
+                         (ex: "SERVIÇO: Tesouraria | Tipo de pagamento: Propinas | ...")
         """
         hoje    = datetime.utcnow().date()
         prefixo = 'P' if tipo == 'prioritaria' else 'N'
@@ -50,12 +55,17 @@ class SenhaService:
             utente_id=utente_id
         )
 
+        # ✅ FIX: observacoes definido após __init__ (o modelo não aceita no construtor)
+        if observacoes:
+            senha.observacoes = observacoes
+
         db.session.add(senha)
         db.session.commit()
         db.session.refresh(senha)
 
         print(f"\n[SenhaService] Emitida: {senha.numero} | "
-              f"Serviço: {servico_id} | Tipo: {tipo}")
+              f"Serviço: {servico_id} | Tipo: {tipo} | "
+              f"Obs: {'✅' if observacoes else '—'}")
         return senha
 
     # ─────────────────────────────────────────────────────────

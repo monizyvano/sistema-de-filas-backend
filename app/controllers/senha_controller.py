@@ -46,10 +46,11 @@ def emitir_senha():
 
     try:
         senha = SenhaService.emitir_senha(
-            servico_id=dados['servico_id'],
-            tipo=dados['tipo'],
-            usuario_contato=dados.get('usuario_contato'),
-            utente_id=dados.get('utente_id')
+            servico_id      = dados['servico_id'],
+            tipo            = dados['tipo'],
+            usuario_contato = dados.get('usuario_contato'),
+            utente_id       = dados.get('utente_id'),
+            observacoes     = dados.get('observacoes')   # ✅ Sprint 3
         )
         return jsonify({
             'mensagem': 'Senha emitida com sucesso',

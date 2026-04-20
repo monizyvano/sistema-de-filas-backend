@@ -1,27 +1,52 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-<meta charset="UTF-8">
-<title>Reconfirmações</title>
-<link rel="stylesheet" href="/static/css/principal.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reconfirmações — IMTSB</title>
+  <link rel="stylesheet" href="/static/css/service-form.css">
 </head>
+<body data-service="Reconfirmacao">
+  <main class="page">
+    <div class="top">
+      <a class="back" href="/visitante.html">← Voltar</a>
+      <strong>Secretaria Académica</strong>
+    </div>
+    <section class="card">
+      <h1 id="serviceTitle">Reconfirmações</h1>
+      <p class="hint">Preencha o formulário e emita a sua senha de atendimento.</p>
+      <form id="serviceForm" class="form-grid">
 
-<body>
-    <main class="main-content">
-        <a href="/principal.html" class="btn-voltar">Voltar</a>
-        <section class="hero">
-            <h1>Reconfirmações</h1>
-            <ul class="list">
-                <li>Confirmação anual</li>
-                <li>Actualização de dados</li>
-                <li>Mudança de turno</li>
-            </ul>
-        </section>
-    </main>
+        <div id="dynamicFields"></div>
+
+        <div>
+          <label for="notificationEmail">Email para notificações (opcional)</label>
+          <input id="notificationEmail" type="email" placeholder="exemplo@email.com">
+        </div>
+
+        <div class="docs-box">
+          <strong>📋 Documentos necessários:</strong>
+          <ul id="requiredDocs"></ul>
+        </div>
+
+        <div id="attachmentsFields" class="attachments-grid"></div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">
+            Enviar Formulário e Emitir Senha
+          </button>
+          <a class="btn" href="/visitante.html" style="background:#f3ece6;color:#401903;">
+            Cancelar
+          </a>
+        </div>
+        <div id="formMsg" class="msg"></div>
+
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/api-config.js"></script>
+  <script src="/static/js/realtime-store.js"></script>
+  <script src="/static/js/service-form.js"></script>
 </body>
 </html>
-
-
-
-
-

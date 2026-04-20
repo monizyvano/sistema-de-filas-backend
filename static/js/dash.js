@@ -29,11 +29,20 @@
   }
   function keyFromDate(value) {
     if (!value) return "";
-    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(value));
+    const iso = (typeof value === 'string' && !value.endsWith('Z') && !value.includes('+'))
+      ? value + 'Z'
+      : value;
+    return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(iso));
   }
   function formatTimeLuanda(value) {
     if (!value) return "--:--";
-    return new Date(value).toLocaleTimeString("pt-PT", { hour:"2-digit", minute:"2-digit", timeZone: ANGOLA_TZ });
+    // Se a string não tem indicador de timezone, assume UTC (sufixo Z)
+    const iso = (typeof value === 'string' && !value.endsWith('Z') && !value.includes('+'))
+      ? value + 'Z'
+      : value;
+    return new Date(iso).toLocaleTimeString("pt-PT", {
+      hour: "2-digit", minute: "2-digit", timeZone: ANGOLA_TZ
+    });
   }
   function formatDuracao(seg) {
     const total = Math.max(0, Number(seg) || 0);
@@ -250,17 +259,86 @@
     actualizarBotoes();
   }
 
+/*PREENCHER PREVIEW DE DOCUMENTOS */
+
   function preencherPreviewDocumentos(senha) {
     const pre = document.getElementById("docsPreviewContent");
     if (!pre) return;
+ 
     const obs = senha?.observacoes;
-    if (!obs) { pre.textContent = "Sem dados de formulário para esta senha."; return; }
-    /* Formatar "Campo: valor | Campo: valor" como tabela legível */
-    if (obs.includes('|')) {
-      pre.textContent = obs.split('|').map(p => p.trim()).filter(Boolean).join('\n');
-    } else {
-      pre.textContent = obs;
+ 
+    if (!obs) {
+      pre.innerHTML = '<span style="color:#9ca3af;font-size:.85rem;">Sem dados de formulário para esta senha.</span>';
+      return;
     }
+ 
+    // — Separar partes das observações ──────────────────────
+    const partes       = obs.split(' | ').map(p => p.trim()).filter(Boolean);
+    const nomeFicheiro = partes.find(p => p.startsWith('FICHEIRO:'))?.replace('FICHEIRO:', '').trim();
+    const dadosForm    = partes.filter(p => !p.startsWith('FICHEIRO:'));
+ 
+    // — Construir HTML do preview ────────────────────────────
+    let html = '';
+ 
+    // Dados do formulário
+    if (dadosForm.length) {
+      html += '<div style="white-space:pre-wrap;font-size:.82rem;color:#3e2510;line-height:1.7;">';
+      html += dadosForm.join('\n');
+      html += '</div>';
+    }
+ 
+    // Botões de ficheiro (se existir)
+    if (nomeFicheiro) {
+      const senhaId = senha.id;
+      html += `
+        <div style="
+          margin-top:.75rem;
+          padding:.75rem;
+          background:#eff6ff;
+          border:1px solid #bfdbfe;
+          border-radius:10px;
+          display:flex;
+          align-items:center;
+          gap:.6rem;
+          flex-wrap:wrap;
+        ">
+          <span style="font-size:.8rem;color:#1d4ed8;font-weight:600;">
+            📎 ${nomeFicheiro.split('_').slice(2).join('_') || nomeFicheiro}
+          </span>
+          <a
+            href="/api/senhas/${senhaId}/ficheiro"
+            target="_blank"
+            download
+            style="
+              background:#2563eb;color:white;
+              padding:.35rem .9rem;border-radius:8px;
+              font-size:.78rem;font-weight:700;
+              text-decoration:none;
+              transition:opacity .2s;
+            "
+            onmouseover="this.style.opacity='.8'"
+            onmouseout="this.style.opacity='1'"
+          >⬇ Download</a>
+          <a
+            href="/api/senhas/${senhaId}/ficheiro"
+            target="_blank"
+            style="
+              background:#e0f2fe;color:#0369a1;
+              padding:.35rem .9rem;border-radius:8px;
+              font-size:.78rem;font-weight:700;
+              text-decoration:none;
+              transition:opacity .2s;
+            "
+            onmouseover="this.style.opacity='.8'"
+            onmouseout="this.style.opacity='1'"
+          >👁 Visualizar</a>
+        </div>
+      `;
+    } else {
+      html += '<div style="margin-top:.5rem;font-size:.78rem;color:#9ca3af;">Sem ficheiro anexado.</div>';
+    }
+ 
+    pre.innerHTML = html;
   }
 
   function actualizarBotoes() {

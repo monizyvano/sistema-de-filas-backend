@@ -415,30 +415,46 @@
         const role  = (document.getElementById('newWorkerRole')?.value  || 'atendente');
         const dept  = (document.getElementById('newWorkerDept')?.value  || '');
         const msgEl = document.getElementById('workerFormMsg');
-
+ 
         function setMsg(text, ok) {
             if (!msgEl) return;
-            msgEl.textContent   = text;
-            msgEl.style.color   = ok ? '#22c55e' : '#ef4444';
+            msgEl.textContent      = text;
+            msgEl.style.color      = ok ? '#22c55e' : '#ef4444';
             msgEl.style.fontWeight = '600';
         }
-
-        if (!nome || !email || !senha) { setMsg('Nome, email e senha são obrigatórios.', false); return; }
-        if (senha.length < 6) { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
-
-        /* Mapear departamento → balcão + servico_id */
-        const mapa = {
-            'Secretaria Academica': { balcao: 1, servico_id: 1 },
-            'Contabilidade':        { balcao: 2, servico_id: 2 },
-            'Apoio ao Cliente':     { balcao: 3, servico_id: 5 }
+ 
+        // — Validações básicas ──────────────────────────────────
+        if (!nome || !email || !senha) {
+            setMsg('Nome, email e senha são obrigatórios.', false);
+            return;
+        }
+        if (senha.length < 6) {
+            setMsg('A senha deve ter pelo menos 6 caracteres.', false);
+            return;
+        }
+ 
+        /* ── Mapeamento departamento → servico_id ───────────────
+           O balcão NÃO é enviado — o backend calcula o próximo
+           disponível automaticamente (Sprint 3).
+           O servico_id continua a ser mapeado por nome. ─────── */
+        const mapaServico = {
+            'Secretaria Academica': 1,
+            'Contabilidade':        2,
+            'Direccao Pedagogica':  3,
+            'Biblioteca':           4,
+            'Apoio ao Cliente':     5
         };
-        const extra = role === 'admin' ? { balcao: null, servico_id: null } : (mapa[dept] || { balcao: null, servico_id: null });
-
+ 
+        // Admins: sem balcão, sem serviço
+        const servicoId = role === 'admin' ? null : (mapaServico[dept] || null);
+ 
         const btnAdd = document.getElementById('btnAddWorker');
         if (btnAdd) { btnAdd.disabled = true; btnAdd.textContent = 'A criar...'; }
-
+ 
         try {
-            // ✅ FIX: endpoint correcto com payload correcto
+            /* ✅ Sprint 3: balcao NÃO é enviado.
+               O backend (atendente_controller.py) atribui automaticamente
+               o próximo número de balcão livre. */
             const response = await fetch('/api/atendentes/', {
                 method:  'POST',
                 headers: {
@@ -450,31 +466,42 @@
                     email,
                     senha,
                     tipo:       role,
-                    balcao:     extra.balcao,
-                    servico_id: extra.servico_id
+                    servico_id: servicoId
+                    /* balcao: omitido → auto-atribuído no backend */
                 })
             });
-
+ 
             const data = await response.json().catch(() => ({}));
-
+ 
             if (response.ok) {
-                setMsg(`✅ ${role === 'admin' ? 'Administrador' : 'Trabalhador'} "${nome}" criado com sucesso!`, true);
-                ['newWorkerName','newWorkerEmail','newWorkerPass'].forEach(id => {
+                // Mostrar balcão atribuído automaticamente pelo backend
+                const balcaoAtribuido = data.atendente?.balcao;
+                const infoBalcao      = balcaoAtribuido ? ` (Balcão ${balcaoAtribuido})` : '';
+                const tipoLabel       = role === 'admin' ? 'Administrador' : 'Trabalhador';
+ 
+                setMsg(`✅ ${tipoLabel} "${nome}" criado com sucesso!${infoBalcao}`, true);
+ 
+                // Limpar campos do formulário
+                ['newWorkerName', 'newWorkerEmail', 'newWorkerPass'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
+ 
                 await atualizarTrabalhadores();
-                setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 5000);
+                setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
+ 
             } else {
                 setMsg(data.erro || 'Erro ao criar membro. Verifique os dados.', false);
             }
+ 
         } catch (error) {
-            console.error("❌ Adicionar trabalhador:", error);
+            console.error('❌ Adicionar trabalhador:', error);
             setMsg('Erro de ligação ao servidor.', false);
         } finally {
             if (btnAdd) { btnAdd.disabled = false; btnAdd.textContent = 'Adicionar membro'; }
         }
     }
+ 
 
     /* ═══════════════════════════════════════════════════════
        HISTÓRICO COM PAGINAÇÃO

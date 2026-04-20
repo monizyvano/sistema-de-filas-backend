@@ -1,30 +1,55 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-<meta charset="UTF-8">
-<title>Declarações</title>
-<link rel="stylesheet" href="/static/css/principal.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pedido de Declaração — IMTSB</title>
+  <link rel="stylesheet" href="/static/css/service-form.css">
 </head>
+<body data-service="Pedido de declaracao">
+  <main class="page">
+    <div class="top">
+      <a class="back" href="/visitante.html">← Voltar</a>
+      <strong>Direcção Pedagógica</strong>
+    </div>
+    <section class="card">
+      <h1 id="serviceTitle">Pedido de Declaração</h1>
+      <p class="hint">
+        Pedidos de declaração têm <strong>atendimento prioritário</strong>.
+        Preencha o formulário e emita a sua senha.
+      </p>
+      <form id="serviceForm" class="form-grid">
 
-<body>
-    <main class="main-content">
+        <div id="dynamicFields"></div>
 
-        <a href="/principal.html" class="btn-voltar">Voltar</a>
-        <section class="hero">
+        <div>
+          <label for="notificationEmail">Email para notificações (opcional)</label>
+          <input id="notificationEmail" type="email" placeholder="exemplo@email.com">
+        </div>
 
-            <h1>Declarações</h1>
-            <ul class="list">
-                <li>Declaração com notas</li>
-                <li>Declaração sem notas</li>
-                <li>Declaração de frequência</li>
-            </ul>
-        </section>
+        <div class="docs-box">
+          <strong>📋 Documentos necessários:</strong>
+          <ul id="requiredDocs"></ul>
+        </div>
 
-    </main>
+        <div id="attachmentsFields" class="attachments-grid"></div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">
+            Enviar Formulário e Emitir Senha
+          </button>
+          <a class="btn" href="/visitante.html" style="background:#f3ece6;color:#401903;">
+            Cancelar
+          </a>
+        </div>
+        <div id="formMsg" class="msg"></div>
+
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/api-config.js"></script>
+  <script src="/static/js/realtime-store.js"></script>
+  <script src="/static/js/service-form.js"></script>
 </body>
 </html>
-
-
-
-
-
