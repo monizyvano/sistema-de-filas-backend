@@ -312,14 +312,22 @@
 
       container.innerHTML = '';
       servicos.forEach(servico => {
+        const temForm  = !!MAPA_FORMULARIOS[servico.id];
+        const subtexto = temForm
+          ? '📝 Preencher formulário'
+          : (servico.descricao || 'Emissão directa');
+
         const card = document.createElement('article');
         card.className         = 'service-card';
         card.dataset.servicoId = servico.id;
+        card.style.cursor      = 'pointer';
         card.innerHTML = `
           <div class="service-icon">${servico.icone || '📄'}</div>
           <div class="service-info">
             <div class="service-name">${servico.nome}</div>
-            <div class="service-status"><span class="status-dot"></span>${servico.descricao || 'Serviço disponível'}</div>
+            <div class="service-status">
+              <span class="status-dot"></span>${subtexto}
+            </div>
           </div>
           <span class="arrow-icon">→</span>
         `;
@@ -332,11 +340,33 @@
     }
   }
 
+  /* ── Mapa serviço → URL do formulário ───────────────────────
+     Serviços com formulário: redirecciona imediatamente.
+     Serviços sem formulário (Biblioteca): emite directo.
+     Nota: os IDs são os da tabela `servicos` na base de dados.
+  ──────────────────────────────────────────────────────────── */
+  const MAPA_FORMULARIOS = {
+    1: '/matricula.html',       // Secretaria Académica
+    2: '/tesouraria.html',      // Tesouraria
+    3: '/declaracao.html',      // Direcção Pedagógica
+    4: null,                    // Biblioteca (sem formulário — emite directo)
+    5: '/apoio-cliente.html'    // Apoio ao Cliente
+  };
+
   function selecionarServico(servico, cardEl) {
+    const urlForm = MAPA_FORMULARIOS[servico.id];
+
+    if (urlForm) {
+      /* ── Tem formulário → redirecionar ─────────────────── */
+      window.location.href = urlForm;
+      return;
+    }
+
+    /* ── Sem formulário (ex: Biblioteca) → seleccionar inline */
     servicoSelecionado = servico;
     document.querySelectorAll('.service-card').forEach(c => c.classList.remove('ativo'));
     if (cardEl) cardEl.classList.add('ativo');
-    mostrarMensagem(`Serviço seleccionado: ${servico.nome}`, 'ok');
+    mostrarMensagem(`${servico.nome} seleccionado. Clique em "Emitir Senha".`, 'ok');
   }
 
   /* ── Emitir senha ────────────────────────────────────────── */

@@ -95,16 +95,18 @@ def listar_senhas():
         atendente_id = request.args.get('atendente_id', type=int)
         page         = request.args.get('page', default=0, type=int)
         per_page     = request.args.get('per_page', default=15, type=int)
+        apenas_hoje  = bool(request.args.get('hoje', type=int, default=0))  # ✅ Sprint 3
 
         per_page = min(max(per_page, 1), 100)
 
         if page > 0:
             resultado = SenhaService.listar_senhas_paginado(
-                status=status,
-                servico_id=servico_id,
-                atendente_id=atendente_id,
-                page=page,
-                per_page=per_page
+                status       = status,
+                servico_id   = servico_id,
+                atendente_id = atendente_id,
+                page         = page,
+                per_page     = per_page,
+                apenas_hoje  = apenas_hoje        # ✅
             )
             schema  = SenhaSchema(many=True)
             return jsonify({
@@ -116,10 +118,11 @@ def listar_senhas():
             }), 200
         else:
             senhas  = SenhaService.listar_senhas(
-                status=status,
-                servico_id=servico_id,
-                atendente_id=atendente_id,
-                limite=500
+                status       = status,
+                servico_id   = servico_id,
+                atendente_id = atendente_id,
+                limite       = 500,
+                apenas_hoje  = apenas_hoje        # ✅
             )
             schema  = SenhaSchema(many=True)
             payload = schema.dump(senhas)

@@ -74,13 +74,25 @@ class SenhaService:
 
     @staticmethod
     def listar_senhas(atendente_id: int = None, status: str = None,
-                      servico_id: int = None, limite: int = 500):
+                      servico_id: int = None, limite: int = 500,
+                      apenas_hoje: bool = False):
         """
         Lista senhas com filtros opcionais.
-        SPRINT 1: parâmetro `limite` adicionado (default 500).
+        SPRINT 3: parâmetro `apenas_hoje` filtra senhas emitidas hoje.
         """
+        from datetime import datetime
+        from sqlalchemy import func as sqlfunc
+
         query = Senha.query
 
+        if apenas_hoje:
+            hoje  = datetime.utcnow().date()
+            query = query.filter(
+                db.or_(
+                    Senha.data_emissao == hoje,
+                    sqlfunc.date(Senha.emitida_em) == hoje
+                )
+            )
         if atendente_id:
             query = query.filter(Senha.atendente_id == atendente_id)
         if status:
@@ -97,20 +109,24 @@ class SenhaService:
     @staticmethod
     def listar_senhas_paginado(atendente_id: int = None, status: str = None,
                                 servico_id: int = None, page: int = 1,
-                                per_page: int = 15):
+                                per_page: int = 15, apenas_hoje: bool = False):
         """
         Lista senhas com paginação server-side.
-        Usa Flask-SQLAlchemy .paginate().
-
-        Objecto retornado tem:
-            .items       – lista de Senha da página actual
-            .total       – total de registos
-            .page        – página actual
-            .per_page    – registos por página
-            .pages       – total de páginas
+        SPRINT 3: parâmetro `apenas_hoje` filtra senhas emitidas hoje.
         """
+        from datetime import datetime
+        from sqlalchemy import func as sqlfunc
+
         query = Senha.query
 
+        if apenas_hoje:
+            hoje  = datetime.utcnow().date()
+            query = query.filter(
+                db.or_(
+                    Senha.data_emissao == hoje,
+                    sqlfunc.date(Senha.emitida_em) == hoje
+                )
+            )
         if atendente_id:
             query = query.filter(Senha.atendente_id == atendente_id)
         if status:
@@ -119,8 +135,6 @@ class SenhaService:
             query = query.filter(Senha.servico_id == servico_id)
 
         query = query.order_by(Senha.created_at.desc())
-
-        # error_out=False → não lança 404 se página sem resultados
         return query.paginate(page=page, per_page=per_page, error_out=False)
 
     # ─────────────────────────────────────────────────────────

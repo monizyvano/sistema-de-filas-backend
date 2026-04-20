@@ -127,7 +127,7 @@
         try {
             const [respServicos, respSenhas] = await Promise.all([
                 fetch('/api/servicos'),
-                fetch('/api/senhas?status=aguardando&page=1&per_page=200', {
+                fetch('/api/senhas?status=aguardando&hoje=1&page=1&per_page=200', {
                     headers: { 'Authorization': `Bearer ${store.getToken()}` }
                 })
             ]);
