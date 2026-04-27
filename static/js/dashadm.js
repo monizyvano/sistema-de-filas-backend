@@ -504,15 +504,64 @@
  
 
     /* ═══════════════════════════════════════════════════════
-       HISTÓRICO COM PAGINAÇÃO
+       HISTÓRICO COM PAGINAÇÃO E FILTROS DE PERÍODO
     ═══════════════════════════════════════════════════════ */
+
+    let _filtroActivo = 'hoje'; // hoje | semana | mes | todos | intervalo
+
+    /* Actualiza os botões de filtro visualmente */
+    function _realcarFiltro(nome) {
+        ['filtroHoje','filtroSemana','filtroMes','filtroTodos'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            const activo = id === 'filtro' + nome.charAt(0).toUpperCase() + nome.slice(1);
+            btn.style.background = activo ? '#6b4226' : 'white';
+            btn.style.color      = activo ? 'white'   : '#6b4226';
+        });
+    }
+
+    /* Calcula data_de e data_ate com base no período */
+    function _calcularIntervalo(periodo) {
+        const hoje  = new Date();
+        const pad   = n => String(n).padStart(2, '0');
+        const fmt   = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        const hojeStr = fmt(hoje);
+
+        if (periodo === 'hoje')    return { de: hojeStr, ate: hojeStr };
+        if (periodo === 'semana') {
+            const seg = new Date(hoje); seg.setDate(hoje.getDate() - hoje.getDay() + 1);
+            return { de: fmt(seg), ate: hojeStr };
+        }
+        if (periodo === 'mes') {
+            const ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+            return { de: fmt(ini), ate: hojeStr };
+        }
+        if (periodo === 'intervalo') {
+            const de  = document.getElementById('filtroDataDe')?.value  || '';
+            const ate = document.getElementById('filtroDataAte')?.value || hojeStr;
+            return { de, ate };
+        }
+        return { de: '', ate: '' }; // 'todos' — sem filtro de data
+    }
+
+    window.filtrarHistorico = function (periodo) {
+        _filtroActivo = periodo;
+        _realcarFiltro(periodo);
+        historicoState.page = 1;
+        atualizarHistorico(1);
+    };
+
     async function atualizarHistorico(page) {
         try {
-            const pg = page || historicoState.page;
-            const pp = historicoState.perPage;
+            const pg  = page || historicoState.page;
+            const pp  = historicoState.perPage;
+            const { de, ate } = _calcularIntervalo(_filtroActivo);
 
-            const response = await fetch(
-                `/api/senhas?status=concluida&page=${pg}&per_page=${pp}`,
+            let url = `/api/senhas?status=concluida&page=${pg}&per_page=${pp}`;
+            if (de)  url += `&data_de=${de}`;
+            if (ate) url += `&data_ate=${ate}`;
+
+            const response = await fetch(url,
                 { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
             );
             if (!response.ok) return;
@@ -527,18 +576,25 @@
 
             const senhas = data.senhas || [];
             if (!senhas.length && pg === 1) {
-                historyBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">Sem atendimentos concluídos hoje</td></tr>';
+                historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">Sem atendimentos no período seleccionado</td></tr>';
                 renderNavegacao();
                 return;
             }
 
             historyBody.innerHTML = senhas.map(s => {
-                const servico   = s.servico?.nome   || 'Serviço';
-                const atendente = s.atendente?.nome || '–';
-                const duracao   = s.tempo_atendimento_minutos || 0;
-                const tsStr     = s.atendimento_concluido_em || s.created_at;
-                const hora      = tsStr ? new Date(tsStr).toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit', timeZone:'Africa/Luanda' }) : '--:--';
-                const tipoBadge = s.tipo === 'prioritaria'
+                const servico    = s.servico?.nome   || 'Serviço';
+                const atendente  = s.atendente?.nome || '–';
+                const duracao    = s.tempo_atendimento_minutos || 0;
+                const espera     = s.tempo_espera_minutos      || 0;
+                const tsStr      = s.atendimento_concluido_em  || s.emitida_em || s.created_at;
+                const dataHora   = tsStr
+                    ? new Date(tsStr.endsWith('Z') ? tsStr : tsStr + 'Z')
+                        .toLocaleString('pt-PT', {
+                            day:'2-digit', month:'2-digit', year:'numeric',
+                            hour:'2-digit', minute:'2-digit', timeZone:'Africa/Luanda'
+                        })
+                    : '--';
+                const tipoBadge  = s.tipo === 'prioritaria'
                     ? '<span style="background:rgba(245,158,11,.15);color:#92400e;padding:2px 8px;border-radius:20px;font-size:.75rem;font-weight:700;">★ Prior.</span>'
                     : '<span style="background:rgba(107,66,38,.1);color:#6b4226;padding:2px 8px;border-radius:20px;font-size:.75rem;">Normal</span>';
 
@@ -546,7 +602,8 @@
                   <td><strong>${s.numero}</strong> ${tipoBadge}</td>
                   <td>${servico}</td>
                   <td>${atendente}</td>
-                  <td>${hora}</td>
+                  <td style="font-size:.8rem;">${dataHora}</td>
+                  <td>${espera ? espera + 'min' : '–'}</td>
                   <td>${duracao}min</td>
                   <td style="display:flex;gap:.4rem;align-items:center;">
                     <span class="performance-badge badge-excellent">✓ Concluído</span>
@@ -579,55 +636,258 @@
     /* ═══════════════════════════════════════════════════════
        EXPORTAR
     ═══════════════════════════════════════════════════════ */
+    /* ── Helper: carregar senhas com filtro de período ────── */
+    async function _carregarSenhasParaExport(apenasConcluidas = true) {
+        const { de, ate } = _calcularIntervalo(_filtroActivo);
+        let url = `/api/senhas?page=1&per_page=500`;
+        if (apenasConcluidas) url += `&status=concluida`;
+        if (de)  url += `&data_de=${de}`;
+        if (ate) url += `&data_ate=${ate}`;
+        const r = await fetch(url, { headers:{ Authorization:`Bearer ${store.getToken()}` } });
+        if (!r.ok) throw new Error('Erro ao carregar dados');
+        const d = await r.json();
+        return d.senhas || [];
+    }
+
+    /* ── Helper: label do período activo ──────────────────── */
+    function _labelPeriodo() {
+        const { de, ate } = _calcularIntervalo(_filtroActivo);
+        return { hoje:'Hoje', semana:'Esta Semana', mes:'Este Mês',
+            todos:'Todos os Registos',
+            intervalo: de && ate ? `${de} a ${ate}` : de || ate || 'Intervalo'
+        }[_filtroActivo] || '';
+    }
+
+    /* ── Helper: formatar timestamp para PT ───────────────── */
+    function _fmtTs(iso) {
+        if (!iso) return '–';
+        return new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+            .toLocaleString('pt-PT', { timeZone:'Africa/Luanda',
+                day:'2-digit', month:'2-digit', year:'numeric',
+                hour:'2-digit', minute:'2-digit' });
+    }
+
+    /* ═══════════════════════════════════════════════════════
+       EXPORTAR DO CABEÇALHO (usa filtro hoje + dados completos)
+    ═══════════════════════════════════════════════════════ */
     window.exportData = async function () {
         const formato = document.getElementById('exportFormat')?.value || 'excel';
         try {
-            const response = await fetch('/api/senhas?status=concluida&page=1&per_page=500', {
-                headers: { 'Authorization': `Bearer ${store.getToken()}` }
-            });
-            if (!response.ok) { alert('Não foi possível carregar dados.'); return; }
-            const data = await response.json();
-            const rows = (data.senhas || []).map(s => ({
-                Senha: s.numero, Serviço: s.servico?.nome || '—',
-                Atendente: s.atendente?.nome || '—', Estado: s.status,
-                Duração_min: s.tempo_atendimento_minutos || 0,
-                Concluída_em: s.atendimento_concluido_em || ''
-            }));
-            if (!rows.length) { alert('Sem dados para exportar.'); return; }
+            /* Cabeçalho exporta sempre "hoje" com todos os dados do dia */
+            const response = await fetch(
+                '/api/senhas?status=concluida&hoje=1&page=1&per_page=500',
+                { headers: { 'Authorization': `Bearer ${store.getToken()}` } }
+            );
+            if (!response.ok) { showToast('Não foi possível carregar dados.', 'error'); return; }
+            const data     = await response.json();
+            const senhas   = data.senhas || [];
+            if (!senhas.length) { showToast('Sem dados para exportar hoje.', 'warn'); return; }
+
+            const agora  = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
+            const hoje   = new Date().toLocaleDateString('pt-PT', { timeZone:'Africa/Luanda' });
+            const n      = senhas.length;
+            const mE     = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_espera_minutos||0),0)/n) : 0;
+            const mA     = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_atendimento_minutos||0),0)/n) : 0;
+            const nPri   = senhas.filter(s=>s.tipo==='prioritaria').length;
 
             if (formato === 'excel' && window.XLSX) {
-                const ws = XLSX.utils.json_to_sheet(rows);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Relatorio');
-                XLSX.writeFile(wb, `relatorio_imtsb_${new Date().toISOString().slice(0,10)}.xlsx`);
+                /* Folha 1: Resumo do Dia */
+                const resumo = [
+                    ['IMTSB — Relatório Diário', ''],
+                    ['Data', hoje],
+                    ['Gerado em', agora],
+                    [''],
+                    ['Total de Atendimentos', n],
+                    ['Prioritários', nPri],
+                    ['Normais', n - nPri],
+                    ['Tempo Médio de Espera (min)', mE],
+                    ['Duração Média de Atendimento (min)', mA],
+                ];
+                /* Folha 2: Detalhe */
+                const detalhe = senhas.map(s => ({
+                    'Senha':              s.numero,
+                    'Tipo':               s.tipo === 'prioritaria' ? 'Prioritária' : 'Normal',
+                    'Serviço':            s.servico?.nome  || '–',
+                    'Atendente':          s.atendente?.nome || '–',
+                    'Balcão':             s.numero_balcao  || '–',
+                    'Emitida em':         _fmtTs(s.emitida_em),
+                    'Chamada em':         _fmtTs(s.chamada_em),
+                    'Início Atendimento': _fmtTs(s.atendimento_iniciado_em),
+                    'Conclusão':          _fmtTs(s.atendimento_concluido_em),
+                    'Espera (min)':       s.tempo_espera_minutos      || 0,
+                    'Duração (min)':      s.tempo_atendimento_minutos || 0,
+                    'Contacto Utente':    s.usuario_contato || '–',
+                }));
+
+                const wb  = XLSX.utils.book_new();
+                const ws1 = XLSX.utils.aoa_to_sheet(resumo);
+                const ws2 = XLSX.utils.json_to_sheet(detalhe);
+                ws1['!cols'] = [{wch:38},{wch:22}];
+                ws2['!cols'] = [{wch:8},{wch:12},{wch:22},{wch:20},{wch:8},
+                                {wch:18},{wch:18},{wch:18},{wch:18},{wch:12},{wch:12},{wch:22}];
+                XLSX.utils.book_append_sheet(wb, ws1, 'Resumo do Dia');
+                XLSX.utils.book_append_sheet(wb, ws2, 'Detalhe');
+                XLSX.writeFile(wb, `imtsb_relatorio_${new Date().toISOString().slice(0,10)}.xlsx`);
                 return;
             }
 
-            /* PDF / impressão */
-            const tableRows = rows.map(r =>
-                `<tr><td>${r.Senha}</td><td>${r.Serviço}</td><td>${r.Atendente}</td><td>${r.Estado}</td><td>${r.Duração_min}min</td></tr>`
-            ).join('');
-            const html = `<html><head><title>Relatório IMTSB</title><style>
-                body{font-family:Arial;padding:20px;font-size:13px}
-                h2{margin-bottom:12px}
-                table{width:100%;border-collapse:collapse}
-                th,td{border:1px solid #ddd;padding:8px;text-align:left}
-                th{background:#6b4226;color:white}
-                tr:nth-child(even){background:#f9f6f3}
-            </style></head><body>
-                <h2>Relatório de Atendimentos — IMTSB</h2>
-                <p style="color:#888;margin-bottom:12px">Gerado em ${new Date().toLocaleString('pt-PT')}</p>
-                <table><thead><tr><th>Senha</th><th>Serviço</th><th>Atendente</th><th>Estado</th><th>Duração</th></tr></thead>
-                <tbody>${tableRows}</tbody></table>
-                <script>window.onload=()=>window.print();</script></body></html>`;
-            const w = window.open('','_blank','width=1000,height=700');
-            if (!w) { alert('Permita popups para exportar.'); return; }
-            w.document.write(html);
-            w.document.close();
+            /* PDF do dia completo */
+            _gerarPdfRelatorio(senhas, 'Hoje — ' + hoje, agora, { n, nPri, mE, mA });
+
         } catch (error) {
             console.error('❌ Exportar:', error);
-            alert('Erro de ligação ao servidor.');
+            showToast('Erro ao exportar.', 'error');
         }
+    };
+
+    /* ═══════════════════════════════════════════════════════
+       EXPORTAR DO HISTÓRICO (respeita _filtroActivo)
+    ═══════════════════════════════════════════════════════ */
+    window.exportarHistorico = async function (formato) {
+        try {
+            showToast('A preparar exportação...', '');
+            const senhas = await _carregarSenhasParaExport(true);
+            if (!senhas.length) { showToast('Sem dados no período seleccionado.', 'warn'); return; }
+
+            const agora  = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
+            const label  = _labelPeriodo();
+            const n      = senhas.length;
+            const mE     = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_espera_minutos||0),0)/n) : 0;
+            const mA     = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_atendimento_minutos||0),0)/n) : 0;
+            const nPri   = senhas.filter(s=>s.tipo==='prioritaria').length;
+
+            if (formato === 'excel' && window.XLSX) {
+                /* Folha 1: Resumo */
+                const resumo = [
+                    ['IMTSB — Relatório de Atendimentos', ''],
+                    ['Período', label],
+                    ['Gerado em', agora],
+                    [''],
+                    ['Total de Atendimentos', n],
+                    ['Prioritários', nPri],
+                    ['Normais', n - nPri],
+                    ['Tempo Médio de Espera (min)', mE],
+                    ['Duração Média de Atendimento (min)', mA],
+                ];
+                /* Folha 2: Detalhe completo */
+                const detalhe = senhas.map(s => ({
+                    'Senha':              s.numero,
+                    'Tipo':               s.tipo === 'prioritaria' ? 'Prioritária' : 'Normal',
+                    'Serviço':            s.servico?.nome   || '–',
+                    'Atendente':          s.atendente?.nome || '–',
+                    'Balcão':             s.numero_balcao   || '–',
+                    'Emitida em':         _fmtTs(s.emitida_em),
+                    'Chamada em':         _fmtTs(s.chamada_em),
+                    'Início Atendimento': _fmtTs(s.atendimento_iniciado_em),
+                    'Conclusão':          _fmtTs(s.atendimento_concluido_em),
+                    'Espera (min)':       s.tempo_espera_minutos      || 0,
+                    'Duração (min)':      s.tempo_atendimento_minutos || 0,
+                    'Contacto Utente':    s.usuario_contato || '–',
+                    'Dados do Pedido':    (s.observacoes || '')
+                                            .split(' | ')
+                                            .filter(p => !p.startsWith('FICHEIRO:'))
+                                            .join(' | '),
+                }));
+
+                const wb  = XLSX.utils.book_new();
+                const ws1 = XLSX.utils.aoa_to_sheet(resumo);
+                const ws2 = XLSX.utils.json_to_sheet(detalhe);
+                ws1['!cols'] = [{wch:40},{wch:24}];
+                ws2['!cols'] = [{wch:8},{wch:12},{wch:22},{wch:20},{wch:8},
+                                {wch:18},{wch:18},{wch:18},{wch:18},{wch:12},
+                                {wch:12},{wch:22},{wch:50}];
+                XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+                XLSX.utils.book_append_sheet(wb, ws2, 'Atendimentos');
+
+                const slug = label.replace(/\s+/g,'_').replace(/\//g,'-').toLowerCase();
+                XLSX.writeFile(wb, `imtsb_historico_${slug}.xlsx`);
+                showToast('Excel exportado com sucesso!', 'success');
+                return;
+            }
+
+            /* PDF */
+            _gerarPdfRelatorio(senhas, label, agora, { n, nPri, mE, mA });
+
+        } catch (err) {
+            console.error('❌ exportarHistorico:', err);
+            showToast('Erro ao exportar.', 'error');
+        }
+    };
+
+    /* ── Motor de geração de PDF (partilhado pelos dois) ──── */
+    function _gerarPdfRelatorio(senhas, label, agora, kpis) {
+        if (!window.jspdf) { showToast('Biblioteca PDF não carregada.', 'error'); return; }
+
+        const { jsPDF }  = window.jspdf;
+        const doc        = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+        const { n, nPri, mE, mA } = kpis;
+
+        /* Cabeçalho */
+        doc.setFillColor(62, 37, 16);
+        doc.roundedRect(10, 8, 277, 20, 3, 3, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(13); doc.setFont('helvetica','bold');
+        doc.text('IMTSB · Relatório de Atendimentos', 15, 17);
+        doc.setFontSize(8); doc.setFont('helvetica','normal');
+        doc.text(`Período: ${label}`, 15, 23);
+        doc.text(`Gerado em: ${agora}`, 200, 23);
+
+        /* KPIs */
+        const kpiData = [
+            ['Total', String(n)],
+            ['Prioritários', String(nPri)],
+            ['Média Espera', `${mE} min`],
+            ['Média Atend.', `${mA} min`],
+        ];
+        kpiData.forEach((kpi, i) => {
+            const x = 10 + i * 70;
+            doc.setFillColor(253, 248, 245);
+            doc.roundedRect(x, 32, 66, 16, 2, 2, 'F');
+            doc.setTextColor(107, 66, 38);
+            doc.setFontSize(16); doc.setFont('helvetica','bold');
+            doc.text(kpi[1], x + 33, 42, { align:'center' });
+            doc.setFontSize(7); doc.setFont('helvetica','normal');
+            doc.setTextColor(140, 103, 70);
+            doc.text(kpi[0].toUpperCase(), x + 33, 46, { align:'center' });
+        });
+
+        /* Tabela */
+        const head = [['Senha','Tipo','Serviço','Atendente','Balcão',
+                        'Emitida em','Conclusão','Espera','Duração']];
+        const body = senhas.map(s => [
+            s.numero,
+            s.tipo === 'prioritaria' ? '★ Prior.' : 'Normal',
+            s.servico?.nome   || '–',
+            s.atendente?.nome || '–',
+            s.numero_balcao ? 'B' + s.numero_balcao : '–',
+            _fmtTs(s.emitida_em),
+            _fmtTs(s.atendimento_concluido_em),
+            s.tempo_espera_minutos      ? s.tempo_espera_minutos + ' min' : '–',
+            s.tempo_atendimento_minutos ? s.tempo_atendimento_minutos + ' min' : '–',
+        ]);
+
+        doc.autoTable({
+            head, body,
+            startY: 52,
+            margin: { left: 10, right: 10 },
+            styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
+            headStyles: { fillColor: [107, 66, 38], textColor: 255, fontStyle:'bold' },
+            alternateRowStyles: { fillColor: [253, 248, 245] },
+            columnStyles: {
+                0: { cellWidth: 18 }, 1: { cellWidth: 20 }, 2: { cellWidth: 40 },
+                3: { cellWidth: 35 }, 4: { cellWidth: 14 }, 5: { cellWidth: 32 },
+                6: { cellWidth: 32 }, 7: { cellWidth: 18 }, 8: { cellWidth: 18 },
+            },
+            didDrawPage: (d) => {
+                doc.setFontSize(7); doc.setTextColor(160,130,110);
+                doc.text(`Sistema de Gestão de Filas · IMTSB · Pág. ${d.pageNumber}`,
+                    148.5, doc.internal.pageSize.height - 5, { align:'center' });
+            }
+        });
+
+        const slug = label.replace(/\s+/g,'_').replace(/\//g,'-').toLowerCase();
+        doc.save(`imtsb_relatorio_${slug}.pdf`);
+        showToast('PDF exportado com sucesso!', 'success');
     };
 
     /* ═══════════════════════════════════════════════════════
@@ -785,75 +1045,176 @@
         const s = _dadosModalAdmin;
         if (!s) return;
 
-        const obs    = s.observacoes || '';
-        const partes = obs.split(' | ').map(p => p.trim()).filter(Boolean);
+        const obs        = s.observacoes || '';
+        const partes     = obs.split(' | ').map(p => p.trim()).filter(Boolean);
         const nomeFich   = partes.find(p => p.startsWith('FICHEIRO:'))
                                  ?.replace('FICHEIRO:', '').trim() || null;
         const linhasForm = partes.filter(p => !p.startsWith('FICHEIRO:')).join('\n');
+        const agora      = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
 
-        const horaStr = s.emitida_em
-            ? new Date(s.emitida_em.endsWith('Z') ? s.emitida_em : s.emitida_em + 'Z')
+        const fmtData = iso => iso
+            ? new Date(iso.endsWith('Z') ? iso : iso + 'Z')
                 .toLocaleString('pt-PT', { timeZone:'Africa/Luanda',
                     day:'2-digit', month:'2-digit', year:'numeric',
                     hour:'2-digit', minute:'2-digit' })
             : '–';
-        const agora = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
 
         const ficheiroHtml = nomeFich
-            ? `<div class="row">
-                 <span class="label">Documento</span>
-                 <span class="value">
-                   <a href="/api/senhas/${s.id}/ficheiro" target="_blank">
-                     ${nomeFich.split('_').slice(2).join('_') || nomeFich}
-                   </a>
-                 </span>
-               </div>`
+            ? `<div class="row full"><div class="lbl">Documento Anexado</div>
+               <div class="val"><a href="/api/senhas/${s.id}/ficheiro" target="_blank">
+               ${nomeFich.split('_').slice(2).join('_') || nomeFich}</a></div></div>`
             : '';
 
-        const html = `<html><head><title>Pedido ${s.numero}</title>
+        const html = `<html><head><meta charset="UTF-8"><title>Pedido ${s.numero}</title>
           <style>
-            body{font-family:'Segoe UI',sans-serif;padding:32px;color:#2a1a0a;max-width:560px;margin:0 auto}
+            *{box-sizing:border-box;margin:0;padding:0}
+            body{font-family:'Segoe UI',Arial,sans-serif;padding:28px;color:#2a1a0a;max-width:600px;margin:0 auto}
             .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
-              padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
-            .header h2{margin:0 0 4px;font-size:1.35rem}
-            .header p{margin:0;opacity:.8;font-size:.82rem}
-            .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-            .cell{background:#fdf8f5;border-radius:8px;padding:10px 12px}
-            .cell .lbl{font-size:.72rem;color:#8a7060;text-transform:uppercase;
-              letter-spacing:.05em;margin-bottom:3px}
-            .cell .val{font-weight:700;font-size:.9rem;color:#3e2510}
-            .dados-label{font-size:.72rem;font-weight:700;color:#8a7060;
-              text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-            .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:8px;
-              padding:12px;white-space:pre-wrap;font-size:.88rem;line-height:1.7;margin-bottom:16px}
-            .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.78rem}
+              padding:16px 20px;border-radius:10px;margin-bottom:16px;
+              display:flex;justify-content:space-between;align-items:flex-start}
+            .header h2{font-size:1.15rem;margin-bottom:3px}
+            .header p{opacity:.8;font-size:.76rem}
+            .badge{background:rgba(255,255,255,.25);padding:3px 10px;border-radius:20px;
+              font-size:.76rem;font-weight:700}
+            .sec{font-size:.68rem;font-weight:700;color:#8a7060;text-transform:uppercase;
+              letter-spacing:.07em;margin:12px 0 6px}
+            .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+            .row{background:#fdf8f5;border-radius:7px;padding:8px 10px}
+            .row.full{grid-column:span 2}
+            .lbl{font-size:.67rem;color:#8a7060;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+            .val{font-weight:700;font-size:.87rem;color:#3e2510}
+            .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:7px;
+              padding:10px 12px;white-space:pre-wrap;font-size:.84rem;line-height:1.75}
+            .footer{margin-top:14px;text-align:center;color:#9c8070;font-size:.72rem;
+              border-top:1px solid #f0e8dc;padding-top:10px}
             a{color:#2563eb}
+            @media print{.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
           </style></head><body>
           <div class="header">
-            <h2>IMTSB · Pedido de Atendimento</h2>
-            <p>Instituto Médio Técnico São Benedito · Emitido pelo Administrador</p>
+            <div><h2>IMTSB · Relatório de Atendimento</h2>
+              <p>Instituto Médio Técnico São Benedito · Luanda, Angola</p></div>
+            <span class="badge">${s.tipo==='prioritaria'?'★ Prioritária':'Normal'}</span>
           </div>
+          <div class="sec">Identificação</div>
           <div class="grid">
-            <div class="cell"><div class="lbl">Senha</div><div class="val">${s.numero}</div></div>
-            <div class="cell"><div class="lbl">Serviço</div><div class="val">${s.servico?.nome || '–'}</div></div>
-            <div class="cell"><div class="lbl">Atendente</div><div class="val">${s.atendente?.nome || '–'}</div></div>
-            <div class="cell"><div class="lbl">Emitida às</div><div class="val">${horaStr}</div></div>
-            <div class="cell"><div class="lbl">Duração</div><div class="val">${s.tempo_atendimento_minutos ? s.tempo_atendimento_minutos + ' min' : '–'}</div></div>
-            <div class="cell"><div class="lbl">Tipo</div><div class="val">${s.tipo === 'prioritaria' ? '★ Prioritária' : 'Normal'}</div></div>
+            <div class="row"><div class="lbl">Número de Senha</div><div class="val">${s.numero}</div></div>
+            <div class="row"><div class="lbl">Serviço</div><div class="val">${s.servico?.nome||'–'}</div></div>
+            <div class="row"><div class="lbl">Atendente</div><div class="val">${s.atendente?.nome||'–'}</div></div>
+            <div class="row"><div class="lbl">Balcão</div><div class="val">${s.numero_balcao?'Balcão '+s.numero_balcao:'–'}</div></div>
           </div>
-          ${ficheiroHtml}
-          <div class="dados-label">Dados do Pedido</div>
-          <div class="dados">${linhasForm || 'Sem dados registados.'}</div>
-          <div class="footer">
-            <p>Impresso em ${agora} · Sistema de Filas IMTSB</p>
+          <div class="sec">Tempos</div>
+          <div class="grid">
+            <div class="row"><div class="lbl">Emitida às</div><div class="val">${fmtData(s.emitida_em)}</div></div>
+            <div class="row"><div class="lbl">Chamada às</div><div class="val">${fmtData(s.chamada_em)}</div></div>
+            <div class="row"><div class="lbl">Início do Atendimento</div><div class="val">${fmtData(s.atendimento_iniciado_em)}</div></div>
+            <div class="row"><div class="lbl">Conclusão</div><div class="val">${fmtData(s.atendimento_concluido_em)}</div></div>
+            <div class="row"><div class="lbl">Tempo de Espera</div><div class="val">${s.tempo_espera_minutos?s.tempo_espera_minutos+' min':'–'}</div></div>
+            <div class="row"><div class="lbl">Duração do Atendimento</div><div class="val">${s.tempo_atendimento_minutos?s.tempo_atendimento_minutos+' min':'–'}</div></div>
           </div>
+          ${s.usuario_contato?`<div class="sec">Contacto do Utente</div>
+          <div class="grid"><div class="row full"><div class="lbl">Email / Telefone</div>
+          <div class="val">${s.usuario_contato}</div></div></div>`:''}
+          ${ficheiroHtml?`<div class="sec">Documento</div><div class="grid">${ficheiroHtml}</div>`:''}
+          <div class="sec">Dados do Pedido</div>
+          <div class="dados">${linhasForm||'Sem dados de formulário registados.'}</div>
+          <div class="footer">Impresso em ${agora} · Sistema de Gestão de Filas · IMTSB</div>
           <script>window.onload=()=>window.print();<\/script>
           </body></html>`;
 
-        const w = window.open('', '_blank', 'width=640,height=750');
+        const w = window.open('', '_blank', 'width=680,height=820');
         if (!w) { showToast('Permita popups para imprimir.', 'error'); return; }
-        w.document.write(html);
-        w.document.close();
+        w.document.write(html); w.document.close();
+    };
+
+    /* ── Relatório geral do período ────────────────────────── */
+    window.imprimirRelatorioCompleto = async function () {
+        const { de, ate } = _calcularIntervalo(_filtroActivo);
+        const labelPeriodo = {
+            hoje:'Hoje', semana:'Esta Semana', mes:'Este Mês',
+            todos:'Todos os Registos', intervalo: de && ate ? `${de} a ${ate}` : de || ate || 'Intervalo'
+        }[_filtroActivo] || '';
+
+        let url = `/api/senhas?status=concluida&page=1&per_page=100`;
+        if (de)  url += `&data_de=${de}`;
+        if (ate) url += `&data_ate=${ate}`;
+
+        let senhas = [];
+        try {
+            const r = await fetch(url, { headers:{ Authorization:`Bearer ${store.getToken()}` } });
+            const d = await r.json();
+            senhas  = d.senhas || [];
+        } catch(e) { showToast('Erro ao carregar dados.', 'error'); return; }
+
+        const agora = new Date().toLocaleString('pt-PT', { timeZone:'Africa/Luanda' });
+        const fmtH  = iso => iso
+            ? new Date(iso.endsWith('Z')?iso:iso+'Z')
+                .toLocaleString('pt-PT', { timeZone:'Africa/Luanda',
+                    day:'2-digit', month:'2-digit', year:'numeric',
+                    hour:'2-digit', minute:'2-digit' })
+            : '–';
+
+        const linhas = senhas.map(s => `
+            <tr>
+              <td>${s.numero}${s.tipo==='prioritaria'?' ★':''}</td>
+              <td>${s.servico?.nome||'–'}</td>
+              <td>${s.atendente?.nome||'–'}</td>
+              <td style="font-size:.78rem">${fmtH(s.atendimento_concluido_em||s.emitida_em)}</td>
+              <td>${s.tempo_espera_minutos||'–'}</td>
+              <td>${s.tempo_atendimento_minutos||'–'}</td>
+            </tr>`).join('');
+
+        const n    = senhas.length;
+        const mE   = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_espera_minutos||0),0)/n) : 0;
+        const mA   = n ? Math.round(senhas.reduce((a,s)=>a+(s.tempo_atendimento_minutos||0),0)/n) : 0;
+        const nPri = senhas.filter(s=>s.tipo==='prioritaria').length;
+
+        const html = `<html><head><meta charset="UTF-8"><title>Relatório IMTSB</title>
+          <style>
+            *{box-sizing:border-box;margin:0;padding:0}
+            body{font-family:'Segoe UI',Arial,sans-serif;padding:22px;color:#2a1a0a}
+            .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+              padding:14px 18px;border-radius:9px;margin-bottom:14px;
+              display:flex;justify-content:space-between;align-items:center}
+            .header h2{font-size:1.1rem;margin-bottom:2px}
+            .header p{opacity:.8;font-size:.74rem}
+            .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px}
+            .kpi{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:7px;padding:9px;text-align:center}
+            .kpi .n{font-size:1.35rem;font-weight:800;color:#6b4226}
+            .kpi .l{font-size:.67rem;color:#8a7060;text-transform:uppercase;letter-spacing:.05em}
+            table{width:100%;border-collapse:collapse;font-size:.81rem}
+            th{background:#f3ece6;color:#6b4226;padding:7px 9px;text-align:left;
+               font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
+            td{padding:6px 9px;border-bottom:1px solid #f0e8dc}
+            tr:nth-child(even) td{background:#fdfaf8}
+            .footer{margin-top:14px;text-align:center;color:#9c8070;font-size:.72rem;
+              border-top:1px solid #f0e8dc;padding-top:9px}
+            @media print{.header,.kpi{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+          </style></head><body>
+          <div class="header">
+            <div><h2>IMTSB · Relatório de Atendimentos</h2>
+              <p>Instituto Médio Técnico São Benedito · Período: ${labelPeriodo}</p></div>
+            <div style="opacity:.85;font-size:.76rem;text-align:right">Impresso em<br>${agora}</div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><div class="n">${n}</div><div class="l">Total</div></div>
+            <div class="kpi"><div class="n">${nPri}</div><div class="l">Prioritários</div></div>
+            <div class="kpi"><div class="n">${mE} min</div><div class="l">Média Espera</div></div>
+            <div class="kpi"><div class="n">${mA} min</div><div class="l">Média Atendimento</div></div>
+          </div>
+          <table>
+            <thead><tr>
+              <th>Senha</th><th>Serviço</th><th>Atendente</th>
+              <th>Data / Hora</th><th>Espera</th><th>Duração</th>
+            </tr></thead>
+            <tbody>${linhas||'<tr><td colspan="6" style="text-align:center;padding:14px;color:#9c8070;">Sem registos no período.</td></tr>'}</tbody>
+          </table>
+          <div class="footer">Sistema de Gestão de Filas · IMTSB · ${agora}</div>
+          <script>window.onload=()=>window.print();<\/script>
+          </body></html>`;
+
+        const w = window.open('', '_blank', 'width=860,height=720');
+        if (!w) { showToast('Permita popups para imprimir.', 'error'); return; }
+        w.document.write(html); w.document.close();
     };
 
     /* ═══════════════════════════════════════════════════════

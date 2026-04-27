@@ -75,10 +75,12 @@ class SenhaService:
     @staticmethod
     def listar_senhas(atendente_id: int = None, status: str = None,
                       servico_id: int = None, limite: int = 500,
-                      apenas_hoje: bool = False):
+                      apenas_hoje: bool = False,
+                      data_de: str = None, data_ate: str = None):
         """
         Lista senhas com filtros opcionais.
-        SPRINT 3: parâmetro `apenas_hoje` filtra senhas emitidas hoje.
+        data_de / data_ate: strings 'YYYY-MM-DD' para filtrar por intervalo de datas.
+        apenas_hoje: atalho para filtrar só hoje (sobrepõe data_de/data_ate).
         """
         from datetime import datetime
         from sqlalchemy import func as sqlfunc
@@ -93,6 +95,26 @@ class SenhaService:
                     sqlfunc.date(Senha.emitida_em) == hoje
                 )
             )
+        elif data_de or data_ate:
+            if data_de:
+                try:
+                    d = datetime.strptime(data_de, '%Y-%m-%d').date()
+                    query = query.filter(
+                        db.or_(Senha.data_emissao >= d,
+                               sqlfunc.date(Senha.emitida_em) >= d)
+                    )
+                except ValueError:
+                    pass
+            if data_ate:
+                try:
+                    d = datetime.strptime(data_ate, '%Y-%m-%d').date()
+                    query = query.filter(
+                        db.or_(Senha.data_emissao <= d,
+                               sqlfunc.date(Senha.emitida_em) <= d)
+                    )
+                except ValueError:
+                    pass
+
         if atendente_id:
             query = query.filter(Senha.atendente_id == atendente_id)
         if status:
@@ -109,10 +131,11 @@ class SenhaService:
     @staticmethod
     def listar_senhas_paginado(atendente_id: int = None, status: str = None,
                                 servico_id: int = None, page: int = 1,
-                                per_page: int = 15, apenas_hoje: bool = False):
+                                per_page: int = 15, apenas_hoje: bool = False,
+                                data_de: str = None, data_ate: str = None):
         """
         Lista senhas com paginação server-side.
-        SPRINT 3: parâmetro `apenas_hoje` filtra senhas emitidas hoje.
+        data_de / data_ate: 'YYYY-MM-DD' para histórico de dias/semanas/meses.
         """
         from datetime import datetime
         from sqlalchemy import func as sqlfunc
@@ -127,6 +150,26 @@ class SenhaService:
                     sqlfunc.date(Senha.emitida_em) == hoje
                 )
             )
+        elif data_de or data_ate:
+            if data_de:
+                try:
+                    d = datetime.strptime(data_de, '%Y-%m-%d').date()
+                    query = query.filter(
+                        db.or_(Senha.data_emissao >= d,
+                               sqlfunc.date(Senha.emitida_em) >= d)
+                    )
+                except ValueError:
+                    pass
+            if data_ate:
+                try:
+                    d = datetime.strptime(data_ate, '%Y-%m-%d').date()
+                    query = query.filter(
+                        db.or_(Senha.data_emissao <= d,
+                               sqlfunc.date(Senha.emitida_em) <= d)
+                    )
+                except ValueError:
+                    pass
+
         if atendente_id:
             query = query.filter(Senha.atendente_id == atendente_id)
         if status:

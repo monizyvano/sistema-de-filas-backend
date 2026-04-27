@@ -181,17 +181,41 @@
         <!-- ================================================
              HISTÓRICO COMPLETO COM PAGINAÇÃO
         ================================================ -->
+        <!-- ================================================
+             HISTÓRICO COMPLETO COM FILTROS DE PERÍODO
+        ================================================ -->
         <section class="performance-section">
             <div class="performance-header">
-                <h3 class="performance-title">Histórico Completo</h3>
+                <h3 class="performance-title">Histórico de Atendimentos</h3>
             </div>
+
+            <!-- Filtros de período -->
+            <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem;">
+                <button id="filtroHoje"    onclick="filtrarHistorico('hoje')"   style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:#6b4226;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">Hoje</button>
+                <button id="filtroSemana" onclick="filtrarHistorico('semana')" style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Esta semana</button>
+                <button id="filtroMes"    onclick="filtrarHistorico('mes')"    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Este mês</button>
+                <button id="filtroTodos"  onclick="filtrarHistorico('todos')"  style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Todos</button>
+                <span style="color:#c5b5a5;font-size:.8rem;margin:0 .2rem;">|</span>
+                <label style="font-size:.82rem;color:#6b4226;font-weight:600;">De:
+                    <input type="date" id="filtroDataDe" style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;padding:.3rem .5rem;font-size:.82rem;">
+                </label>
+                <label style="font-size:.82rem;color:#6b4226;font-weight:600;">Até:
+                    <input type="date" id="filtroDataAte" style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;padding:.3rem .5rem;font-size:.82rem;">
+                </label>
+                <button onclick="filtrarHistorico('intervalo')" style="padding:.4rem .9rem;border-radius:8px;border:1px solid #6b4226;background:white;color:#6b4226;font-weight:700;cursor:pointer;font-size:.82rem;">🔍 Filtrar</button>
+                <button onclick="imprimirRelatorioCompleto()" style="padding:.4rem .9rem;border-radius:8px;border:none;background:linear-gradient(135deg,#3e2510,#6b4226);color:white;font-weight:700;cursor:pointer;font-size:.82rem;">🖨 Imprimir</button>
+                <button onclick="exportarHistorico('excel')" style="padding:.4rem .9rem;border-radius:8px;border:none;background:#1d6b35;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">⬇ Excel</button>
+                <button onclick="exportarHistorico('pdf')"   style="padding:.4rem .9rem;border-radius:8px;border:none;background:#b91c1c;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">⬇ PDF</button>
+            </div>
+
             <table class="performance-table">
                 <thead>
                     <tr>
                         <th>Senha</th>
                         <th>Serviço</th>
                         <th>Atendido por</th>
-                        <th>Hora</th>
+                        <th>Data / Hora</th>
+                        <th>Espera</th>
                         <th>Duração</th>
                         <th>Estado</th>
                     </tr>
