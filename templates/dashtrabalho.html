@@ -8,6 +8,173 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/dash.css">
     <link rel="stylesheet" href="/static/css/dashtrabalho.css">
+    <style>
+        /* ── Modal de Redirecionamento ────────────────────── */
+        #modalRedirecionar {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9998;
+            background: rgba(0,0,0,.55);
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .redir-card {
+            background: white;
+            border-radius: 20px;
+            max-width: 480px;
+            width: 100%;
+            overflow: hidden;
+            box-shadow: 0 24px 64px rgba(0,0,0,.35);
+            animation: redirSlideIn .32s cubic-bezier(.16,1,.3,1);
+        }
+
+        @keyframes redirSlideIn {
+            from { opacity: 0; transform: translateY(24px) scale(.97); }
+            to   { opacity: 1; transform: translateY(0)   scale(1); }
+        }
+
+        .redir-header {
+            background: linear-gradient(135deg, #5b21b6, #7c3aed);
+            color: white;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .redir-header-left .redir-label {
+            font-size: .72rem;
+            opacity: .8;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+        }
+
+        .redir-header-left h3 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            margin-top: .15rem;
+        }
+
+        .redir-badge {
+            background: rgba(255,255,255,.2);
+            backdrop-filter: blur(8px);
+            padding: .3rem .85rem;
+            border-radius: 20px;
+            font-size: .8rem;
+            font-weight: 700;
+        }
+
+        .redir-close {
+            background: rgba(255,255,255,.15);
+            border: none;
+            color: white;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: .75rem;
+            transition: background .2s;
+        }
+
+        .redir-close:hover { background: rgba(255,255,255,.3); }
+
+        .redir-body {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+
+        .redir-info {
+            background: #fdf3ff;
+            border: 1px solid #e9d5ff;
+            border-radius: 10px;
+            padding: .85rem 1rem;
+            font-size: .85rem;
+            color: #5b21b6;
+            font-weight: 500;
+        }
+
+        .redir-field label {
+            display: block;
+            font-size: .75rem;
+            font-weight: 700;
+            color: #6b4226;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: .4rem;
+        }
+
+        .redir-field select,
+        .redir-field input {
+            width: 100%;
+            padding: .8rem 1rem;
+            border: 1.5px solid rgba(196,168,130,.5);
+            border-radius: 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: .95rem;
+            color: #2a1a0a;
+            outline: none;
+            background: white;
+            transition: border-color .2s, box-shadow .2s;
+        }
+
+        .redir-field select:focus,
+        .redir-field input:focus {
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124,58,237,.12);
+        }
+
+        #redirMsg {
+            font-size: .85rem;
+            font-weight: 600;
+            min-height: 1.2rem;
+        }
+
+        .redir-actions {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: .6rem;
+        }
+
+        .btn-redir-confirm {
+            padding: .9rem 1.25rem;
+            background: linear-gradient(135deg, #5b21b6, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: .95rem;
+            cursor: pointer;
+            transition: opacity .2s, transform .15s;
+        }
+
+        .btn-redir-confirm:hover  { opacity: .92; transform: translateY(-1px); }
+        .btn-redir-confirm:active { transform: translateY(0); }
+        .btn-redir-confirm:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+        .btn-redir-cancel {
+            padding: .9rem 1.1rem;
+            background: white;
+            color: #6b4226;
+            border: 1.5px solid rgba(196,168,130,.6);
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: .88rem;
+            cursor: pointer;
+            transition: background .2s;
+        }
+
+        .btn-redir-cancel:hover { background: #fdf8f5; }
+    </style>
 </head>
 <body>
 
@@ -104,7 +271,8 @@
                         <button class="btn-action btn-pause" onclick="togglePause()" id="pauseBtn">
                             ⏸ Pausar
                         </button>
-                       <button class="btn-action btn-redirect" onclick="redirectCustomer()">
+                        <!-- ↪ Redirecionar — agora abre modal funcional -->
+                        <button class="btn-action btn-redirect" id="btnRedirecionar" onclick="redirectCustomer()" disabled>
                             ↪ Redirecionar
                         </button>
                         <button class="btn-action btn-docs" onclick="addObservation()">
@@ -128,96 +296,8 @@
                     </div>
                 </div>
 
-            <!-- MODAL — Documentos do Atendimento -->
-            <div id="modalDocumentos" style="
-                display:none;position:fixed;inset:0;z-index:9999;
-                background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
-                align-items:center;justify-content:center;padding:1rem;
-            ">
-                <div style="
-                    background:white;border-radius:20px;max-width:560px;width:100%;
-                    max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35);
-                ">
-                    <!-- Cabeçalho -->
-                    <div style="
-                        background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
-                        padding:1.25rem 1.5rem;border-radius:20px 20px 0 0;
-                        display:flex;align-items:center;justify-content:space-between;
-                    ">
-                        <div>
-                            <div style="font-size:.75rem;opacity:.8;text-transform:uppercase;letter-spacing:.08em;">
-                                IMTSB · Documentos do Atendimento
-                            </div>
-                            <div id="modalSenhaTitulo" style="font-size:1.3rem;font-weight:800;margin-top:.2rem;">—</div>
-                        </div>
-                        <button onclick="fecharModalDocumentos()" style="
-                            background:rgba(255,255,255,.2);border:none;color:white;
-                            width:36px;height:36px;border-radius:50%;cursor:pointer;
-                            font-size:1.2rem;display:flex;align-items:center;justify-content:center;
-                        ">✕</button>
-                    </div>
-
-                    <!-- Corpo -->
-                    <div style="padding:1.5rem;">
-
-                        <!-- Dados do formulário -->
-                        <div style="margin-bottom:1rem;">
-                            <div style="font-size:.72rem;font-weight:700;color:#8c6746;
-                                        text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
-                                Dados do Formulário
-                            </div>
-                            <div id="modalDadosForm" style="
-                                background:#fdf8f5;border:1px solid #e8d5c4;border-radius:12px;
-                                padding:1rem;font-size:.88rem;line-height:1.8;color:#3e2510;
-                                white-space:pre-wrap;min-height:60px;
-                            ">—</div>
-                        </div>
-
-                        <!-- Documento anexado -->
-                        <div id="modalFicheiroBloco" style="
-                            background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;
-                            padding:1rem;display:none;margin-bottom:1rem;
-                        ">
-                            <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;
-                                        text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
-                                Documento Anexado
-                            </div>
-                            <div id="modalFicheiroNome" style="font-size:.88rem;color:#1e3a5f;margin-bottom:.75rem;">—</div>
-                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                                <a id="modalBtnDownload" href="#" download style="
-                                    background:#2563eb;color:white;padding:.5rem 1.1rem;
-                                    border-radius:10px;font-size:.85rem;font-weight:700;
-                                    text-decoration:none;display:inline-block;
-                                ">⬇ Download</a>
-                               <!-- <button id="modalBtnVisualizar" onclick="visualizarFicheiroModal()" style="
-                                    background:#e0f2fe;color:#0369a1;padding:.5rem 1.1rem;
-                                    border-radius:10px;font-size:.85rem;font-weight:700;
-                                    border:none;cursor:pointer;display:inline-block;
-                                ">👁 Visualizar</button> -->
-                            </div>
-                        </div>
-
-                        <!-- Sem ficheiro -->
-                        <div id="modalSemFicheiro" style="
-                            background:#f9f4ef;border:1px dashed #d9cabc;border-radius:12px;
-                            padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;
-                        ">
-                            Sem documento anexado neste pedido.
-                        </div>
-
-                        <!-- Botão imprimir -->
-                        <div style="margin-top:1rem;text-align:right;">
-                            <button onclick="imprimirDocumentoAtendimento()" style="
-                                background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
-                                border:none;padding:.65rem 1.4rem;border-radius:12px;
-                                font-size:.9rem;font-weight:700;cursor:pointer;
-                            ">🖨 Imprimir Tudo</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            </div>
-        </div>
+            </div><!-- fim .card -->
+        </div><!-- fim col-scroll 2 -->
 
         <!-- COLUNA 3 — Fila ao vivo + Histórico + Stats -->
         <div class="col-scroll">
@@ -241,14 +321,6 @@
                 </div>
             </div>
 
-            <!-- Fila ao vivo 
-            <div class="card">
-                <div class="card-title">⚡ Fila Ao Vivo</div>
-                <div class="live-queue-list" id="liveQueueList">
-                    <div class="live-queue-empty" style="color:var(--text-muted);font-size:.85rem;padding:.25rem 0;">A carregar...</div>
-                </div>
-            </div> -->
-
             <!-- Histórico hoje -->
             <div class="card">
                 <div class="card-title">📜 Histórico de Hoje</div>
@@ -260,16 +332,145 @@
             </div>
 
         </div>
+    </div><!-- fim .main-grid -->
+</div><!-- fim .page-wrapper -->
+
+<!-- ── Campo oculto para ID da senha actual ──────────────── -->
+<input type="hidden" id="currentSenhaId" value="">
+
+<!-- ════════════════════════════════════════════════════════
+     MODAL — Redirecionar Senha
+════════════════════════════════════════════════════════ -->
+<div id="modalRedirecionar">
+    <div class="redir-card">
+
+        <!-- Cabeçalho -->
+        <div class="redir-header">
+            <div class="redir-header-left">
+                <div class="redir-label">↪ Redirecionar Senha</div>
+                <h3>Senha <span id="redirSenhaNum">—</span></h3>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;">
+                <span class="redir-badge" id="redirServicoBadge">—</span>
+                <button class="redir-close" onclick="fecharModalRedir()">✕</button>
+            </div>
+        </div>
+
+        <!-- Corpo -->
+        <div class="redir-body">
+            <div class="redir-info">
+                ↪ Esta senha vai voltar à fila do serviço de destino com status <strong>Aguardando</strong>.
+            </div>
+
+            <div class="redir-field">
+                <label>Serviço de Destino *</label>
+                <select id="redirServicoSelect">
+                    <option value="">— A carregar serviços... —</option>
+                </select>
+            </div>
+
+            <div class="redir-field">
+                <label>Motivo do Redirecionamento (opcional)</label>
+                <input
+                    type="text"
+                    id="redirMotivo"
+                    placeholder="ex: Utente errou o serviço, documentação incompleta..."
+                    maxlength="200"
+                >
+            </div>
+
+            <div id="redirMsg"></div>
+
+            <div class="redir-actions">
+                <button class="btn-redir-confirm" id="btnConfirmarRedir" onclick="confirmarRedirecionamento()">
+                    ↪ Confirmar Redirecionamento
+                </button>
+                <button class="btn-redir-cancel" onclick="fecharModalRedir()">
+                    Cancelar
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- campo oculto para ID da senha actual -->
-<input type="hidden" id="currentSenhaId" value="">
+<!-- ════════════════════════════════════════════════════════
+     MODAL — Documentos do Atendimento
+════════════════════════════════════════════════════════ -->
+<div id="modalDocumentos" style="
+    display:none;position:fixed;inset:0;z-index:9999;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+    align-items:center;justify-content:center;padding:1rem;">
+    <div style="
+        background:white;border-radius:20px;max-width:560px;width:100%;
+        max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35);">
 
+        <!-- Cabeçalho -->
+        <div style="
+            background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+            padding:1.25rem 1.5rem;border-radius:20px 20px 0 0;
+            display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:.75rem;opacity:.8;text-transform:uppercase;letter-spacing:.08em;">
+                    IMTSB · Documentos do Atendimento
+                </div>
+                <div id="modalSenhaTitulo" style="font-size:1.3rem;font-weight:800;margin-top:.2rem;">—</div>
+            </div>
+            <button onclick="fecharModalDocumentos()" style="
+                background:rgba(255,255,255,.2);border:none;color:white;
+                width:36px;height:36px;border-radius:50%;cursor:pointer;
+                font-size:1.2rem;display:flex;align-items:center;justify-content:center;">✕</button>
+        </div>
+
+        <!-- Corpo -->
+        <div style="padding:1.5rem;">
+            <div style="margin-bottom:1rem;">
+                <div style="font-size:.72rem;font-weight:700;color:#8c6746;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
+                    Dados do Formulário
+                </div>
+                <div id="modalDadosForm" style="
+                    background:#fdf8f5;border:1px solid #e8d5c4;border-radius:12px;
+                    padding:1rem;font-size:.88rem;line-height:1.8;color:#3e2510;
+                    white-space:pre-wrap;min-height:60px;">—</div>
+            </div>
+
+            <div id="modalFicheiroBloco" style="
+                background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;
+                padding:1rem;display:none;margin-bottom:1rem;">
+                <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;">
+                    Documento Anexado
+                </div>
+                <div id="modalFicheiroNome" style="font-size:.88rem;color:#1e3a5f;margin-bottom:.75rem;">—</div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+                    <a id="modalBtnDownload" href="#" download style="
+                        background:#2563eb;color:white;padding:.5rem 1.1rem;
+                        border-radius:10px;font-size:.85rem;font-weight:700;text-decoration:none;">⬇ Download</a>
+                </div>
+            </div>
+
+            <div id="modalSemFicheiro" style="
+                background:#f9f4ef;border:1px dashed #d9cabc;border-radius:12px;
+                padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;">
+                Sem documento anexado neste pedido.
+            </div>
+
+            <div style="text-align:right;margin-top:1rem;">
+                <button onclick="imprimirDocumentoAtendimento()" style="
+                    background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+                    border:none;padding:.65rem 1.4rem;border-radius:12px;
+                    font-size:.9rem;font-weight:700;cursor:pointer;">🖨 Imprimir Tudo</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── SCRIPTS ───────────────────────────────────────────── -->
 <script src="/static/js/api-config.js"></script>
 <script src="/static/js/api-adapter.js"></script>
 <script src="/static/js/api-client.js"></script>
 <script src="/static/js/realtime-store.js"></script>
+<!-- ✅ SPRINT 4: Sistema de notificações deve vir ANTES do dash.js -->
+<script src="/static/js/notifications.js"></script>
 <script src="/static/js/dash.js"></script>
+
 </body>
 </html>

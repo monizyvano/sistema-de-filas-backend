@@ -1,20 +1,25 @@
 /**
- * static/js/dash.js — Sprint 2 COMPLETO
+ * static/js/dash.js — Sprint 4 COMPLETO
  * ═══════════════════════════════════════════════════════════════
- * FIXES:
- *   ✅ pararTimer() definido (estava indefinido — causava crash)
- *   ✅ pararPolling() definido (estava indefinido)
- *   ✅ atualizarEstatisticas() sem duplicação
- *   ✅ Botão Concluir activa/desactiva correctamente
- *   ✅ Botão Negar funcional
- *   ✅ Todos os botões de acção funcionais
- *   ✅ Timer inicia ao chamar senha
+ * ADIÇÕES SPRINT 4:
+ *   ✅ Som + vibração em TODAS as acções do trabalhador
+ *   ✅ Notificações visuais específicas por tipo de acção
+ *   ✅ redirectCustomer() — funcional: abre modal, chama API real
+ *   ✅ Modal de redirecionamento com lista de serviços dinâmica
+ *   ✅ denyCurrentTicket() — notificação completa
+ *   ✅ concludeAttendance() — som de conclusão
+ *   ✅ callNextCustomer() — som + vibração de chamada
+ *   ✅ togglePause() — som de pausa/retoma
+ *
+ * DEPENDÊNCIAS:
+ *   notifications.js deve ser carregado antes deste ficheiro.
  * ═══════════════════════════════════════════════════════════════
  */
 (function () {
   "use strict";
 
-  const store    = window.IMTSBStore;
+  const store     = window.IMTSBStore;
+  const N         = window.IMTSBNotifications;   // ← sistema de notificações
   const ANGOLA_TZ = "Africa/Luanda";
 
   /* ── Estado ──────────────────────────────────────────────── */
@@ -22,6 +27,7 @@
   let timerInterval    = null;
   let pollingInterval  = null;
   let timerSegundos    = 0;
+  let _servicosCache   = [];   // cache para o modal de redirecionamento
 
   /* ── Formatadores ────────────────────────────────────────── */
   function nowKeyLuanda() {
@@ -30,16 +36,13 @@
   function keyFromDate(value) {
     if (!value) return "";
     const iso = (typeof value === 'string' && !value.endsWith('Z') && !value.includes('+'))
-      ? value + 'Z'
-      : value;
+      ? value + 'Z' : value;
     return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date(iso));
   }
   function formatTimeLuanda(value) {
     if (!value) return "--:--";
-    // Se a string não tem indicador de timezone, assume UTC (sufixo Z)
     const iso = (typeof value === 'string' && !value.endsWith('Z') && !value.includes('+'))
-      ? value + 'Z'
-      : value;
+      ? value + 'Z' : value;
     return new Date(iso).toLocaleTimeString("pt-PT", {
       hour: "2-digit", minute: "2-digit", timeZone: ANGOLA_TZ
     });
@@ -59,26 +62,8 @@
     if (statusDot)  statusDot.style.background = cor || "#10b981";
   }
 
-  function showToast(message, tipo) {
-    const existing = document.getElementById('dashToast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = 'dashToast';
-    const bg = tipo === 'error' ? '#dc2626' : tipo === 'warn' ? '#d97706' : '#059669';
-    toast.style.cssText = `
-        position:fixed;top:1.5rem;right:1.5rem;background:${bg};color:white;
-        padding:.85rem 1.5rem;border-radius:12px;font-weight:600;font-size:.9rem;
-        z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.25);
-        animation:slideInRight .3s ease-out;max-width:320px;line-height:1.4;
-    `;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
-  }
-
   /* ── Timer ───────────────────────────────────────────────── */
   function iniciarTimer() {
-    // Garantir que nunca há dois intervalos em simultâneo
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     timerSegundos = 0;
     const el = document.getElementById("timer");
@@ -107,7 +92,6 @@
     }, 7000);
   }
 
-  /* ✅ FIX: pararPolling estava indefinido */
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
   }
@@ -121,15 +105,11 @@
   function carregarDadosTrabalhador() {
     const user = store.getUser();
     if (!user) return;
-
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
-    set("workerName", user.name || "Trabalhador");
-    set("workerDept", user.departamento || "Atendimento");
-
+    set("workerName",   user.name || "Trabalhador");
+    set("workerDept",   user.departamento || "Atendimento");
     const iniciais = (user.name || "T").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
     set("workerAvatar", iniciais);
-
     const balcao = user.balcao || user.numero_balcao;
     set("counterBadge", balcao ? `Balcão ${balcao}` : "Sem balcão");
   }
@@ -157,25 +137,23 @@
     const user = store.getUser();
     if (!user) return;
     try {
-      const resp = await fetch(`/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`, {
-        headers: { Authorization: `Bearer ${store.getToken()}` }
-      });
+      const resp = await fetch(
+        `/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`,
+        { headers: { Authorization: `Bearer ${store.getToken()}` } }
+      );
       if (!resp.ok) return;
-      const data  = await resp.json();
-      const today = nowKeyLuanda();
+      const data      = await resp.json();
+      const today     = nowKeyLuanda();
       const senhasHoje = (data.senhas || []).filter(s => {
         const ts = s.atendimento_concluido_em || s.updated_at || s.emitida_em || s.created_at;
         return keyFromDate(ts) === today;
       });
-
       const activityLog = document.getElementById("activityLog");
       if (!activityLog) return;
-
       if (!senhasHoje.length) {
         activityLog.innerHTML = '<div class="log-item"><div class="log-password" style="color:var(--text-muted);">Nenhum atendimento hoje</div></div>';
         return;
       }
-
       activityLog.innerHTML = senhasHoje.slice(0, 8).map(s => {
         const hora    = formatTimeLuanda(s.atendimento_concluido_em || s.updated_at || s.created_at);
         const duracao = Math.round(s.tempo_atendimento_minutos || 0);
@@ -197,18 +175,17 @@
     if (!list) return;
     try {
       const serviceFilter = user?.servico_id ? `&servico_id=${user.servico_id}` : "";
-      const resp = await fetch(`/api/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`, {
-        headers: { Authorization: `Bearer ${store.getToken()}` }
-      });
+      const resp = await fetch(
+        `/api/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`,
+        { headers: { Authorization: `Bearer ${store.getToken()}` } }
+      );
       if (!resp.ok) return;
-      const data  = await resp.json();
+      const data   = await resp.json();
       const senhas = Array.isArray(data) ? data : (data.senhas || []);
-
       if (!senhas.length) {
         list.innerHTML = '<div class="live-queue-empty" style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0;">✅ Sem senhas em fila</div>';
         return;
       }
-
       list.innerHTML = senhas.slice(0, 8).map((s, idx) => {
         const isPriority = s.tipo === 'prioritaria';
         return `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
@@ -227,14 +204,12 @@
   /* ── Display senha actual ────────────────────────────────── */
   function atualizarDisplayAtual(senha) {
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
     set("currentPassword", senha.numero || "---");
     set("passwordType",    senha.tipo === "prioritaria" ? "★ Atendimento Prioritário" : "Atendimento Normal");
     set("serviceValue",    senha.servico?.nome || "Serviço");
     set("waitTime",        `${Math.round(senha.tempo_espera_minutos || 0)} min`);
     set("issuedAt",        formatTimeLuanda(senha.emitida_em || senha.created_at));
     set("obsValue",        senha.observacoes || "Sem observações");
-
     preencherPreviewDocumentos(senha);
     setStatus("Em Atendimento", "#d97706");
   }
@@ -261,100 +236,60 @@
     actualizarBotoes();
   }
 
-/*PREENCHER PREVIEW DE DOCUMENTOS */
-
+  /* ── Preview de Documentos ───────────────────────────────── */
   function preencherPreviewDocumentos(senha) {
     const pre = document.getElementById("docsPreviewContent");
     if (!pre) return;
- 
     const obs = senha?.observacoes;
- 
     if (!obs) {
       pre.innerHTML = '<span style="color:#9ca3af;font-size:.85rem;">Sem dados de formulário para esta senha.</span>';
       return;
     }
- 
-    // — Separar partes das observações ──────────────────────
     const partes       = obs.split(' | ').map(p => p.trim()).filter(Boolean);
     const nomeFicheiro = partes.find(p => p.startsWith('FICHEIRO:'))?.replace('FICHEIRO:', '').trim();
     const dadosForm    = partes.filter(p => !p.startsWith('FICHEIRO:'));
- 
-    // — Construir HTML do preview ────────────────────────────
     let html = '';
- 
-    // Dados do formulário
     if (dadosForm.length) {
       html += '<div style="white-space:pre-wrap;font-size:.82rem;color:#3e2510;line-height:1.7;">';
       html += dadosForm.join('\n');
       html += '</div>';
     }
- 
-    // Botões de ficheiro (se existir)
     if (nomeFicheiro) {
       const senhaId = senha.id;
       html += `
-        <div style="
-          margin-top:.75rem;
-          padding:.75rem;
-          background:#eff6ff;
-          border:1px solid #bfdbfe;
-          border-radius:10px;
-          display:flex;
-          align-items:center;
-          gap:.6rem;
-          flex-wrap:wrap;
-        ">
+        <div style="margin-top:.75rem;padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;
+             border-radius:10px;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
           <span style="font-size:.8rem;color:#1d4ed8;font-weight:600;">
             📎 ${nomeFicheiro.split('_').slice(2).join('_') || nomeFicheiro}
           </span>
-          <a
-            href="/api/senhas/${senhaId}/ficheiro"
-            target="_blank"
-            download
-            style="
-              background:#2563eb;color:white;
-              padding:.35rem .9rem;border-radius:8px;
-              font-size:.78rem;font-weight:700;
-              text-decoration:none;
-              transition:opacity .2s;
-            "
-            onmouseover="this.style.opacity='.8'"
-            onmouseout="this.style.opacity='1'"
-          >⬇ Download</a>
-          <a
-            href="/api/senhas/${senhaId}/ficheiro"
-            target="_blank"
-            style="
-              background:#e0f2fe;color:#0369a1;
-              padding:.35rem .9rem;border-radius:8px;
-              font-size:.78rem;font-weight:700;
-              text-decoration:none;
-              transition:opacity .2s;
-            "
-            onmouseover="this.style.opacity='.8'"
-            onmouseout="this.style.opacity='1'"
-          >👁 Visualizar</a>
-        </div>
-      `;
+          <a href="/api/senhas/${senhaId}/ficheiro" target="_blank" download
+             style="background:#2563eb;color:white;padding:.35rem .9rem;border-radius:8px;
+                    font-size:.78rem;font-weight:700;text-decoration:none;">⬇ Download</a>
+          <a href="/api/senhas/${senhaId}/ficheiro" target="_blank"
+             style="background:#e0f2fe;color:#0369a1;padding:.35rem .9rem;border-radius:8px;
+                    font-size:.78rem;font-weight:700;text-decoration:none;">👁 Visualizar</a>
+        </div>`;
     } else {
       html += '<div style="margin-top:.5rem;font-size:.78rem;color:#9ca3af;">Sem ficheiro anexado.</div>';
     }
- 
     pre.innerHTML = html;
   }
 
   function actualizarBotoes() {
     const btnConcluir = document.getElementById("btnConcluir");
     const btnNegar    = document.getElementById("btnNegar");
+    const btnRedir    = document.getElementById("btnRedirecionar");
     const temSenha    = !!senhaAtual;
     if (btnConcluir) btnConcluir.disabled = !temSenha;
     if (btnNegar)    btnNegar.disabled    = !temSenha;
+    if (btnRedir)    btnRedir.disabled    = !temSenha;
   }
 
   /* ════════════════════════════════════════════════════════════
-     ACÇÕES DO TRABALHADOR — TODAS FUNCIONAIS
+     ACÇÕES PRINCIPAIS — TODAS COM SOM + VIBRAÇÃO + NOTIFICAÇÃO
   ════════════════════════════════════════════════════════════ */
 
+  /* ── CHAMAR PRÓXIMA ──────────────────────────────────────── */
   window.callNextCustomer = async function () {
     const user = store.getUser();
     if (!user) return;
@@ -363,7 +298,7 @@
     const balcao    = parseInt(user.balcao || user.numero_balcao);
 
     if (!servicoId || !balcao) {
-      showToast("Perfil incompleto: falta serviço ou balcão. Contacte o administrador.", "error");
+      N && N.notify('error', 'Perfil incompleto: falta serviço ou balcão. Contacte o administrador.');
       return;
     }
 
@@ -376,16 +311,14 @@
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
         body:    JSON.stringify({ servico_id: servicoId, numero_balcao: balcao })
       });
-
       const data = await resp.json().catch(() => ({}));
 
       if (resp.status === 404 || (resp.ok && !data.senha)) {
-        showToast("Não há senhas na fila de momento.", "warn");
+        N && N.notify('info', 'Não há senhas na fila de momento.', 3500);
         return;
       }
-
       if (!resp.ok) {
-        showToast(data.erro || "Erro ao chamar senha.", "error");
+        N && N.notify('error', data.erro || "Erro ao chamar senha.");
         return;
       }
 
@@ -397,19 +330,22 @@
       actualizarBotoes();
       iniciarTimer();
       await atualizarTudo();
-      showToast(`✅ Senha ${senhaAtual.numero} chamada — Balcão ${balcao}`, "success");
+
+      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de chamada */
+      N && N.onCall(senhaAtual.numero, balcao);
 
     } catch (err) {
       console.error("[chamar]", err);
-      showToast("Erro de ligação ao servidor.", "error");
+      N && N.notify('error', 'Erro de ligação ao servidor.');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
     }
   };
 
+  /* ── CONCLUIR ATENDIMENTO ────────────────────────────────── */
   window.concludeAttendance = async function () {
     const senhaId = document.getElementById("currentSenhaId")?.value;
-    if (!senhaId) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    if (!senhaId) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
 
     const btn = document.getElementById("btnConcluir");
     if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
@@ -419,31 +355,32 @@
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` }
       });
-
       if (!resp.ok) {
         const d = await resp.json().catch(() => ({}));
         throw new Error(d.erro || "Falha ao concluir.");
       }
-
       const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
       await atualizarTudo();
-      showToast(`✅ Atendimento ${numSenha} concluído com sucesso!`, "success");
+
+      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de conclusão */
+      N && N.onConclude(numSenha);
 
     } catch (err) {
-      showToast(err.message || "Erro ao concluir atendimento.", "error");
+      N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
       if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
     }
   };
 
+  /* ── NEGAR ATENDIMENTO ───────────────────────────────────── */
   window.denyCurrentTicket = async function () {
     const senhaId = document.getElementById("currentSenhaId")?.value;
-    if (!senhaId || !senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    if (!senhaId || !senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
 
     const motivo = prompt(`Motivo da negação da senha ${senhaAtual.numero}:`, "");
     if (motivo === null) return;
-    if (!motivo.trim()) { showToast("É necessário indicar o motivo.", "warn"); return; }
+    if (!motivo.trim()) { N && N.notify('warn', 'É necessário indicar o motivo.'); return; }
 
     const btn = document.getElementById("btnNegar");
     if (btn) { btn.disabled = true; btn.textContent = "A negar..."; }
@@ -452,48 +389,178 @@
       const resp = await fetch(`/api/senhas/${senhaId}/finalizar`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
-        body:    JSON.stringify({ observacoes: `NEGADO pelo trabalhador: ${motivo}` })
+        body:    JSON.stringify({ observacoes: `NEGADO: ${motivo}` })
       });
-
       if (!resp.ok) {
         const d = await resp.json().catch(() => ({}));
         throw new Error(d.erro || "Falha ao negar.");
       }
-
       const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
       await atualizarTudo();
-      showToast(`Senha ${numSenha} negada. Motivo registado.`, "warn");
+
+      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de negação */
+      N && N.onDeny(numSenha);
 
     } catch (err) {
-      showToast(err.message || "Erro ao negar senha.", "error");
+      N && N.notify('error', err.message || "Erro ao negar senha.");
     } finally {
       if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Negar"; }
     }
   };
 
+  /* ── REDIRECIONAR — MODAL + API REAL ─────────────────────── */
+
+  /* Abrir modal de redirecionamento */
+  window.redirectCustomer = async function () {
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
+
+    const modal = document.getElementById("modalRedirecionar");
+    if (!modal) {
+      N && N.notify('error', 'Modal de redirecionamento não encontrado no HTML.');
+      return;
+    }
+
+    /* Actualizar cabeçalho do modal */
+    const titleEl = document.getElementById("redirSenhaNum");
+    const servicoEl = document.getElementById("redirServicoBadge");
+    if (titleEl)   titleEl.textContent  = senhaAtual.numero;
+    if (servicoEl) servicoEl.textContent = senhaAtual.servico?.nome || "–";
+
+    /* Carregar serviços no select (se não carregados) */
+    await _carregarServicosNoModal();
+
+    /* Limpar campos */
+    const motivoInput = document.getElementById("redirMotivo");
+    if (motivoInput) motivoInput.value = "";
+
+    modal.style.display = "flex";
+
+    /* Fechar ao clicar no overlay */
+    modal.onclick = (e) => { if (e.target === modal) fecharModalRedir(); };
+  };
+
+  /* Carregar lista de serviços no select do modal */
+  async function _carregarServicosNoModal() {
+    const select = document.getElementById("redirServicoSelect");
+    if (!select) return;
+
+    /* Usar cache se já carregados */
+    if (_servicosCache.length) {
+      _renderSelectServicos(select);
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/servicos');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      _servicosCache = Array.isArray(data) ? data : (data.servicos || data);
+      _renderSelectServicos(select);
+    } catch (err) {
+      console.error("[redir] serviços:", err);
+    }
+  }
+
+  function _renderSelectServicos(select) {
+    const servicoActual = senhaAtual?.servico_id;
+    select.innerHTML = '<option value="">— Seleccione o serviço de destino —</option>';
+    _servicosCache
+      .filter(s => s.ativo !== false && s.id !== servicoActual)
+      .forEach(s => {
+        const opt = document.createElement('option');
+        opt.value       = s.id;
+        opt.textContent = `${s.icone || '📋'} ${s.nome}`;
+        select.appendChild(opt);
+      });
+  }
+
+  /* Confirmar redirecionamento */
+  window.confirmarRedirecionamento = async function () {
+    const senhaId   = document.getElementById("currentSenhaId")?.value;
+    const select    = document.getElementById("redirServicoSelect");
+    const motivoEl  = document.getElementById("redirMotivo");
+    const msgEl     = document.getElementById("redirMsg");
+
+    if (!senhaId || !senhaAtual) {
+      if (msgEl) { msgEl.textContent = 'Nenhuma senha activa.'; msgEl.style.color = '#dc2626'; }
+      return;
+    }
+
+    const servicoId = parseInt(select?.value || '0');
+    if (!servicoId) {
+      if (msgEl) { msgEl.textContent = 'Seleccione um serviço de destino.'; msgEl.style.color = '#dc2626'; }
+      return;
+    }
+
+    const motivo = (motivoEl?.value || '').trim() || 'Sem motivo indicado';
+
+    /* Encontrar nome do serviço para notificação */
+    const servicoDestino = _servicosCache.find(s => s.id === servicoId);
+    const nomeDestino    = servicoDestino?.nome || `Serviço #${servicoId}`;
+
+    const btnConfirmar = document.getElementById("btnConfirmarRedir");
+    if (btnConfirmar) { btnConfirmar.disabled = true; btnConfirmar.textContent = "A redirecionar..."; }
+    if (msgEl) msgEl.textContent = '';
+
+    try {
+      const resp = await fetch(`/api/filas/redirecionar/${senhaId}`, {
+        method:  "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
+        body:    JSON.stringify({ servico_id: servicoId, motivo })
+      });
+
+      const data = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        if (msgEl) { msgEl.textContent = data.erro || 'Erro ao redirecionar.'; msgEl.style.color = '#dc2626'; }
+        return;
+      }
+
+      const numSenha = senhaAtual?.numero || senhaId;
+      fecharModalRedir();
+      limparAtendimentoAtual();
+      await atualizarTudo();
+
+      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de redirecionamento */
+      N && N.onRedirect(numSenha, nomeDestino);
+
+    } catch (err) {
+      console.error("[redir] confirmar:", err);
+      if (msgEl) { msgEl.textContent = 'Erro de ligação ao servidor.'; msgEl.style.color = '#dc2626'; }
+    } finally {
+      if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.textContent = "Confirmar Redirecionamento"; }
+    }
+  };
+
+  /* Fechar modal de redirecionamento */
+  window.fecharModalRedir = function () {
+    const modal = document.getElementById("modalRedirecionar");
+    if (modal) { modal.style.display = "none"; modal.onclick = null; }
+  };
+
+  /* ── PAUSA ───────────────────────────────────────────────── */
   window.togglePause = function () {
     const btn = document.getElementById("pauseBtn");
     if (!btn) return;
-
     const estaPausado = btn.dataset.pausado === "1";
 
     if (!estaPausado) {
-      /* — Pausar ────────────────────────────────────────────── */
       btn.dataset.pausado = "1";
       btn.textContent = "▶ Retomar";
       btn.style.cssText += "background:#fff8ed;color:#d97706;border-color:#fde68a;";
       pararPolling();
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
       setStatus("Pausado", "#d97706");
+
+      /* ✅ Notificação de pausa */
+      N && N.notify('pause', 'Atendimento pausado. Clique em "Retomar" para continuar.', 4000);
     } else {
-      /* — Retomar ───────────────────────────────────────────── */
       btn.dataset.pausado = "";
       btn.textContent = "⏸ Pausar";
       btn.style.cssText = "";
       iniciarPolling();
       if (senhaAtual) {
-        /* Retoma a partir dos segundos actuais (não reseta) */
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(() => {
           timerSegundos += 1;
@@ -502,40 +569,38 @@
         }, 1000);
       }
       setStatus(senhaAtual ? "Em Atendimento" : "Disponível", senhaAtual ? "#d97706" : "#10b981");
+
+      /* ✅ Notificação de retoma */
+      N && N.notify('resume', 'Atendimento retomado.', 2500);
     }
   };
 
-  window.redirectCustomer = function () {
-    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    const opcoes = ["1","2","3","4"].join(", ");
-    const balcao = prompt(
-      `Reencaminhar senha ${senhaAtual.numero} para qual balcão?\n(Balcões disponíveis: ${opcoes})`,
-      ""
-    );
-    if (balcao === null) return;
-    if (!balcao.trim()) { showToast("Indique o número do balcão.", "warn"); return; }
-    showToast(`↪ Senha ${senhaAtual.numero} reencaminhada para Balcão ${balcao.trim()}.`, "success");
-  };
+  /* ── REDIRECIONAR (antigo alias — agora usa o modal) ─────── */
+  /* redirectCustomer() já está definido acima com o modal */
 
+  /* ── ADICIONAR OBSERVAÇÃO ───────────────────────────────── */
   window.addObservation = function () {
-    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    const obs = prompt("Adicionar observação:", senhaAtual.observacoes?.replace(/FICHEIRO:[^\|]+\|?/g,"").trim() || "");
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
+    const obs = prompt("Adicionar observação:", senhaAtual.observacoes?.replace(/FICHEIRO:[^|]+\|?/g, "").trim() || "");
     if (obs === null) return;
     senhaAtual.observacoes = obs;
     const obsEl = document.getElementById("obsValue");
     if (obsEl) obsEl.textContent = obs || "Sem observações";
     preencherPreviewDocumentos(senhaAtual);
-    showToast("Observação adicionada.", "success");
+
+    /* ✅ Notificação de observação */
+    N && N.notify('info', 'Observação adicionada.', 2500);
   };
 
+  /* ── VER DOCUMENTOS ─────────────────────────────────────── */
   window.requestDocuments = function () {
-    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-    /* Abrir directamente o modal de documentos */
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
     window.abrirDocumentoAtendimento();
   };
 
+  /* ── IMPRIMIR RECIBO ─────────────────────────────────────── */
   window.sendReceipt = function () {
-    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
     const user    = store.getUser();
     const balcao  = user?.balcao || user?.numero_balcao || "–";
     const agora   = new Date().toLocaleString("pt-PT", { timeZone: ANGOLA_TZ });
@@ -551,39 +616,31 @@
         .value{font-weight:600;font-size:.9rem}
         .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.8rem}
       </style></head><body>
-      <div class="header">
-        <h2>IMTSB</h2>
-        <p>Instituto Médio Técnico São Benedito</p>
-      </div>
+      <div class="header"><h2>IMTSB</h2><p>Instituto Médio Técnico São Benedito</p></div>
       <div class="row"><span class="label">Senha</span><span class="value">${senhaAtual.numero}</span></div>
       <div class="row"><span class="label">Serviço</span><span class="value">${senhaAtual.servico?.nome || "–"}</span></div>
       <div class="row"><span class="label">Balcão</span><span class="value">${balcao}</span></div>
       <div class="row"><span class="label">Emitida às</span><span class="value">${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</span></div>
-      <div class="row"><span class="label">Duração</span><span class="value">${Math.round(timerSegundos/60)} min</span></div>
+      <div class="row"><span class="label">Duração</span><span class="value">${Math.round(timerSegundos / 60)} min</span></div>
       ${senhaAtual.observacoes ? `<div class="row"><span class="label">Observações</span><span class="value">${senhaAtual.observacoes}</span></div>` : ''}
-      <div class="footer">
-        <p>Impresso em ${agora}</p>
-        <p style="margin-top:8px">Obrigado pela sua visita ao IMTSB!</p>
-      </div>
-      <script>window.onload=()=>window.print();</script>
+      <div class="footer"><p>Impresso em ${agora}</p><p style="margin-top:8px">Obrigado pela sua visita ao IMTSB!</p></div>
+      <script>window.onload=()=>window.print();<\/script>
       </body></html>`;
 
     const w = window.open("", "_blank", "width=500,height=620");
-    if (!w) { showToast("Permita popups para imprimir o recibo.", "warn"); return; }
+    if (!w) { N && N.notify('warn', 'Permita popups para imprimir o recibo.'); return; }
     w.document.write(html);
     w.document.close();
+    N && N.notify('info', 'Recibo enviado para impressão.', 2500);
   };
 
-  window.showStatistics = function () {
-    window.location.href = "/dashadm.html";
-  };
+  window.showStatistics = function () { window.location.href = "/dashadm.html"; };
 
   /* ── Modal Documentos do Atendimento ────────────────────── */
-  let _urlFicheiroAtual = null; // URL do ficheiro para o botão Visualizar
+  let _urlFicheiroAtual = null;
 
   window.abrirDocumentoAtendimento = function () {
-    if (!senhaAtual) { showToast("Nenhuma senha em atendimento.", "warn"); return; }
-
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
     const modal    = document.getElementById("modalDocumentos");
     const titulo   = document.getElementById("modalSenhaTitulo");
     const dadosEl  = document.getElementById("modalDadosForm");
@@ -591,19 +648,14 @@
     const ficNome  = document.getElementById("modalFicheiroNome");
     const btnDl    = document.getElementById("modalBtnDownload");
     const semFich  = document.getElementById("modalSemFicheiro");
-
     if (!modal) return;
 
-    if (titulo) titulo.textContent =
-      `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
+    if (titulo) titulo.textContent = `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
 
-    const obs    = senhaAtual.observacoes || "";
-    const partes = obs.split(" | ").map(p => p.trim()).filter(Boolean);
-    const nomeFich  = partes.find(p => p.startsWith("FICHEIRO:"))
-                           ?.replace("FICHEIRO:","").trim() || null;
-    const linhasForm = partes
-      .filter(p => !p.startsWith("FICHEIRO:"))
-      .join("\n");
+    const obs        = senhaAtual.observacoes || "";
+    const partes     = obs.split(" | ").map(p => p.trim()).filter(Boolean);
+    const nomeFich   = partes.find(p => p.startsWith("FICHEIRO:"))?.replace("FICHEIRO:", "").trim() || null;
+    const linhasForm = partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
 
     if (dadosEl) dadosEl.textContent = linhasForm || "Sem dados de formulário.";
 
@@ -621,16 +673,11 @@
     }
 
     modal.style.display = "flex";
-
-    /* Fechar ao clicar no overlay (fora do card) */
-    modal.onclick = function(e) {
-      if (e.target === modal) window.fecharModalDocumentos();
-    };
+    modal.onclick = (e) => { if (e.target === modal) window.fecharModalDocumentos(); };
   };
 
-  /* Chamado pelo botão Visualizar (onclick no HTML) */
   window.visualizarFicheiroModal = function () {
-    if (!_urlFicheiroAtual) { showToast("Sem documento neste pedido.", "warn"); return; }
+    if (!_urlFicheiroAtual) { N && N.notify('warn', 'Sem documento neste pedido.'); return; }
     window.open(_urlFicheiroAtual, "_blank", "noopener,noreferrer");
   };
 
@@ -641,65 +688,51 @@
 
   window.imprimirDocumentoAtendimento = function () {
     if (!senhaAtual) return;
-    const user   = store.getUser();
-    const agora  = new Date().toLocaleString("pt-PT", { timeZone: ANGOLA_TZ });
-    const obs    = senhaAtual.observacoes || "";
-    const partes = obs.split(" | ").map(p => p.trim()).filter(Boolean);
-    const nomeFich   = partes.find(p => p.startsWith("FICHEIRO:"))
-                             ?.replace("FICHEIRO:","").trim() || null;
+    const user       = store.getUser();
+    const agora      = new Date().toLocaleString("pt-PT", { timeZone: ANGOLA_TZ });
+    const obs        = senhaAtual.observacoes || "";
+    const partes     = obs.split(" | ").map(p => p.trim()).filter(Boolean);
+    const nomeFich   = partes.find(p => p.startsWith("FICHEIRO:"))?.replace("FICHEIRO:", "").trim() || null;
     const linhasForm = partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
 
     const ficheiroHtml = nomeFich
-      ? `<div class="row">
-           <span class="label">Documento</span>
-           <span class="value">
-             <a href="/api/senhas/${senhaAtual.id}/ficheiro" target="_blank">
-               ${nomeFich.split("_").slice(2).join("_") || nomeFich}
-             </a>
-           </span>
-         </div>`
+      ? `<div class="row"><span class="label">Documento</span>
+           <span class="value"><a href="/api/senhas/${senhaAtual.id}/ficheiro" target="_blank">
+           ${nomeFich.split("_").slice(2).join("_") || nomeFich}</a></span></div>`
       : "";
 
     const html = `<html><head><title>Pedido ${senhaAtual.numero}</title>
       <style>
         body{font-family:'Segoe UI',sans-serif;padding:32px;color:#2a1a0a;max-width:560px;margin:0 auto}
-        .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
-          padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
+        .header{background:linear-gradient(135deg,#3e2510,#6b4226);color:white;padding:20px;border-radius:12px;text-align:center;margin-bottom:20px}
         .header h2{margin:0 0 4px;font-size:1.4rem}
         .header p{margin:0;opacity:.8;font-size:.85rem}
-        .row{display:flex;justify-content:space-between;padding:10px 0;
-          border-bottom:1px solid #f0e8dc;gap:12px}
+        .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0e8dc;gap:12px}
         .label{color:#8a7060;font-size:.85rem;min-width:120px}
         .value{font-weight:600;font-size:.9rem;text-align:right;word-break:break-word}
-        .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:8px;
-          padding:12px;white-space:pre-wrap;font-size:.88rem;line-height:1.7;margin:12px 0}
+        .dados{background:#fdf8f5;border:1px solid #e8d5c4;border-radius:8px;padding:12px;white-space:pre-wrap;font-size:.88rem;line-height:1.7;margin:12px 0}
         .footer{margin-top:20px;text-align:center;color:#8a7060;font-size:.8rem}
         a{color:#2563eb}
       </style></head><body>
-      <div class="header">
-        <h2>IMTSB · Pedido de Atendimento</h2>
-        <p>Instituto Médio Técnico São Benedito</p>
-      </div>
+      <div class="header"><h2>IMTSB · Pedido de Atendimento</h2><p>Instituto Médio Técnico São Benedito</p></div>
       <div class="row"><span class="label">Senha</span><span class="value">${senhaAtual.numero}</span></div>
       <div class="row"><span class="label">Serviço</span><span class="value">${senhaAtual.servico?.nome || "–"}</span></div>
       <div class="row"><span class="label">Balcão</span><span class="value">${user?.balcao || "–"}</span></div>
       <div class="row"><span class="label">Emitida às</span><span class="value">${formatTimeLuanda(senhaAtual.emitida_em || senhaAtual.created_at)}</span></div>
       ${ficheiroHtml}
-      <div style="margin-top:16px;font-size:.8rem;font-weight:700;color:#8a7060;
-                  text-transform:uppercase;letter-spacing:.06em;">Dados do Pedido</div>
+      <div style="margin-top:16px;font-size:.8rem;font-weight:700;color:#8a7060;text-transform:uppercase;letter-spacing:.06em;">Dados do Pedido</div>
       <div class="dados">${linhasForm || "Sem dados registados."}</div>
-      <div class="footer">
-        <p>Impresso em ${agora} · Atendente: ${user?.name || "–"}</p>
-      </div>
-      <script>window.onload=()=>{window.print();}</script>
+      <div class="footer"><p>Impresso em ${agora} · Atendente: ${user?.name || "–"}</p></div>
+      <script>window.onload=()=>{window.print();}<\/script>
       </body></html>`;
 
     const w = window.open("", "_blank", "width=620,height=720");
-    if (!w) { showToast("Permita popups para imprimir.", "warn"); return; }
+    if (!w) { N && N.notify('warn', 'Permita popups para imprimir.'); return; }
     w.document.write(html);
     w.document.close();
   };
 
+  /* ── SAIR ────────────────────────────────────────────────── */
   window.sair = function () {
     if (confirm("Deseja sair do sistema?")) {
       pararPolling();
@@ -736,11 +769,17 @@
 
     carregarDadosTrabalhador();
     renderTabs();
-    actualizarBotoes(); /* botões desactivados no arranque */
+    actualizarBotoes();
     setStatus("Disponível", "#10b981");
+
+    /* Pré-carregar serviços para o modal de redirecionamento */
+    await _carregarServicosNoModal().catch(() => {});
 
     await atualizarTudo();
     iniciarPolling();
+
+    /* Som de boas-vindas (subtil) */
+    setTimeout(() => N && N.play('info'), 800);
   });
 
 })();

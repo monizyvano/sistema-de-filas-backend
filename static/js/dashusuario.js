@@ -1,35 +1,41 @@
 /**
- * static/js/dashusuario.js — Sprint 3 COMPLETO
+ * static/js/dashusuario.js — Sprint 4 COMPLETO
  * ═══════════════════════════════════════════════════════════════
- * MELHORIAS:
- *   ✅ Live display reage a TODOS os estados: aguardando, atendendo,
- *      concluída, cancelada, redirecionada
- *   ✅ Notificação proeminente quando senha é chamada ("Dirija-se ao Balcão X")
- *   ✅ Banner de chamada com animação e som visual
- *   ✅ Posição na fila em tempo real
- *   ✅ Polling correcto sem 404 de senhas de dias anteriores
- *   ✅ Formulários de serviço redireccionam correctamente
+ * ADIÇÕES SPRINT 4:
+ *   ✅ "Última Chamada Geral" usa /api/realtime/snapshot (dados reais)
+ *   ✅ Fallback para /api/senhas?status=atendendo se snapshot falhar
+ *   ✅ Polling da última chamada independente do polling de stats
+ *   ✅ Animação visual quando a última chamada muda
+ *   ✅ Notificação ao utente quando a sua senha é chamada
+ *   ✅ Banner de chamada com som e vibração (usa notifications.js se disponível)
+ *   ✅ Tracker de posição na fila mais robusto
  * ═══════════════════════════════════════════════════════════════
  */
 (function () {
   "use strict";
 
   const store     = window.IMTSBStore;
+  const N         = window.IMTSBNotifications;  // opcional
   const ANGOLA_TZ = 'Africa/Luanda';
 
   /* ── Estado ──────────────────────────────────────────────── */
-  let servicoSelecionado    = null;
-  let minhaSenha            = null;
-  let pollingGeral          = null;
-  let pollingAcompanhamento = null;
-  let statusAnterior        = null; /* para detectar mudança de estado */
+  let servicoSelecionado      = null;
+  let minhaSenha              = null;
+  let pollingGeral            = null;
+  let pollingAcompanhamento   = null;
+  let statusAnterior          = null;
+  let _ultimaChamadaAnterior  = null;  // detectar mudança na última chamada
 
   const STORAGE_KEY = 'imtsb_minha_senha';
 
   /* ── Utilitários ─────────────────────────────────────────── */
   function formatHora(value) {
     if (!value) return '--:--';
-    return new Date(value).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', timeZone: ANGOLA_TZ });
+    const iso = (typeof value === 'string' && !value.endsWith('Z') && !value.includes('+'))
+      ? value + 'Z' : value;
+    return new Date(iso).toLocaleTimeString('pt-PT', {
+      hour: '2-digit', minute: '2-digit', timeZone: ANGOLA_TZ
+    });
   }
 
   function resolverNomeAtendente(atendente) {
@@ -58,9 +64,8 @@
     if (tipo === 'ok') setTimeout(() => { if (el.textContent === texto) el.textContent = ''; }, 8000);
   }
 
-  /* ── Banner de Chamada (notificação proeminente) ─────────── */
+  /* ── Banner de Chamada ───────────────────────────────────── */
   function mostrarBannerChamada(numero, balcao, atendente, servico) {
-    /* Remover banner anterior se existir */
     const existing = document.getElementById('callBanner');
     if (existing) existing.remove();
 
@@ -78,72 +83,63 @@
       </div>
     `;
 
-    const style = document.getElementById('callBannerStyle') || document.createElement('style');
-    style.id = 'callBannerStyle';
-    style.textContent = `
-      #callBanner {
-        position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
-        background: linear-gradient(135deg, #3e2510, #6b4226);
-        color: white; padding: 0; animation: slideDown .4s cubic-bezier(.16,1,.3,1);
-        box-shadow: 0 8px 32px rgba(0,0,0,.35);
-      }
-      @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
-      .call-banner-inner {
-        max-width: 700px; margin: 0 auto; display: flex;
-        align-items: center; gap: 1rem; padding: 1.25rem 1.5rem;
-      }
-      .call-banner-icon { font-size: 2.2rem; animation: ring .5s ease-in-out infinite alternate; }
-      @keyframes ring { from { transform: rotate(-15deg); } to { transform: rotate(15deg); } }
-      .call-banner-text { flex: 1; }
-      .call-banner-senha { font-size: .85rem; opacity: .85; margin-bottom: .15rem; }
-      .call-banner-instrucao { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
-      .call-banner-atendente { font-size: .85rem; opacity: .8; margin-top: .25rem; }
-      .call-banner-close {
-        background: rgba(255,255,255,.15); border: none; color: white;
-        width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
-        font-size: 1rem; display: flex; align-items: center; justify-content: center;
-        transition: background .2s;
-      }
-      .call-banner-close:hover { background: rgba(255,255,255,.3); }
-      @media (max-width: 600px) { .call-banner-instrucao { font-size: 1.2rem; } }
-    `;
-    if (!document.getElementById('callBannerStyle')) document.head.appendChild(style);
+    if (!document.getElementById('callBannerStyle')) {
+      const style = document.createElement('style');
+      style.id = 'callBannerStyle';
+      style.textContent = `
+        #callBanner{position:fixed;top:0;left:0;right:0;z-index:10000;
+          background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+          box-shadow:0 8px 32px rgba(0,0,0,.35);
+          animation:slideDownBanner .4s cubic-bezier(.16,1,.3,1);}
+        @keyframes slideDownBanner{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+        .call-banner-inner{max-width:700px;margin:0 auto;display:flex;
+          align-items:center;gap:1rem;padding:1.25rem 1.5rem;}
+        .call-banner-icon{font-size:2.2rem;animation:ringAnim .5s ease-in-out infinite alternate;}
+        @keyframes ringAnim{from{transform:rotate(-15deg)}to{transform:rotate(15deg)}}
+        .call-banner-text{flex:1;}
+        .call-banner-senha{font-size:.85rem;opacity:.85;margin-bottom:.15rem;}
+        .call-banner-instrucao{font-size:1.5rem;font-weight:800;line-height:1.1;}
+        .call-banner-atendente{font-size:.85rem;opacity:.8;margin-top:.25rem;}
+        .call-banner-close{background:rgba(255,255,255,.15);border:none;color:white;
+          width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:1rem;
+          display:flex;align-items:center;justify-content:center;}
+        .call-banner-close:hover{background:rgba(255,255,255,.3);}
+        @media(max-width:600px){.call-banner-instrucao{font-size:1.2rem;}}
+      `;
+      document.head.appendChild(style);
+    }
 
     document.body.prepend(banner);
-
-    /* Remover automaticamente após 30s */
     setTimeout(() => banner.remove(), 30000);
+
+    /* Som + vibração se disponível */
+    N && N.play('call');
+    N && N.vibrate('call');
   }
 
-  /* ── Tracker — bloco de posição/estado da minha senha ────── */
+  /* ── Tracker ─────────────────────────────────────────────── */
   function actualizarTrackerUI(dados) {
     const posEl    = document.getElementById('trackerPosicao');
     const tempoEl  = document.getElementById('trackerTempo');
     const estadoEl = document.getElementById('trackerEstado');
     const tracker  = document.getElementById('ticketTracker');
-
-    if (!dados) {
-      if (tracker) tracker.style.display = 'none';
-      return;
-    }
+    if (!dados) { if (tracker) tracker.style.display = 'none'; return; }
     if (tracker) tracker.style.display = 'block';
 
     const status = dados.status;
-
-    /* Detectar mudança de estado */
-    const mudou = statusAnterior !== null && statusAnterior !== status;
+    const mudou  = statusAnterior !== null && statusAnterior !== status;
     statusAnterior = status;
 
     if (status === 'aguardando') {
-      const pos    = dados.posicao || '?';
-      const tempo  = dados.tempo_espera_estimado;
-      if (posEl)    { posEl.textContent = pos; posEl.style.color = '#6b4226'; }
+      const pos   = dados.posicao || '?';
+      const tempo = dados.tempo_espera_estimado;
+      if (posEl)    { posEl.textContent = pos; posEl.style.color = '#6b4226'; posEl.style.fontSize = ''; }
       if (tempoEl)  tempoEl.textContent = tempo > 0 ? `~${Math.round(tempo)}min` : '–';
-      if (estadoEl) estadoEl.textContent = pos === 1 ? '⏳ Próxima a ser chamada!' : `⏳ A aguardar...`;
+      if (estadoEl) estadoEl.textContent = pos === 1 ? '⏳ Próxima a ser chamada!' : '⏳ A aguardar...';
 
-      const num = document.getElementById('currentTicket');
-      if (num) num.textContent = dados.numero || '---';
+      const numEl    = document.getElementById('currentTicket');
       const statusEl = document.getElementById('currentStatus');
+      if (numEl)    numEl.textContent    = dados.numero || '---';
       if (statusEl) { statusEl.textContent = traduzirStatus(status); statusEl.style.color = '#6b4226'; }
 
     } else if (status === 'atendendo' || status === 'chamando') {
@@ -155,12 +151,11 @@
       if (tempoEl)  tempoEl.textContent = 'A ser atendido';
       if (estadoEl) { estadoEl.textContent = `→ Balcão ${balcao} · ${atendente}`; estadoEl.style.color = '#10b981'; estadoEl.style.fontWeight = '700'; }
 
-      const num = document.getElementById('currentTicket');
-      if (num) num.textContent = dados.numero || '---';
+      const numEl    = document.getElementById('currentTicket');
       const statusEl = document.getElementById('currentStatus');
+      if (numEl)    numEl.textContent    = dados.numero || '---';
       if (statusEl) { statusEl.textContent = '🔔 A ser chamada!'; statusEl.style.color = '#10b981'; }
 
-      /* Banner apenas quando muda de aguardando → atendendo */
       if (mudou) {
         mostrarBannerChamada(dados.numero, balcao, atendente, servico);
         mostrarMensagem(`🔔 Senha ${dados.numero}: dirija-se ao Balcão ${balcao} com ${atendente}`, 'ok');
@@ -171,35 +166,14 @@
       if (tempoEl)  tempoEl.textContent = 'Concluído';
       if (estadoEl) estadoEl.textContent = 'Atendimento concluído com sucesso';
 
-      /* Display principal */
-      const numEl = document.getElementById('currentTicket');
-      if (numEl) { numEl.style.color = '#22c55e'; }
+      const numEl    = document.getElementById('currentTicket');
       const statusEl = document.getElementById('currentStatus');
+      if (numEl)    numEl.style.color = '#22c55e';
       if (statusEl) { statusEl.textContent = '✓ Concluída'; statusEl.style.color = '#22c55e'; }
 
-      /* Banner de conclusão (só na primeira detecção) */
       if (mudou) {
         mostrarMensagem('✅ Atendimento concluído! Obrigado pela sua visita ao IMTSB.', 'ok');
-
-        /* Banner verde (mesmo sistema do banner de chamada) */
-        const existing = document.getElementById('callBanner');
-        if (existing) existing.remove();
-        const banner = document.createElement('div');
-        banner.id = 'callBanner';
-        banner.innerHTML = `
-          <div class="call-banner-inner" style="background:linear-gradient(135deg,#065f46,#059669);">
-            <div class="call-banner-icon">✅</div>
-            <div class="call-banner-text">
-              <div class="call-banner-senha">Senha <strong>${dados.numero}</strong></div>
-              <div class="call-banner-instrucao">Atendimento concluído!</div>
-              <div class="call-banner-atendente">Obrigado pela sua visita ao IMTSB</div>
-            </div>
-            <button class="call-banner-close" onclick="document.getElementById('callBanner')?.remove()">✕</button>
-          </div>`;
-        /* Reutilizar o mesmo estilo do banner de chamada */
-        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:linear-gradient(135deg,#065f46,#059669);color:white;box-shadow:0 8px 32px rgba(0,0,0,.35);animation:slideDown .4s cubic-bezier(.16,1,.3,1);';
-        document.body.prepend(banner);
-        setTimeout(() => banner.remove(), 8000);
+        N && N.notify('conclude', 'Atendimento concluído! Obrigado pela visita.', 6000);
       }
 
       pararAcompanhamento();
@@ -213,7 +187,10 @@
       const statusEl = document.getElementById('currentStatus');
       if (statusEl) { statusEl.textContent = 'Cancelada'; statusEl.style.color = '#ef4444'; }
 
-      if (mudou) mostrarMensagem('Senha cancelada. Pode emitir uma nova senha.', 'warn');
+      if (mudou) {
+        mostrarMensagem('Senha cancelada. Pode emitir uma nova senha.', 'warn');
+        N && N.notify('warn', 'A sua senha foi cancelada. Emita uma nova se necessário.');
+      }
 
       pararAcompanhamento();
       setTimeout(() => { limparSenhaLocal(); atualizarDisplaySenha(); }, 5000);
@@ -251,25 +228,17 @@
   async function actualizarPosicao(numeroSenha) {
     try {
       const resp = await fetch(`/api/dashboard/public/senha/${encodeURIComponent(numeroSenha)}`);
-
       if (resp.status === 404) {
-        console.info(`[acompanhamento] Senha ${numeroSenha} não encontrada hoje → a limpar`);
+        console.info(`[acompanhamento] Senha ${numeroSenha} não encontrada hoje → limpar`);
         limparSenhaLocal();
         pararAcompanhamento();
         atualizarDisplaySenha();
         return;
       }
       if (!resp.ok) return;
-
       const dados = await resp.json();
       actualizarTrackerUI(dados);
-
-      /* Actualizar a senha guardada com o estado mais recente */
-      if (minhaSenha) {
-        minhaSenha.status = dados.status;
-        guardarSenhaLocal(minhaSenha);
-      }
-
+      if (minhaSenha) { minhaSenha.status = dados.status; guardarSenhaLocal(minhaSenha); }
     } catch (err) {
       console.error('[actualizarPosicao]', err);
     }
@@ -282,41 +251,116 @@
       if (!resp.ok) return;
       const stats = await resp.json();
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
       set('statFila',  stats.aguardando || 0);
       set('statTempo', `${Math.round(stats.tempo_medio_espera || 0)}m`);
       set('statDone',  stats.concluidas || 0);
-
       const total   = stats.total_emitidas || 0;
       const conclui = stats.concluidas     || 0;
       set('statSat', total > 0 ? `${Math.round((conclui / total) * 100)}%` : '—');
-
     } catch (err) {
       console.error('❌ Estatísticas:', err);
     }
   }
 
-  /* ── Última chamada geral ────────────────────────────────── */
+  /* ════════════════════════════════════════════════════════════
+     ÚLTIMA CHAMADA GERAL — usa snapshot para dados reais
+     Prioridades de fallback:
+       1. /api/realtime/snapshot → lastCalled
+       2. /api/senhas?status=atendendo (último atendimento activo)
+       3. Mantém valor anterior
+  ════════════════════════════════════════════════════════════ */
   async function atualizarUltimaChamada() {
-    try {
-      const resp = await fetch('/api/senhas?status=atendendo&per_page=1&page=1');
-      if (!resp.ok) return;
-      const dados  = await resp.json();
-      const senhas = dados.senhas || [];
-      const numEl    = document.getElementById('ultimaChamada');
-      const balcaoEl = document.getElementById('ultimoBalcao');
+    const numEl    = document.getElementById('ultimaChamada');
+    const balcaoEl = document.getElementById('ultimoBalcao');
+    if (!numEl && !balcaoEl) return;
 
-      if (senhas.length > 0) {
-        const s       = senhas[0];
-        const nomeAt  = resolverNomeAtendente(s.atendente);
-        if (numEl)    numEl.textContent    = s.numero;
-        if (balcaoEl) balcaoEl.textContent = s.numero_balcao ? `Balcão ${s.numero_balcao} · ${nomeAt}` : nomeAt;
-      } else {
-        if (numEl)    numEl.textContent    = '—';
+    let numero    = null;
+    let balcaoTxt = null;
+
+    /* — Tentativa 1: snapshot (mais fiável) ─────────────────── */
+    try {
+      const resp = await fetch('/api/realtime/snapshot');
+      if (resp.ok) {
+        const snap = await resp.json();
+
+        /* lastCalled do snapshot */
+        if (snap.lastCalled && snap.lastCalled.code) {
+          numero    = snap.lastCalled.code;
+          balcaoTxt = snap.lastCalled.counterName || 'Balcão';
+          if (snap.lastCalled.service) balcaoTxt += ` · ${snap.lastCalled.service}`;
+        }
+        /* Fallback: primeiro item da queue em atendimento */
+        else if (snap.queue && snap.queue.length > 0) {
+          const emAtend = snap.queue.find(
+            t => t.status === 'em_atendimento' || t.status === 'atendendo' || t.status === 'chamando'
+          );
+          if (emAtend) {
+            numero    = emAtend.code;
+            balcaoTxt = emAtend.counterName || 'Balcão';
+          }
+        }
+      }
+    } catch (_) { /* silencioso */ }
+
+    /* — Tentativa 2: endpoint legado ────────────────────────── */
+    if (!numero) {
+      try {
+        const resp2 = await fetch('/api/senhas?status=atendendo&per_page=1&page=1');
+        if (resp2.ok) {
+          const dados  = await resp2.json();
+          const senhas = dados.senhas || (Array.isArray(dados) ? dados : []);
+          if (senhas.length > 0) {
+            const s       = senhas[0];
+            const nomeAt  = resolverNomeAtendente(s.atendente);
+            numero    = s.numero;
+            balcaoTxt = s.numero_balcao ? `Balcão ${s.numero_balcao} · ${nomeAt}` : nomeAt;
+          }
+        }
+      } catch (_) { /* silencioso */ }
+    }
+
+    /* — Tentativa 3: último chamado (público/tv) ─────────────── */
+    if (!numero) {
+      try {
+        const resp3 = await fetch('/api/dashboard/public/tv');
+        if (resp3.ok) {
+          const tv = await resp3.json();
+          if (tv.em_atendimento && tv.em_atendimento.length > 0) {
+            const s   = tv.em_atendimento[0];
+            numero    = s.numero;
+            balcaoTxt = `Balcão ${s.balcao} · ${s.servico || ''}`;
+          }
+        }
+      } catch (_) { /* silencioso */ }
+    }
+
+    /* — Renderizar ───────────────────────────────────────────── */
+    if (numero) {
+      /* Animação de mudança se o número alterou */
+      const mudou = numero !== _ultimaChamadaAnterior;
+      _ultimaChamadaAnterior = numero;
+
+      if (numEl) {
+        numEl.textContent = numero;
+        if (mudou) {
+          numEl.style.transition = 'none';
+          numEl.style.transform  = 'scale(1.18)';
+          numEl.style.color      = '#22c55e';
+          setTimeout(() => {
+            numEl.style.transition = 'all .4s ease';
+            numEl.style.transform  = 'scale(1)';
+            numEl.style.color      = 'var(--primary-brown)';
+          }, 500);
+        }
+      }
+      if (balcaoEl) balcaoEl.textContent = balcaoTxt || '—';
+
+    } else {
+      /* Sem chamadas activas */
+      if (numEl && !_ultimaChamadaAnterior) {
+        numEl.textContent    = '—';
         if (balcaoEl) balcaoEl.textContent = 'Nenhum em atendimento';
       }
-    } catch (err) {
-      console.error('❌ Última chamada:', err);
     }
   }
 
@@ -326,9 +370,9 @@
     if (!container) return;
 
     try {
-      const resp = await fetch('/api/servicos');
+      const resp     = await fetch('/api/servicos');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const raw     = await resp.json();
+      const raw      = await resp.json();
       const servicos = Array.isArray(raw) ? raw : (raw.servicos || raw);
 
       if (!servicos.length) {
@@ -339,11 +383,9 @@
       container.innerHTML = '';
       servicos.forEach(servico => {
         const temForm  = !!MAPA_FORMULARIOS[servico.id];
-        const subtexto = temForm
-          ? '📝 Preencher formulário'
-          : (servico.descricao || 'Emissão directa');
+        const subtexto = temForm ? '📝 Preencher formulário' : (servico.descricao || 'Emissão directa');
 
-        const card = document.createElement('article');
+        const card             = document.createElement('article');
         card.className         = 'service-card';
         card.dataset.servicoId = servico.id;
         card.style.cursor      = 'pointer';
@@ -351,9 +393,7 @@
           <div class="service-icon">${servico.icone || '📄'}</div>
           <div class="service-info">
             <div class="service-name">${servico.nome}</div>
-            <div class="service-status">
-              <span class="status-dot"></span>${subtexto}
-            </div>
+            <div class="service-status"><span class="status-dot"></span>${subtexto}</div>
           </div>
           <span class="arrow-icon">→</span>
         `;
@@ -366,29 +406,19 @@
     }
   }
 
-  /* ── Mapa serviço → URL do formulário ───────────────────────
-     Serviços com formulário: redirecciona imediatamente.
-     Serviços sem formulário (Biblioteca): emite directo.
-     Nota: os IDs são os da tabela `servicos` na base de dados.
-  ──────────────────────────────────────────────────────────── */
+  /* ── Mapa serviço → URL do formulário ────────────────────── */
   const MAPA_FORMULARIOS = {
-    1: '/matricula.html',       // Secretaria Académica
-    2: '/tesouraria.html',      // Tesouraria
-    3: '/declaracao.html',      // Direcção Pedagógica
-    4: null,                    // Biblioteca (sem formulário — emite directo)
-    5: '/apoio-cliente.html'    // Apoio ao Cliente
+    1: '/matricula.html',
+    2: '/tesouraria.html',
+    3: '/declaracao.html',
+    4: null,                     // Biblioteca — emite directo
+    5: '/apoio-cliente.html'
   };
 
   function selecionarServico(servico, cardEl) {
     const urlForm = MAPA_FORMULARIOS[servico.id];
+    if (urlForm) { window.location.href = urlForm; return; }
 
-    if (urlForm) {
-      /* ── Tem formulário → redirecionar ─────────────────── */
-      window.location.href = urlForm;
-      return;
-    }
-
-    /* ── Sem formulário (ex: Biblioteca) → seleccionar inline */
     servicoSelecionado = servico;
     document.querySelectorAll('.service-card').forEach(c => c.classList.remove('ativo'));
     if (cardEl) cardEl.classList.add('ativo');
@@ -427,6 +457,8 @@
       mostrarMensagem(`✅ Senha emitida: ${minhaSenha.numero} · ${servicoSelecionado.nome}`, 'ok');
       await atualizarEstatisticas();
 
+      N && N.notify('success', `Senha <strong>${minhaSenha.numero}</strong> emitida. Aguarde ser chamado(a).`, 6000);
+
     } catch (err) {
       console.error('❌ Emitir:', err);
       mostrarMensagem('❌ Erro de ligação ao servidor', 'warn');
@@ -449,27 +481,23 @@
     try {
       const guardada = localStorage.getItem(STORAGE_KEY);
       if (!guardada) return;
-      const senha = JSON.parse(guardada);
-
-      /* Validar que é de hoje */
-      const hoje        = new Date().toISOString().split('T')[0];
+      const senha    = JSON.parse(guardada);
+      const hoje     = new Date().toISOString().split('T')[0];
       const dataEmissao = senha.data_emissao || '';
       if (dataEmissao !== hoje) {
-        console.info(`[restaurar] Senha ${senha.numero} é de ${dataEmissao}, hoje ${hoje} — descartada`);
+        console.info(`[restaurar] Senha ${senha.numero} de ${dataEmissao} — descartada`);
         limparSenhaLocal();
         return;
       }
-
       minhaSenha     = senha;
       statusAnterior = senha.status;
       atualizarDisplaySenha();
-
       if (!['concluida', 'cancelada'].includes(senha.status)) {
         iniciarAcompanhamento(senha.numero);
       }
       console.info(`[restaurar] Senha ${senha.numero} restaurada (${senha.status})`);
     } catch (err) {
-      console.warn('[restaurar] Erro:', err);
+      console.warn('[restaurar]', err);
       limparSenhaLocal();
     }
   }
@@ -479,7 +507,7 @@
     pararPollingGeral();
     pollingGeral = setInterval(async () => {
       await atualizarEstatisticas();
-      await atualizarUltimaChamada();
+      await atualizarUltimaChamada();   // ← actualiza última chamada regularmente
     }, 5000);
   }
 
@@ -491,7 +519,6 @@
   function configurarHeader() {
     const user = store.getUser();
     const set  = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
     if (user) {
       set('userProfileName', `Bem-vindo, ${user.name}`);
       set('dadoNome',   user.name  || '—');
@@ -506,12 +533,15 @@
   }
 
   function configurarBotoes() {
-    const btnEmitir  = document.getElementById('btnEmitirSenha');
+    const btnEmitir = document.getElementById('btnEmitirSenha');
     if (btnEmitir) btnEmitir.addEventListener('click', emitirSenha);
 
     const btnSair = document.getElementById('btnSair');
     if (btnSair) btnSair.addEventListener('click', () => {
-      pararPollingGeral(); pararAcompanhamento(); limparSenhaLocal(); store.logout();
+      pararPollingGeral();
+      pararAcompanhamento();
+      limparSenhaLocal();
+      store.logout();
     });
 
     const painel    = document.getElementById('meusDadosPanel');
@@ -527,12 +557,12 @@
 
   /* ── Init ────────────────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', () => {
-    console.log("✅ dashusuario.js Sprint 3 carregado");
+    console.log("✅ dashusuario.js Sprint 4 carregado");
     configurarHeader();
     configurarBotoes();
     carregarServicos();
     atualizarEstatisticas();
-    atualizarUltimaChamada();
+    atualizarUltimaChamada();   // ← primeira chamada imediata
     restaurarSenhaGuardada();
     iniciarPollingGeral();
   });

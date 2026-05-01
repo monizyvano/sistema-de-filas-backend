@@ -3,125 +3,515 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IMTSB — Painel de Chamadas</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Poppins:wght@700;900&display=swap" rel="stylesheet">
+    <title>IMTSB — Ecrã de Chamadas</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Poppins:wght@700;800;900&display=swap" rel="stylesheet">
     <style>
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        :root{
-            --brown:#6b4226;--brown-dk:#3e2210;--brown-lt:#bf9776;
-            --bg:#0d0905;--card:rgba(255,255,255,.05);--border:rgba(255,255,255,.08);
-            --text:#f5ede6;--muted:rgba(245,237,230,.5);
-            --green:#22c55e;--amber:#f59e0b;
+        /* ════════════════════════════════════════════════
+           DESIGN SYSTEM — IMTSB TV DISPLAY
+           Sprint 4: redesign completo, premium
+        ════════════════════════════════════════════════ */
+        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+
+        :root {
+            --brown:     #6b4226;
+            --brown-dk:  #3e2210;
+            --brown-lt:  #bf9776;
+            --gold:      #c4a164;
+            --bg:        #090705;
+            --bg2:       #110d09;
+            --card:      rgba(255,255,255,.045);
+            --border:    rgba(255,255,255,.075);
+            --text:      #f5ede6;
+            --muted:     rgba(245,237,230,.45);
+            --green:     #22c55e;
+            --green-dk:  #16a34a;
+            --amber:     #f59e0b;
+            --red:       #ef4444;
+            --blue:      #3b82f6;
+            --r:         14px;
         }
-        body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;
-             min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
-        /* HEADER */
-        header{background:linear-gradient(135deg,var(--brown-dk),var(--brown));
-               padding:1rem 2rem;display:flex;justify-content:space-between;
-               align-items:center;border-bottom:2px solid var(--brown-lt);flex-shrink:0}
-        .logo-area{display:flex;align-items:center;gap:1rem}
-        .logo-badge{width:48px;height:48px;background:rgba(255,255,255,.15);
-                    border-radius:12px;display:flex;align-items:center;justify-content:center;
-                    font-family:'Poppins',sans-serif;font-size:1.3rem;font-weight:900;color:#fff}
-        .logo-text h1{font-family:'Poppins',sans-serif;font-size:1.35rem;font-weight:700;color:#fff}
-        .logo-text p{font-size:.75rem;color:rgba(255,255,255,.7)}
-        .header-right{display:flex;align-items:center;gap:1.5rem}
-        .live-badge{display:flex;align-items:center;gap:.5rem;background:rgba(34,197,94,.15);
-                    border:1px solid rgba(34,197,94,.4);border-radius:50px;
-                    padding:.35rem .9rem;font-size:.82rem;font-weight:600;color:var(--green)}
-        .live-dot{width:8px;height:8px;background:var(--green);border-radius:50%;
-                  animation:blink 1.4s ease-in-out infinite}
-        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-        #clock{font-family:'Poppins',sans-serif;font-size:1.5rem;font-weight:700;
-               color:#fff;letter-spacing:.05em}
+        html,body {
+            height: 100%;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+            user-select: none;
+        }
 
-        /* ÚLTIMA CHAMADA */
-        .last-call-banner{
-            background:linear-gradient(135deg,rgba(107,66,38,.35),rgba(62,34,16,.5));
-            border-bottom:1px solid rgba(191,151,118,.25);
-            padding:.85rem 2rem;display:flex;align-items:center;gap:2rem;flex-shrink:0}
-        .lc-label{font-size:.72rem;font-weight:700;text-transform:uppercase;
-                  letter-spacing:.1em;color:var(--muted);white-space:nowrap}
-        .lc-num{font-family:'Poppins',sans-serif;font-size:3rem;font-weight:900;
-                color:var(--brown-lt);line-height:1;min-width:120px;transition:color .3s}
-        .lc-num.novo{color:var(--green);animation:chamadaPulse .6s ease-out 3}
-        @keyframes chamadaPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
-        .lc-info{flex:1}
-        .lc-balcao{font-size:1.2rem;font-weight:700;color:var(--text)}
-        .lc-servico{font-size:.85rem;color:var(--muted);margin-top:.15rem}
-        .lc-icon{font-size:2.5rem;animation:ring .7s ease-in-out infinite alternate}
-        @keyframes ring{from{transform:rotate(-12deg)}to{transform:rotate(12deg)}}
-        .lc-icon.idle{animation:none;opacity:.3}
+        body {
+            display: grid;
+            grid-template-rows: auto auto 1fr auto;
+            background-image:
+                radial-gradient(ellipse 60% 50% at 15% 20%, rgba(107,66,38,.18) 0%, transparent 65%),
+                radial-gradient(ellipse 40% 35% at 85% 85%, rgba(196,161,100,.08) 0%, transparent 60%),
+                radial-gradient(ellipse 30% 25% at 50% 50%, rgba(107,66,38,.06) 0%, transparent 70%);
+        }
 
-        /* MAIN */
-        main{flex:1;display:grid;grid-template-columns:1.2fr 1fr;gap:0;min-height:0;overflow:hidden}
+        /* ── HEADER ──────────────────────────────────── */
+        header {
+            background: linear-gradient(135deg, var(--brown-dk) 0%, rgba(107,66,38,.95) 100%);
+            padding: 1.1rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(196,161,100,.25);
+            backdrop-filter: blur(20px);
+            flex-shrink: 0;
+        }
 
-        /* PAINEL ESQUERDO */
-        .panel-left{background:rgba(107,66,38,.1);border-right:1px solid var(--border);
-                    padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.75rem;overflow-y:auto}
-        .panel-title{font-size:.7rem;font-weight:700;text-transform:uppercase;
-                     letter-spacing:.1em;color:var(--muted);margin-bottom:.25rem}
-        .attending-card{background:linear-gradient(135deg,rgba(107,66,38,.5),rgba(62,34,16,.6));
-                        border:1px solid rgba(191,151,118,.3);border-radius:14px;
-                        padding:1rem 1.25rem;display:flex;align-items:center;gap:1rem;
-                        animation:slideIn .35s ease-out}
-        @keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
-        .attending-number{font-family:'Poppins',sans-serif;font-size:2.2rem;font-weight:900;
-                          color:#fff;line-height:1;min-width:80px}
-        .attending-priority{font-family:'Poppins',sans-serif;font-size:2.2rem;font-weight:900;
-                             color:var(--amber);line-height:1;min-width:80px}
-        .attending-service{font-size:.88rem;font-weight:600;color:rgba(255,255,255,.9)}
-        .attending-balcao{font-size:1.1rem;font-weight:700;color:var(--brown-lt);margin-top:.15rem}
-        .tipo-badge{font-size:.68rem;font-weight:700;padding:.2rem .55rem;border-radius:20px;
-                    text-transform:uppercase;letter-spacing:.05em;display:inline-block;margin-top:.25rem}
-        .tipo-normal{background:rgba(59,130,246,.2);color:#93c5fd}
-        .tipo-prioritaria{background:rgba(245,158,11,.2);color:#fcd34d}
-        .empty-state{color:var(--muted);font-size:.88rem;text-align:center;padding:1.5rem 0}
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 1.1rem;
+        }
 
-        /* PAINEL DIREITO */
-        .panel-right{padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto}
-        .panel-header-row{display:flex;justify-content:space-between;align-items:flex-start}
-        .total-badge{background:rgba(255,255,255,.06);border:1px solid var(--border);
-                     border-radius:10px;padding:.5rem .9rem;font-size:.8rem;color:var(--muted);text-align:center}
-        .total-badge strong{display:block;font-size:1.5rem;font-weight:700;color:var(--text)}
-        .queue-list{display:flex;flex-direction:column;gap:.5rem}
-        .queue-row{display:grid;grid-template-columns:36px 88px 1fr auto;align-items:center;
-                   gap:.9rem;background:var(--card);border:1px solid var(--border);
-                   border-radius:11px;padding:.75rem 1rem}
-        .queue-row.next-up{background:rgba(107,66,38,.25);border-color:var(--brown-lt)}
-        .q-pos{font-size:.75rem;font-weight:700;color:var(--muted);text-align:center}
-        .q-num{font-family:'Poppins',sans-serif;font-size:1.5rem;font-weight:900;color:var(--text)}
-        .queue-row.next-up .q-num{color:var(--brown-lt);font-size:1.8rem}
-        .q-service{font-size:.82rem;color:var(--muted)}
-        .q-time{font-size:.75rem;font-weight:600;color:var(--muted);white-space:nowrap}
+        .logo-badge {
+            width: 52px;
+            height: 52px;
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: -.02em;
+        }
 
-        /* FOOTER */
-        footer{background:rgba(255,255,255,.02);border-top:1px solid var(--border);
-               padding:.6rem 2rem;display:flex;justify-content:space-between;
-               align-items:center;font-size:.75rem;color:var(--muted);flex-shrink:0}
+        .logo-text h1 {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1.1;
+        }
 
-        /* LOADING */
-        #loadingOverlay{position:fixed;inset:0;background:var(--bg);display:flex;
-                        align-items:center;justify-content:center;z-index:100;transition:opacity .5s}
-        #loadingOverlay.hidden{opacity:0;pointer-events:none}
-        .loader-text{font-size:1.1rem;color:var(--muted);animation:pulse2 1.5s ease-in-out infinite}
-        @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.4}}
-        ::-webkit-scrollbar{width:4px}
-        ::-webkit-scrollbar-track{background:transparent}
-        ::-webkit-scrollbar-thumb{background:rgba(191,151,118,.3);border-radius:4px}
+        .logo-text p {
+            font-size: .75rem;
+            color: rgba(255,255,255,.65);
+            margin-top: .1rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            background: rgba(34,197,94,.15);
+            border: 1px solid rgba(34,197,94,.35);
+            border-radius: 50px;
+            padding: .4rem 1rem;
+            font-size: .8rem;
+            font-weight: 700;
+            color: var(--green);
+            letter-spacing: .04em;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 1.4s ease-in-out infinite;
+        }
+
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+        #clock {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.65rem;
+            font-weight: 800;
+            color: rgba(255,255,255,.95);
+            letter-spacing: .04em;
+            min-width: 100px;
+            text-align: right;
+        }
+
+        /* ── BANNER ÚLTIMA CHAMADA ────────────────────── */
+        .last-call-banner {
+            background: linear-gradient(135deg,
+                rgba(107,66,38,.4) 0%,
+                rgba(62,34,16,.55) 100%);
+            border-bottom: 1px solid rgba(196,161,100,.2);
+            padding: 1rem 2.5rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            flex-shrink: 0;
+        }
+
+        .lc-label {
+            font-size: .7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--muted);
+            white-space: nowrap;
+            line-height: 1.5;
+        }
+
+        .lc-number-wrap {
+            position: relative;
+            min-width: 140px;
+        }
+
+        .lc-num {
+            font-family: 'Poppins', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: var(--brown-lt);
+            line-height: 1;
+            transition: color .3s;
+        }
+
+        .lc-num.chamada-nova {
+            color: var(--green) !important;
+            animation: chamadaPulse .65s ease-out 3;
+        }
+
+        @keyframes chamadaPulse {
+            0%,100% { transform:scale(1); }
+            40%     { transform:scale(1.14); }
+        }
+
+        .lc-info { flex: 1; }
+
+        .lc-balcao {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.2;
+        }
+
+        .lc-servico {
+            font-size: .85rem;
+            color: var(--muted);
+            margin-top: .2rem;
+        }
+
+        .lc-hora {
+            font-size: .78rem;
+            color: rgba(196,161,100,.65);
+            margin-top: .15rem;
+        }
+
+        .lc-icon {
+            font-size: 2.8rem;
+            transition: all .3s;
+        }
+
+        .lc-icon.activo { animation: ringIcon .55s ease-in-out infinite alternate; }
+        @keyframes ringIcon { from{transform:rotate(-14deg)scale(1)} to{transform:rotate(14deg)scale(1.08)} }
+        .lc-icon.idle { opacity: .2; }
+
+        /* ── GRID PRINCIPAL ───────────────────────────── */
+        main {
+            display: grid;
+            grid-template-columns: 1.25fr 1fr;
+            overflow: hidden;
+            min-height: 0;
+            gap: 0;
+        }
+
+        /* ── PAINEL ESQUERDO — Em Atendimento ─────────── */
+        .panel-left {
+            background: rgba(107,66,38,.08);
+            border-right: 1px solid var(--border);
+            padding: 1.35rem 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: .75rem;
+            overflow-y: auto;
+        }
+
+        .panel-title {
+            font-size: .68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            color: var(--muted);
+            margin-bottom: .1rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .panel-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        .attending-card {
+            background: linear-gradient(135deg,
+                rgba(107,66,38,.45),
+                rgba(62,34,16,.6));
+            border: 1px solid rgba(191,151,118,.25);
+            border-radius: var(--r);
+            padding: 1.1rem 1.35rem;
+            display: flex;
+            align-items: center;
+            gap: 1.1rem;
+            animation: slideInLeft .38s cubic-bezier(.16,1,.3,1);
+        }
+
+        @keyframes slideInLeft {
+            from { opacity:0; transform:translateX(-14px); }
+            to   { opacity:1; transform:translateX(0); }
+        }
+
+        .att-number {
+            font-family: 'Poppins', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 900;
+            line-height: 1;
+            min-width: 90px;
+        }
+
+        .att-number.normal    { color: #fff; }
+        .att-number.priority  { color: var(--amber); }
+
+        .att-service {
+            font-size: .9rem;
+            font-weight: 600;
+            color: rgba(255,255,255,.88);
+            line-height: 1.3;
+        }
+
+        .att-balcao {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--brown-lt);
+            margin-top: .2rem;
+        }
+
+        .tipo-badge {
+            font-size: .65rem;
+            font-weight: 800;
+            padding: .22rem .6rem;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            display: inline-block;
+            margin-top: .3rem;
+        }
+
+        .tipo-normal     { background:rgba(59,130,246,.2);  color:#93c5fd; }
+        .tipo-prioritaria{ background:rgba(245,158,11,.2);  color:#fcd34d; }
+
+        .att-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 2s ease-in-out infinite;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+
+        .empty-state {
+            color: var(--muted);
+            font-size: .9rem;
+            text-align: center;
+            padding: 2rem 0;
+            font-style: italic;
+        }
+
+        /* ── PAINEL DIREITO — Fila Aguardando ─────────── */
+        .panel-right {
+            padding: 1.35rem 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: auto;
+        }
+
+        .panel-right-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .total-chip {
+            background: rgba(255,255,255,.07);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: .5rem .9rem;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .total-chip strong {
+            display: block;
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        .total-chip span {
+            font-size: .7rem;
+            color: var(--muted);
+            letter-spacing: .05em;
+            text-transform: uppercase;
+        }
+
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+        }
+
+        .queue-row {
+            display: grid;
+            grid-template-columns: 32px 96px 1fr auto;
+            align-items: center;
+            gap: .9rem;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            padding: .8rem 1rem;
+            transition: background .2s;
+        }
+
+        .queue-row:hover      { background: rgba(255,255,255,.07); }
+        .queue-row.next-up    { background: rgba(107,66,38,.3); border-color: var(--brown-lt); }
+        .queue-row.priority   { border-color: rgba(245,158,11,.4); }
+
+        .q-pos {
+            font-size: .72rem;
+            font-weight: 700;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .queue-row.next-up .q-pos { color: var(--brown-lt); font-size: .8rem; }
+
+        .q-num {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 900;
+            color: var(--text);
+        }
+
+        .queue-row.next-up  .q-num { color: var(--brown-lt); font-size: 1.8rem; }
+        .queue-row.priority .q-num { color: var(--amber); }
+
+        .q-service {
+            font-size: .82rem;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+
+        .q-time {
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--muted);
+            white-space: nowrap;
+            text-align: right;
+        }
+
+        .queue-row.next-up .q-time { color: var(--green); }
+
+        /* ── FOOTER ───────────────────────────────────── */
+        footer {
+            background: rgba(255,255,255,.02);
+            border-top: 1px solid var(--border);
+            padding: .65rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: .75rem;
+            color: var(--muted);
+            flex-shrink: 0;
+        }
+
+        .footer-stats {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .footer-stat {
+            display: flex;
+            align-items: center;
+            gap: .4rem;
+        }
+
+        .footer-stat strong { color: var(--brown-lt); }
+
+        /* ── LOADING ──────────────────────────────────── */
+        #loadingOverlay {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            gap: 1rem;
+            transition: opacity .5s;
+        }
+
+        #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+
+        .loader-logo {
+            font-family: 'Poppins', sans-serif;
+            font-size: 3rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--brown-lt), var(--gold));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .loader-text {
+            font-size: .95rem;
+            color: var(--muted);
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        /* ── SCROLLBAR ────────────────────────────────── */
+        ::-webkit-scrollbar              { width: 4px; }
+        ::-webkit-scrollbar-track        { background: transparent; }
+        ::-webkit-scrollbar-thumb        { background: rgba(191,151,118,.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover  { background: rgba(191,151,118,.5); }
+
+        /* ── RESPONSIVO BÁSICO ────────────────────────── */
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+            .panel-left { border-right: none; border-bottom: 1px solid var(--border); }
+        }
     </style>
 </head>
 <body>
 
-<div id="loadingOverlay"><p class="loader-text">A carregar painel…</p></div>
+<!-- Loading -->
+<div id="loadingOverlay">
+    <div class="loader-logo">IMTSB</div>
+    <p class="loader-text">A inicializar painel de chamadas…</p>
+</div>
 
+<!-- HEADER -->
 <header>
     <div class="logo-area">
         <div class="logo-badge">SB</div>
         <div class="logo-text">
             <h1>IMTSB</h1>
-            <p>Instituto Médio Técnico São Benedito</p>
+            <p>Instituto Médio Técnico São Benedito · Luanda</p>
         </div>
     </div>
     <div class="header-right">
@@ -130,28 +520,44 @@
     </div>
 </header>
 
+<!-- BANNER ÚLTIMA CHAMADA -->
 <div class="last-call-banner">
     <div class="lc-label">Última<br>Chamada</div>
-    <div class="lc-num" id="lcNumero">—</div>
+    <div class="lc-number-wrap">
+        <div class="lc-num" id="lcNumero">—</div>
+    </div>
     <div class="lc-info">
-        <div class="lc-balcao" id="lcBalcao">Aguardando chamadas</div>
+        <div class="lc-balcao"  id="lcBalcao">Aguardando chamadas…</div>
         <div class="lc-servico" id="lcServico">—</div>
+        <div class="lc-hora"    id="lcHora">—</div>
     </div>
     <div class="lc-icon idle" id="lcIcon">🔔</div>
 </div>
 
+<!-- GRID PRINCIPAL -->
 <main>
+
+    <!-- Painel Esquerdo — Em Atendimento -->
     <div class="panel-left">
         <p class="panel-title">Em Atendimento Agora</p>
-        <div id="attendingList"><p class="empty-state">Nenhum atendimento em curso</p></div>
+        <div id="attendingList">
+            <p class="empty-state">Nenhum atendimento em curso</p>
+        </div>
     </div>
+
+    <!-- Painel Direito — Fila de Espera -->
     <div class="panel-right">
-        <div class="panel-header-row">
+        <div class="panel-right-header">
             <div>
                 <p class="panel-title">Próximas Senhas</p>
-                <p id="tempoMedio" style="font-size:.8rem;color:var(--muted);margin-top:.2rem;">Espera estimada: –</p>
+                <p id="tempoMedio" style="font-size:.8rem;color:var(--muted);margin-top:.2rem;">
+                    Espera estimada: –
+                </p>
             </div>
-            <div class="total-badge"><strong id="totalWaiting">0</strong>na fila</div>
+            <div class="total-chip">
+                <strong id="totalWaiting">0</strong>
+                <span>na fila</span>
+            </div>
         </div>
         <div class="queue-list" id="queueList">
             <p class="empty-state">Nenhuma senha aguardando</p>
@@ -159,99 +565,243 @@
     </div>
 </main>
 
+<!-- FOOTER -->
 <footer>
     <span>Sistema de Gestão de Filas · IMTSB 2026</span>
+    <div class="footer-stats">
+        <div class="footer-stat">🎫 Emitidas: <strong id="footerTotal">–</strong></div>
+        <div class="footer-stat">✓ Concluídas: <strong id="footerConcluidas">–</strong></div>
+        <div class="footer-stat">⏱ Tempo médio: <strong id="footerTempo">–</strong></div>
+    </div>
     <span id="lastUpdate">Última actualização: –</span>
 </footer>
 
 <script>
-(function(){
+(function () {
     "use strict";
-    const INTERVALO=5000, TZ='Africa/Luanda';
-    let _ultimaNum=null, _iconTimer=null;
 
-    function relogio(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('pt-PT',{timeZone:TZ});}
-    relogio(); setInterval(relogio,1000);
+    /* ── Configuração ──────────────────────────────────── */
+    const INTERVALO = 5000;   // milissegundos entre actualizações
+    const TZ        = 'Africa/Luanda';
+    const MAX_FILA  = 12;     // máximo de senhas mostradas na fila
 
-    function tocarSom(){
-        try{
-            const ctx=new(window.AudioContext||window.webkitAudioContext)();
-            [880,1100,880].forEach((f,i)=>{
-                const o=ctx.createOscillator(),g=ctx.createGain();
-                o.connect(g);g.connect(ctx.destination);o.type='sine';
-                o.frequency.setValueAtTime(f,ctx.currentTime+i*.18);
-                g.gain.setValueAtTime(.35,ctx.currentTime+i*.18);
-                g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+i*.18+.15);
-                o.start(ctx.currentTime+i*.18);o.stop(ctx.currentTime+i*.18+.15);
-            });
-        }catch(_){}
+    let _ultimaNumero  = null;
+    let _iconTimer     = null;
+    let _audioCtx      = null;
+
+    /* ── Relógio ───────────────────────────────────────── */
+    function relogio() {
+        const el = document.getElementById('clock');
+        if (el) el.textContent = new Date().toLocaleTimeString('pt-PT', { timeZone: TZ });
     }
 
-    function animarChamada(num,balcao,servico){
-        const nEl=document.getElementById('lcNumero');
-        const bEl=document.getElementById('lcBalcao');
-        const sEl=document.getElementById('lcServico');
-        const iEl=document.getElementById('lcIcon');
-        if(nEl){nEl.textContent=num;nEl.classList.remove('novo');void nEl.offsetWidth;nEl.classList.add('novo');}
-        if(bEl)bEl.textContent=balcao?'Balcão '+balcao:'A ser chamado';
-        if(sEl)sEl.textContent=servico||'—';
-        if(iEl){iEl.classList.remove('idle');clearTimeout(_iconTimer);_iconTimer=setTimeout(()=>iEl.classList.add('idle'),6000);}
-        tocarSom();
-        setTimeout(()=>{if(nEl)nEl.classList.remove('novo');},2000);
+    relogio();
+    setInterval(relogio, 1000);
+
+    /* ── Áudio ─────────────────────────────────────────── */
+    function _getCtx() {
+        if (!_audioCtx) {
+            try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+            catch (_) { return null; }
+        }
+        if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+        return _audioCtx;
     }
 
-    async function carregar(){
-        try{
-            const r=await fetch('/api/dashboard/public/tv');
-            if(!r.ok)return;
-            const d=await r.json();
-            const ea=d.em_atendimento||[];
-            if(ea.length>0&&ea[0].numero!==_ultimaNum){
-                animarChamada(ea[0].numero,ea[0].balcao,ea[0].servico);
-                _ultimaNum=ea[0].numero;
+    /* Desbloquear áudio no primeiro clique/toque */
+    ['click','touchstart','keydown'].forEach(ev =>
+        document.addEventListener(ev, () => _getCtx(), { once: true, passive: true })
+    );
+
+    function tocarSomChamada() {
+        const ctx = _getCtx();
+        if (!ctx) return;
+        /* Arpejo ascendente — tom de chamada profissional */
+        const notas = [880, 1100, 880, 1320];
+        notas.forEach((f, i) => {
+            try {
+                const o = ctx.createOscillator();
+                const g = ctx.createGain();
+                const t = ctx.currentTime + i * .16;
+                o.connect(g); g.connect(ctx.destination);
+                o.type = 'sine';
+                o.frequency.setValueAtTime(f, t);
+                g.gain.setValueAtTime(.32, t);
+                g.gain.exponentialRampToValueAtTime(.001, t + .14);
+                o.start(t); o.stop(t + .18);
+            } catch (_) {}
+        });
+    }
+
+    /* ── Animação de nova chamada ──────────────────────── */
+    function animarNovaChamada(numero, balcao, servico, hora) {
+        const nEl  = document.getElementById('lcNumero');
+        const bEl  = document.getElementById('lcBalcao');
+        const sEl  = document.getElementById('lcServico');
+        const hEl  = document.getElementById('lcHora');
+        const iEl  = document.getElementById('lcIcon');
+
+        if (nEl) {
+            nEl.textContent = numero;
+            nEl.classList.remove('chamada-nova');
+            void nEl.offsetWidth; /* reflow para reiniciar animação */
+            nEl.classList.add('chamada-nova');
+            setTimeout(() => nEl.classList.remove('chamada-nova'), 2200);
+        }
+        if (bEl) bEl.textContent = balcao ? `Balcão ${balcao}` : 'A ser chamado';
+        if (sEl) sEl.textContent = servico || '—';
+        if (hEl) hEl.textContent = hora    ? `Chamado às ${hora}` : '';
+
+        if (iEl) {
+            iEl.classList.remove('idle');
+            iEl.classList.add('activo');
+            clearTimeout(_iconTimer);
+            _iconTimer = setTimeout(() => {
+                iEl.classList.remove('activo');
+                iEl.classList.add('idle');
+            }, 7000);
+        }
+
+        tocarSomChamada();
+    }
+
+    /* ── Render — Em Atendimento ───────────────────────── */
+    function renderAtendendo(lista) {
+        const el = document.getElementById('attendingList');
+        if (!el) return;
+
+        if (!lista || !lista.length) {
+            el.innerHTML = '<p class="empty-state">Nenhum atendimento em curso</p>';
+            return;
+        }
+
+        el.innerHTML = lista.map(it => {
+            const isPrio = (it.tipo === 'prioritaria');
+            return `
+              <div class="attending-card">
+                <div class="att-number ${isPrio ? 'priority' : 'normal'}">${it.numero}</div>
+                <div>
+                  <div class="att-service">${it.servico || 'Serviço'}</div>
+                  <div class="att-balcao">Balcão ${it.balcao || '–'}</div>
+                  <span class="tipo-badge ${isPrio ? 'tipo-prioritaria' : 'tipo-normal'}">
+                    ${isPrio ? '★ Prioritária' : 'Normal'}
+                  </span>
+                </div>
+                <div class="att-dot"></div>
+              </div>
+            `;
+        }).join('');
+    }
+
+    /* ── Render — Fila Aguardando ──────────────────────── */
+    function renderFila(lista, total) {
+        const lEl = document.getElementById('queueList');
+        const tEl = document.getElementById('totalWaiting');
+
+        if (tEl) tEl.textContent = total || 0;
+
+        if (!lEl) return;
+
+        if (!lista || !lista.length) {
+            lEl.innerHTML = '<p class="empty-state">Fila vazia — sem senhas aguardando</p>';
+            return;
+        }
+
+        lEl.innerHTML = lista.slice(0, MAX_FILA).map((it, i) => {
+            const isPrio = (it.tipo === 'prioritaria');
+            const tempo  = it.tempo_espera_estimado > 0
+                ? `~${it.tempo_espera_estimado}min`
+                : '—';
+            const classes = [
+                'queue-row',
+                i === 0  ? 'next-up' : '',
+                isPrio   ? 'priority' : ''
+            ].filter(Boolean).join(' ');
+
+            return `
+              <div class="${classes}">
+                <div class="q-pos">${it.posicao || i + 1}º</div>
+                <div class="q-num">${it.numero}</div>
+                <div class="q-service">
+                  ${it.servico || 'Serviço'}
+                  ${isPrio ? '<br><span style="font-size:.7rem;color:var(--amber);font-weight:700;">★ PRIORITÁRIA</span>' : ''}
+                </div>
+                <div class="q-time">${i === 0 ? '🔜 Próxima' : tempo}</div>
+              </div>
+            `;
+        }).join('');
+
+        /* Indicador se existem mais senhas que o limite visual */
+        if (lista.length > MAX_FILA) {
+            lEl.innerHTML += `
+              <div style="text-align:center;padding:.65rem;font-size:.78rem;color:var(--muted);">
+                + ${lista.length - MAX_FILA} senha(s) não exibida(s)
+              </div>
+            `;
+        }
+    }
+
+    /* ── Render — Footer Stats ─────────────────────────── */
+    function renderFooterStats(stats) {
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        set('footerTotal',      stats.total_emitidas || 0);
+        set('footerConcluidas', stats.concluidas     || 0);
+        set('footerTempo',      stats.tempo_medio_atendimento_min
+            ? `${stats.tempo_medio_atendimento_min}min`
+            : (stats.tempo_medio_espera_min ? `${stats.tempo_medio_espera_min}min` : '–'));
+    }
+
+    /* ── Actualizar painel ─────────────────────────────── */
+    async function actualizar() {
+        try {
+            const resp = await fetch('/api/dashboard/public/tv');
+            if (!resp.ok) { console.warn('[TV] /api/dashboard/public/tv →', resp.status); return; }
+            const d = await resp.json();
+
+            const ea = d.em_atendimento || [];
+
+            /* Detectar nova chamada */
+            if (ea.length > 0) {
+                const nova = ea[0];
+                if (nova.numero !== _ultimaNumero) {
+                    _ultimaNumero = nova.numero;
+                    const horaStr = new Date().toLocaleTimeString('pt-PT', {
+                        hour: '2-digit', minute: '2-digit', timeZone: TZ
+                    });
+                    animarNovaChamada(nova.numero, nova.balcao, nova.servico, horaStr);
+                }
             }
-            renderAtend(ea);
-            renderFila(d.aguardando||[],d.total_aguardando||0);
-            const tm=document.getElementById('tempoMedio');
-            if(tm)tm.textContent=d.tempo_medio_global>0?'Espera estimada: ~'+d.tempo_medio_global+' min':'Espera estimada: –';
-            const up=document.getElementById('lastUpdate');
-            if(up)up.textContent='Última actualização: '+new Date().toLocaleTimeString('pt-PT',{timeZone:TZ});
+
+            renderAtendendo(ea);
+            renderFila(d.aguardando || [], d.total_aguardando || 0);
+
+            /* Tempo médio */
+            const tmEl = document.getElementById('tempoMedio');
+            if (tmEl) tmEl.textContent = d.tempo_medio_global > 0
+                ? `Espera estimada: ~${d.tempo_medio_global} min`
+                : 'Espera estimada: –';
+
+            /* Footer stats */
+            renderFooterStats(d);
+
+            /* Timestamp */
+            const upEl = document.getElementById('lastUpdate');
+            if (upEl) upEl.textContent = 'Actualizado às ' + new Date().toLocaleTimeString('pt-PT', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: TZ
+            });
+
+            /* Esconder loading */
             document.getElementById('loadingOverlay')?.classList.add('hidden');
-        }catch(e){console.error('TV:',e);}
+
+        } catch (err) {
+            console.error('[TV] Erro ao actualizar:', err);
+        }
     }
 
-    function renderAtend(lista){
-        const el=document.getElementById('attendingList');
-        if(!el)return;
-        if(!lista.length){el.innerHTML='<p class="empty-state">Nenhum atendimento em curso</p>';return;}
-        el.innerHTML=lista.map(it=>{
-            const p=it.tipo==='prioritaria';
-            return '<div class="attending-card">'
-                +'<div class="'+(p?'attending-priority':'attending-number')+'">'+it.numero+'</div>'
-                +'<div><div class="attending-service">'+it.servico+'</div>'
-                +'<div class="attending-balcao">Balcão '+it.balcao+'</div>'
-                +'<span class="tipo-badge '+(p?'tipo-prioritaria':'tipo-normal')+'">'+(p?'★ Prioritária':'Normal')+'</span>'
-                +'</div></div>';
-        }).join('');
-    }
+    /* ── Init ──────────────────────────────────────────── */
+    actualizar();
+    setInterval(actualizar, INTERVALO);
 
-    function renderFila(lista,total){
-        const lEl=document.getElementById('queueList');
-        const tEl=document.getElementById('totalWaiting');
-        if(tEl)tEl.textContent=total;
-        if(!lEl)return;
-        if(!lista.length){lEl.innerHTML='<p class="empty-state">Nenhuma senha aguardando</p>';return;}
-        lEl.innerHTML=lista.map((it,i)=>{
-            const t=it.tempo_espera_estimado>0?'~'+it.tempo_espera_estimado+'min':'–';
-            return '<div class="queue-row'+(i===0?' next-up':'')+'"><div class="q-pos">'+it.posicao+'º</div>'
-                +'<div class="q-num">'+it.numero+'</div>'
-                +'<div class="q-service">'+it.servico+'</div>'
-                +'<div class="q-time">'+t+'</div></div>';
-        }).join('');
-    }
-
-    carregar();
-    setInterval(carregar,INTERVALO);
 })();
 </script>
 </body>
