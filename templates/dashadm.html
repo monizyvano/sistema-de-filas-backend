@@ -6,18 +6,142 @@
     <title>Dashboard Administrador — IMTSB</title>
     <link rel="stylesheet" href="/static/css/dashadm.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        /* ════════════════════════════════════════════════
+           ESTILOS ADICIONAIS — Produtividade Sprint 5
+        ════════════════════════════════════════════════ */
+
+        /* Barra de pesquisa de trabalhador */
+        .search-worker-bar {
+            display: flex;
+            align-items: center;
+            gap: .6rem;
+            margin-bottom: 1rem;
+        }
+
+        .search-worker-input {
+            flex: 1;
+            padding: .65rem 1rem .65rem 2.4rem;
+            border: 1.5px solid rgba(196,168,130,.45);
+            border-radius: 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: .9rem;
+            color: #3e2510;
+            outline: none;
+            background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%238c6746' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/%3E%3C/svg%3E") no-repeat .75rem center;
+            transition: border-color .2s, box-shadow .2s;
+            min-width: 0;
+        }
+
+        .search-worker-input:focus {
+            border-color: #6b4226;
+            box-shadow: 0 0 0 3px rgba(107,66,38,.1);
+        }
+
+        .search-worker-input::placeholder { color: #c4b0a0; }
+
+        .search-clear-btn {
+            padding: .6rem .9rem;
+            background: white;
+            border: 1.5px solid rgba(196,168,130,.45);
+            border-radius: 10px;
+            font-size: .82rem;
+            color: #8c6746;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all .2s;
+        }
+        .search-clear-btn:hover { background: #fdf8f5; color: #3e2510; }
+
+        /* Card "Trabalhador do Mês" */
+        .trabmes-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .trabmes-header {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            margin-bottom: .85rem;
+        }
+
+        .trabmes-header h3 {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #3e2510;
+        }
+
+        .trabmes-badge {
+            background: linear-gradient(135deg, #c4a164, #8c6746);
+            color: white;
+            padding: .2rem .7rem;
+            border-radius: 20px;
+            font-size: .72rem;
+            font-weight: 700;
+            letter-spacing: .04em;
+        }
+
+        #trabalhadorMesCard {
+            background: linear-gradient(135deg,
+                rgba(196,161,100,.12) 0%,
+                rgba(140,103,70,.08) 100%);
+            border: 1.5px solid rgba(196,161,100,.35);
+            border-radius: 16px;
+            padding: 1.35rem 1.5rem;
+            min-height: 80px;
+        }
+
+        /* Tabela de produtividade — colunas extra */
+        .perf-table-wrap {
+            overflow-x: auto;
+        }
+
+        .performance-table th:nth-child(4),
+        .performance-table td:nth-child(4) {
+            /* Avaliação ★ */
+            min-width: 130px;
+        }
+
+        .performance-table th:nth-child(5),
+        .performance-table td:nth-child(5) {
+            /* Taxa conclusão */
+            min-width: 100px;
+        }
+
+        .performance-table th:last-child,
+        .performance-table td:last-child {
+            /* Score */
+            min-width: 140px;
+        }
+
+        /* Métricas legend */
+        .perf-legend {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: .75rem;
+            padding: .65rem 1rem;
+            background: #fdf8f5;
+            border-radius: 10px;
+            font-size: .78rem;
+            color: #8c6746;
+        }
+
+        .perf-legend span { display: flex; align-items: center; gap: .3rem; }
+        .perf-legend strong { color: #3e2510; }
+    </style>
 </head>
 <body>
 
-    <!-- ===================================================
-         CABEÇALHO DO DASHBOARD ADMIN
-    =================================================== -->
+    <!-- ═══════════════════════════════════════════════════
+         CABEÇALHO
+    ═══════════════════════════════════════════════════ -->
     <header class="dashboard-header">
         <div class="header-left">
             <div class="logo-admin">SB</div>
@@ -27,35 +151,25 @@
                 <p id="adminProfileName">Administrador</p>
             </div>
         </div>
-
         <div class="header-actions">
-            <div class="date-selector">
-                <span id="currentDate">-</span>
-            </div>
+            <div class="date-selector"><span id="currentDate">-</span></div>
             <select id="exportFormat" class="export-format">
                 <option value="excel">Excel (.xlsx)</option>
                 <option value="pdf">PDF</option>
             </select>
-            <button class="export-btn" id="exportBtn" onclick="exportData()">
-                Exportar
-            </button>
-            <button class="export-btn danger-btn" type="button" id="btnResetDayAdmin">
-                Guardar Dia e Reiniciar
-            </button>
-            <button class="export-btn logout-btn" type="button" id="btnSairAdmin">
-                Sair
-            </button>
+            <button class="export-btn" onclick="exportData()">Exportar</button>
+            <button class="export-btn danger-btn" type="button" id="btnResetDayAdmin">Guardar e Reiniciar</button>
+            <button class="export-btn logout-btn" type="button" id="btnSairAdmin">Sair</button>
             <div class="admin-profile" id="adminInitials">AD</div>
         </div>
     </header>
 
     <main class="dashboard-container">
 
-        <!-- ================================================
-             KPIs — métricas do dia
-        ================================================ -->
+        <!-- ═══════════════════════════════════════════════
+             KPIs
+        ═══════════════════════════════════════════════ -->
         <section class="kpi-grid">
-
             <article class="kpi-card">
                 <div class="kpi-header">
                     <div class="kpi-icon brown"></div>
@@ -65,7 +179,6 @@
                 <div class="kpi-value" id="kpiAttend">0</div>
                 <div class="kpi-subtitle">Concluídos no dia actual</div>
             </article>
-
             <article class="kpi-card">
                 <div class="kpi-header">
                     <div class="kpi-icon green"></div>
@@ -75,7 +188,6 @@
                 <div class="kpi-value" id="kpiWait">0min</div>
                 <div class="kpi-subtitle">Média da fila activa</div>
             </article>
-
             <article class="kpi-card">
                 <div class="kpi-header">
                     <div class="kpi-icon beige"></div>
@@ -85,105 +197,136 @@
                 <div class="kpi-value" id="kpiOcc">0%</div>
                 <div class="kpi-subtitle">Balcões em atendimento</div>
             </article>
-
             <article class="kpi-card">
                 <div class="kpi-header">
                     <div class="kpi-icon bordeaux"></div>
                     <div class="kpi-trend">Taxa</div>
                 </div>
-                <!-- NOTA Sprint 3: renomear este KPI para "Taxa de Conclusão"
-                     Hoje calcula concluídas/total_emitidas, não satisfação real -->
                 <div class="kpi-label">Taxa de Conclusão</div>
                 <div class="kpi-value" id="kpiSat">0%</div>
                 <div class="kpi-subtitle">Concluídas / emitidas hoje</div>
             </article>
-
         </section>
 
-        <!-- ================================================
+        <!-- ═══════════════════════════════════════════════
              TEMPO REAL — filas e distribuição
-        ================================================ -->
+        ═══════════════════════════════════════════════ -->
         <section class="realtime-grid">
-
             <article class="monitor-card">
                 <h3 class="monitor-title">Filas em Tempo Real</h3>
                 <div class="queue-list" id="queueList"></div>
             </article>
-
             <article class="monitor-card">
                 <h3 class="monitor-title">Distribuição por Estado</h3>
                 <div class="chart-container">
                     <canvas id="pieChart"></canvas>
                 </div>
             </article>
-
         </section>
 
-        <!-- ================================================
-             GRÁFICOS — fluxo e tempo por serviço
-             CORRECÇÃO Sprint 1: params 'dia'/'semana'/'mes'
-        ================================================ -->
+        <!-- ═══════════════════════════════════════════════
+             GRÁFICOS
+        ═══════════════════════════════════════════════ -->
         <section class="charts-grid">
-
             <article class="chart-card">
                 <div class="chart-header">
                     <h3 class="chart-title">Fluxo de Atendimentos</h3>
                     <div class="chart-filter">
-                        <!-- Parâmetros corrigidos: backend espera 'dia','semana','mes' -->
-                        <button class="filter-btn" onclick="changeChartPeriod('dia')">
-                            Dia
-                        </button>
-                        <button class="filter-btn active" onclick="changeChartPeriod('semana')">
-                            Semana
-                        </button>
-                        <button class="filter-btn" onclick="changeChartPeriod('mes')">
-                            Mês
-                        </button>
+                        <button class="filter-btn" onclick="changeChartPeriod('dia')">Dia</button>
+                        <button class="filter-btn active" onclick="changeChartPeriod('semana')">Semana</button>
+                        <button class="filter-btn" onclick="changeChartPeriod('mes')">Mês</button>
                     </div>
                 </div>
-                <div class="chart-container">
-                    <canvas id="lineChart"></canvas>
-                </div>
+                <div class="chart-container"><canvas id="lineChart"></canvas></div>
             </article>
-
             <article class="chart-card">
                 <div class="chart-header">
                     <h3 class="chart-title">Tempo Médio por Serviço</h3>
                 </div>
-                <div class="chart-container">
-                    <canvas id="barChart"></canvas>
-                </div>
+                <div class="chart-container"><canvas id="barChart"></canvas></div>
             </article>
-
         </section>
 
-        <!-- ================================================
-             PRODUTIVIDADE POR FUNCIONÁRIO
-        ================================================ -->
+        <!-- ═══════════════════════════════════════════════
+             ★ PRODUTIVIDADE — Sprint 5 redesenhado
+             Inclui: pesquisa, trabalhador do mês, métricas
+        ═══════════════════════════════════════════════ -->
         <section class="performance-section">
+
             <div class="performance-header">
                 <h3 class="performance-title">Produtividade por Funcionário</h3>
             </div>
-            <table class="performance-table">
-                <thead>
-                    <tr>
-                        <th>Funcionário</th>
-                        <th>Atendimentos</th>
-                        <th>Tempo Médio</th>
-                        <th>Estado</th>
-                        <th>Desempenho</th>
-                    </tr>
-                </thead>
-                <tbody id="performanceBody"></tbody>
-            </table>
+
+            <!-- 🏆 TRABALHADOR DO MÊS ────────────────────── -->
+            <div class="trabmes-section">
+                <div class="trabmes-header">
+                    <h3>🏆 Trabalhador do Dia</h3>
+                    <span class="trabmes-badge">Calculado automaticamente</span>
+                </div>
+                <!-- preenchido por dashadm.js → renderTrabalhadorMes() -->
+                <div id="trabalhadorMesCard">
+                    <p style="color:#8c6746;font-size:.9rem;padding:.5rem 0;">A calcular…</p>
+                </div>
+            </div>
+
+            <!-- Legenda das métricas -->
+            <div class="perf-legend">
+                <span>📊 Score composto:</span>
+                <span>⭐ <strong>Avaliação 35%</strong></span>
+                <span>✓ <strong>Taxa conclusão 25%</strong></span>
+                <span>🎫 <strong>Atendimentos 20%</strong></span>
+                <span>⏱ <strong>Tempo médio 12%</strong></span>
+                <span>↪ <strong>Redireccionamentos 8%</strong></span>
+            </div>
+
+            <!-- 🔍 BARRA DE PESQUISA ──────────────────────── -->
+            <div class="search-worker-bar">
+                <input
+                    type="text"
+                    class="search-worker-input"
+                    id="searchWorkerInput"
+                    placeholder="Pesquisar por nome ou departamento…"
+                    oninput="pesquisarTrabalhador(this.value)"
+                    autocomplete="off"
+                >
+                <button
+                    class="search-clear-btn"
+                    onclick="
+                        document.getElementById('searchWorkerInput').value='';
+                        pesquisarTrabalhador('');
+                    "
+                >✕ Limpar</button>
+            </div>
+
+            <!-- TABELA DE PRODUTIVIDADE ──────────────────── -->
+            <div class="perf-table-wrap">
+                <table class="performance-table">
+                    <thead>
+                        <tr>
+                            <th>Funcionário</th>
+                            <th>Atendimentos</th>
+                            <th>Tempo Médio</th>
+                            <th>Avaliação ★</th>
+                            <th>Taxa Conclusão</th>
+                            <th>Estado</th>
+                            <th>Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="performanceBody">
+                        <tr>
+                            <td colspan="7" style="text-align:center;color:#8c6746;padding:2rem;">
+                                A carregar dados…
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
         </section>
 
-        <!-- ================================================
-             HISTÓRICO COMPLETO COM PAGINAÇÃO
-        ================================================ -->
-        <!-- ================================================
-             HISTÓRICO COMPLETO COM FILTROS DE PERÍODO
-        ================================================ -->
+        <!-- ═══════════════════════════════════════════════
+             HISTÓRICO COM FILTROS
+        ═══════════════════════════════════════════════ -->
         <section class="performance-section">
             <div class="performance-header">
                 <h3 class="performance-title">Histórico de Atendimentos</h3>
@@ -191,21 +334,62 @@
 
             <!-- Filtros de período -->
             <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.9rem;">
-                <button id="filtroHoje"    onclick="filtrarHistorico('hoje')"   style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:#6b4226;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">Hoje</button>
-                <button id="filtroSemana" onclick="filtrarHistorico('semana')" style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Esta semana</button>
-                <button id="filtroMes"    onclick="filtrarHistorico('mes')"    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Este mês</button>
-                <button id="filtroTodos"  onclick="filtrarHistorico('todos')"  style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">Todos</button>
+                <button id="filtroHoje"
+                    onclick="filtrarHistorico('hoje')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                           background:#6b4226;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">
+                    Hoje
+                </button>
+                <button id="filtroSemana"
+                    onclick="filtrarHistorico('semana')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                           background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">
+                    Esta semana
+                </button>
+                <button id="filtroMes"
+                    onclick="filtrarHistorico('mes')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                           background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">
+                    Este mês
+                </button>
+                <button id="filtroTodos"
+                    onclick="filtrarHistorico('todos')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                           background:white;color:#6b4226;font-weight:600;cursor:pointer;font-size:.82rem;">
+                    Todos
+                </button>
                 <span style="color:#c5b5a5;font-size:.8rem;margin:0 .2rem;">|</span>
                 <label style="font-size:.82rem;color:#6b4226;font-weight:600;">De:
-                    <input type="date" id="filtroDataDe" style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;padding:.3rem .5rem;font-size:.82rem;">
+                    <input type="date" id="filtroDataDe"
+                        style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;
+                               padding:.3rem .5rem;font-size:.82rem;">
                 </label>
                 <label style="font-size:.82rem;color:#6b4226;font-weight:600;">Até:
-                    <input type="date" id="filtroDataAte" style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;padding:.3rem .5rem;font-size:.82rem;">
+                    <input type="date" id="filtroDataAte"
+                        style="margin-left:.3rem;border:1px solid #d9cabc;border-radius:6px;
+                               padding:.3rem .5rem;font-size:.82rem;">
                 </label>
-                <button onclick="filtrarHistorico('intervalo')" style="padding:.4rem .9rem;border-radius:8px;border:1px solid #6b4226;background:white;color:#6b4226;font-weight:700;cursor:pointer;font-size:.82rem;">🔍 Filtrar</button>
-                <button onclick="imprimirRelatorioCompleto()" style="padding:.4rem .9rem;border-radius:8px;border:none;background:linear-gradient(135deg,#3e2510,#6b4226);color:white;font-weight:700;cursor:pointer;font-size:.82rem;">🖨 Imprimir</button>
-                <button onclick="exportarHistorico('excel')" style="padding:.4rem .9rem;border-radius:8px;border:none;background:#1d6b35;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">⬇ Excel</button>
-                <button onclick="exportarHistorico('pdf')"   style="padding:.4rem .9rem;border-radius:8px;border:none;background:#b91c1c;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">⬇ PDF</button>
+                <button onclick="filtrarHistorico('intervalo')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:1px solid #6b4226;
+                           background:white;color:#6b4226;font-weight:700;cursor:pointer;font-size:.82rem;">
+                    🔍 Filtrar
+                </button>
+                <button onclick="imprimirRelatorioCompleto()"
+                    style="padding:.4rem .9rem;border-radius:8px;border:none;
+                           background:linear-gradient(135deg,#3e2510,#6b4226);
+                           color:white;font-weight:700;cursor:pointer;font-size:.82rem;">
+                    🖨 Imprimir
+                </button>
+                <button onclick="exportarHistorico('excel')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:none;
+                           background:#1d6b35;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">
+                    ⬇ Excel
+                </button>
+                <button onclick="exportarHistorico('pdf')"
+                    style="padding:.4rem .9rem;border-radius:8px;border:none;
+                           background:#b91c1c;color:white;font-weight:700;cursor:pointer;font-size:.82rem;">
+                    ⬇ PDF
+                </button>
             </div>
 
             <table class="performance-table">
@@ -217,31 +401,30 @@
                         <th>Data / Hora</th>
                         <th>Espera</th>
                         <th>Duração</th>
-                        <th>Estado</th>
+                        <th>Estado / Avaliação</th>
                     </tr>
                 </thead>
                 <tbody id="historyBody"></tbody>
             </table>
 
-            <!-- Navegação de páginas -->
-            <div style="display:flex; align-items:center; gap:12px; margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-top:12px;">
                 <button id="historyPrevBtn">Anterior</button>
                 <span id="historyPageInfo">Página 1 de 1 · 0 registos</span>
                 <button id="historyNextBtn">Próxima</button>
             </div>
         </section>
 
-        <!-- ================================================
-             GESTÃO DE TRABALHADORES — CRUD
-        ================================================ -->
+        <!-- ═══════════════════════════════════════════════
+             GESTÃO DE TRABALHADORES
+        ═══════════════════════════════════════════════ -->
         <section class="performance-section">
             <div class="performance-header">
-                <h3 class="performance-title">Adicionar Trabalhador</h3>
+                <h3 class="performance-title">Adicionar Membro</h3>
             </div>
             <div class="worker-form-grid">
-                <input id="newWorkerName" type="text" placeholder="Nome completo" autocomplete="off">
-                <input id="newWorkerEmail" type="email" placeholder="Email institucional" autocomplete="off">
-                <input id="newWorkerPass" type="password" placeholder="Senha inicial" autocomplete="new-password">
+                <input id="newWorkerName"  type="text"     placeholder="Nome completo"           autocomplete="off">
+                <input id="newWorkerEmail" type="email"    placeholder="Email institucional"     autocomplete="off">
+                <input id="newWorkerPass"  type="password" placeholder="Senha inicial"           autocomplete="new-password">
                 <select id="newWorkerRole">
                     <option value="atendente">Trabalhador</option>
                     <option value="admin">Administrador</option>
@@ -255,7 +438,7 @@
                 </select>
                 <button class="export-btn" type="button" id="btnAddWorker">Adicionar membro</button>
             </div>
-            <p id="workerFormMsg" style="margin-top:.5rem; font-weight:500;"></p>
+            <p id="workerFormMsg" style="margin-top:.5rem;font-weight:500;"></p>
 
             <table class="performance-table" style="margin-top:1rem;">
                 <thead>
@@ -272,26 +455,22 @@
 
     </main>
 
-    <!-- ===================================================
+    <!-- ═══════════════════════════════════════════════════
          MODAL — Detalhes do Pedido (Histórico Admin)
-    =================================================== -->
+    ═══════════════════════════════════════════════════ -->
     <div id="modalDetalhesAdmin" style="
         display:none;position:fixed;inset:0;z-index:9999;
         background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
-        align-items:center;justify-content:center;padding:1rem;
-    ">
+        align-items:center;justify-content:center;padding:1rem;">
         <div style="
             background:white;border-radius:20px;max-width:580px;width:100%;
-            max-height:88vh;overflow-y:auto;
-            box-shadow:0 24px 64px rgba(0,0,0,.35);
-        ">
+            max-height:88vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35);">
+
             <!-- Cabeçalho -->
             <div style="
-                background:linear-gradient(135deg,#3e2510,#6b4226);
-                color:white;padding:1.25rem 1.5rem;
-                border-radius:20px 20px 0 0;
-                display:flex;align-items:center;justify-content:space-between;
-            ">
+                background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
+                padding:1.25rem 1.5rem;border-radius:20px 20px 0 0;
+                display:flex;align-items:center;justify-content:space-between;">
                 <div>
                     <div style="font-size:.72rem;opacity:.8;text-transform:uppercase;letter-spacing:.08em;">
                         IMTSB · Dados do Pedido
@@ -301,100 +480,101 @@
                 <button onclick="fecharModalAdmin()" style="
                     background:rgba(255,255,255,.2);border:none;color:white;
                     width:36px;height:36px;border-radius:50%;cursor:pointer;
-                    font-size:1.1rem;display:flex;align-items:center;justify-content:center;
-                ">✕</button>
+                    font-size:1.1rem;display:flex;align-items:center;justify-content:center;">✕</button>
             </div>
 
             <!-- Corpo -->
             <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
 
-                <!-- Meta da senha -->
-                <div style="
-                    display:grid;grid-template-columns:1fr 1fr;gap:.5rem;
-                ">
+                <!-- Meta -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
                     <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
-                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
-                                    letter-spacing:.06em;margin-bottom:.2rem;">Serviço</div>
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem;">Serviço</div>
                         <div id="mda-servico" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
                     </div>
                     <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
-                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
-                                    letter-spacing:.06em;margin-bottom:.2rem;">Atendente</div>
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem;">Atendente</div>
                         <div id="mda-atendente" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
                     </div>
                     <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
-                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
-                                    letter-spacing:.06em;margin-bottom:.2rem;">Emitida às</div>
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem;">Emitida às</div>
                         <div id="mda-hora" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
                     </div>
                     <div style="background:#fdf8f5;border-radius:10px;padding:.75rem 1rem;">
-                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;
-                                    letter-spacing:.06em;margin-bottom:.2rem;">Duração</div>
+                        <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem;">Duração</div>
                         <div id="mda-duracao" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
                     </div>
                 </div>
 
+                <!-- Avaliação do cliente -->
+                <div style="background:#fef9f0;border:1px solid #f0d9a0;border-radius:10px;padding:.75rem 1rem;">
+                    <div style="font-size:.7rem;color:#8c6746;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem;">
+                        ⭐ Avaliação do Cliente
+                    </div>
+                    <div id="mda-nota" style="font-weight:700;color:#3e2510;font-size:.95rem;">—</div>
+                </div>
+
                 <!-- Dados do formulário -->
                 <div>
-                    <div style="font-size:.72rem;font-weight:700;color:#8c6746;
-                                text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
+                    <div style="font-size:.72rem;font-weight:700;color:#8c6746;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
                         Dados do Formulário
                     </div>
                     <div id="mda-form" style="
                         background:#fdf8f5;border:1px solid #e8d5c4;border-radius:12px;
                         padding:1rem;font-size:.88rem;line-height:1.85;color:#3e2510;
-                        white-space:pre-wrap;min-height:56px;
-                    ">A carregar...</div>
+                        white-space:pre-wrap;min-height:56px;">
+                        A carregar…
+                    </div>
                 </div>
 
-                <!-- Documento anexado -->
+                <!-- Documento -->
                 <div id="mda-fich-bloco" style="
                     background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;
-                    padding:1rem;display:none;
-                ">
-                    <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;
-                                text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
+                    padding:1rem;display:none;">
+                    <div style="font-size:.72rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem;">
                         Documento Anexado
                     </div>
                     <div id="mda-fich-nome" style="font-size:.88rem;color:#1e3a5f;margin-bottom:.75rem;">—</div>
                     <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-                        <a id="mda-btn-dl"  href="#" target="_blank" download style="
+                        <a id="mda-btn-dl" href="#" target="_blank" download style="
                             background:#2563eb;color:white;padding:.5rem 1.1rem;
-                            border-radius:10px;font-size:.85rem;font-weight:700;
-                            text-decoration:none;">⬇ Download</a>
+                            border-radius:10px;font-size:.85rem;font-weight:700;text-decoration:none;">
+                            ⬇ Download
+                        </a>
                         <button id="mda-btn-vis" style="
                             background:#e0f2fe;color:#0369a1;padding:.5rem 1.1rem;
-                            border-radius:10px;font-size:.85rem;font-weight:700;
-                            border:none;cursor:pointer;">👁 Visualizar</button>
+                            border-radius:10px;font-size:.85rem;font-weight:700;border:none;cursor:pointer;">
+                            👁 Visualizar
+                        </button>
                     </div>
                 </div>
 
-                <!-- Sem ficheiro -->
                 <div id="mda-sem-fich" style="
                     background:#f9f4ef;border:1px dashed #d9cabc;border-radius:12px;
-                    padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;
-                ">Sem documento anexado.</div>
+                    padding:.85rem;font-size:.85rem;color:#9c7b60;text-align:center;">
+                    Sem documento anexado.
+                </div>
 
                 <!-- Botão imprimir -->
                 <div style="text-align:right;">
-                    <button id="mda-btn-imprimir" onclick="imprimirDetalheAdmin()" style="
+                    <button onclick="imprimirDetalheAdmin()" style="
                         background:linear-gradient(135deg,#3e2510,#6b4226);color:white;
                         border:none;padding:.65rem 1.4rem;border-radius:12px;
-                        font-size:.9rem;font-weight:700;cursor:pointer;
-                    ">🖨 Imprimir</button>
+                        font-size:.9rem;font-weight:700;cursor:pointer;">
+                        🖨 Imprimir
+                    </button>
                 </div>
+
             </div>
         </div>
     </div>
 
-    <!-- ===================================================
-         SCRIPTS
-    =================================================== -->
-    <script src="/static/js/api-config.js"></script>
-    <script src="/static/js/api-adapter.js"></script>
-    <script src="/static/js/api-client.js"></script>
-    <script src="/static/js/realtime-store.js"></script>
-    <script src="/static/js/dashadm.js"></script>
+    <!-- ── SCRIPTS ─────────────────────────────────────── -->
+    <script src="/static/js/api-config.js?v=s5"></script>
+    <script src="/static/js/api-adapter.js?v=s5"></script>
+    <script src="/static/js/api-client.js?v=s5"></script>
+    <script src="/static/js/realtime-store.js?v=s5"></script>
+    <script src="/static/js/dashadm.js?v=s5"></script>
 
 </body>
 </html>
