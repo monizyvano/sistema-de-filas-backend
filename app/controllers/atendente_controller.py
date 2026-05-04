@@ -22,408 +22,187 @@ CORRECÇÕES SPRINT 3:
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.atendente import Atendente
-from app.models.servico import Servico
-from app.extensions import db
-from datetime import date
-from sqlalchemy import func
 from app.models.senha import Senha
+from app.models.log_actividade import LogActividade
+from app.extensions import db
+
+from datetime import date, timedelta
+from sqlalchemy import func, case
 
 atendente_bp = Blueprint('atendente', __name__)
 
 
-# ───────────────────────────────────────────────────────────────
-# HELPER INTERNO — verificar admin
-# ───────────────────────────────────────────────────────────────
-
+# ─────────────────────────────────────────────
+# 🔐 ADMIN CHECK
+# ─────────────────────────────────────────────
 def _verificar_admin():
-    """
-    Verifica se o utilizador autenticado é administrador.
-    Devolve (atendente, erro_json, codigo_http).
-    Se não for admin, erro_json não é None.
-    """
     user_id = int(get_jwt_identity())
-    user    = Atendente.query.get(user_id)
+    user = Atendente.query.get(user_id)
 
     if not user or user.tipo != 'admin':
-        return None, jsonify({"erro": "Acesso negado. Apenas administradores."}), 403
+        return None, jsonify({"erro": "Acesso negado"}), 403
 
     return user, None, None
 
 
-# ───────────────────────────────────────────────────────────────
-# HELPER INTERNO — próximo balcão livre
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# 📅 PERÍODO
+# ─────────────────────────────────────────────
+def _calcular_intervalo(periodo, data_de=None, data_ate=None):
+    hoje = date.today()
 
-def _proximo_balcao_livre(excluir_id=None):
-    """
-    Calcula o próximo número de balcão disponível.
-    Começa em 1 e incrementa até encontrar um número não utilizado
-    por nenhum atendente activo.
+    if periodo == 'hoje':
+        return hoje, hoje
 
-    Args:
-        excluir_id: ID do atendente a ignorar na verificação
-                    (útil na edição do próprio atendente).
+    if periodo == 'semana':
+        inicio = hoje - timedelta(days=hoje.weekday())
+        return inicio, hoje
 
-    Returns:
-        int — próximo número de balcão livre.
-    """
-    query = Atendente.query.filter(
-        Atendente.ativo    == True,
-        Atendente.balcao.isnot(None)
+    if periodo == 'mes':
+        return hoje.replace(day=1), hoje
+
+    if periodo == 'intervalo':
+        try:
+            di = date.fromisoformat(data_de) if data_de else None
+            da = date.fromisoformat(data_ate) if data_ate else hoje
+            return di, da
+        except:
+            return None, hoje
+
+    return None, None  # todos
+
+
+# ─────────────────────────────────────────────
+# 📊 MÉTRICAS OTIMIZADAS (SQL)
+# ─────────────────────────────────────────────
+def _calcular_metricas(atendente_id, data_inicio, data_fim):
+
+    filtro_data = []
+    if data_inicio:
+        filtro_data.append(Senha.data_emissao >= data_inicio)
+    if data_fim:
+        filtro_data.append(Senha.data_emissao <= data_fim)
+
+    base = db.session.query(Senha).filter(
+        Senha.atendente_id == atendente_id,
+        *filtro_data
     )
-    if excluir_id:
-        query = query.filter(Atendente.id != excluir_id)
 
-    # Conjunto de balcões já em uso
-    em_uso = {a.balcao for a in query.all()}
+    total = base.count()
 
-    candidato = 1
-    while candidato in em_uso:
-        candidato += 1
+    concluidas = base.filter(Senha.status == 'concluida').count()
 
-    return candidato
+    # Taxa conclusão
+    taxa = (concluidas / total * 100) if total > 0 else 0
+
+    # Tempo médio
+    tempo_medio = db.session.query(
+        func.avg(Senha.tempo_atendimento_minutos)
+    ).filter(
+        Senha.atendente_id == atendente_id,
+        Senha.status == 'concluida',
+        *filtro_data
+    ).scalar() or 0
+
+    # Avaliação
+    avaliacao_media = db.session.query(
+        func.avg(Senha.avaliacao_nota)
+    ).filter(
+        Senha.atendente_id == atendente_id,
+        Senha.avaliacao_nota > 0,
+        *filtro_data
+    ).scalar() or 0
+
+    avaliacao_count = db.session.query(
+        func.count(Senha.id)
+    ).filter(
+        Senha.atendente_id == atendente_id,
+        Senha.avaliacao_nota > 0,
+        *filtro_data
+    ).scalar()
+
+    # Redirecionamentos
+    redir = db.session.query(func.count(LogActividade.id)).filter(
+        LogActividade.atendente_id == atendente_id,
+        LogActividade.acao == 'redirecionada'
+    )
+
+    if data_inicio:
+        redir = redir.filter(func.date(LogActividade.created_at) >= data_inicio)
+    if data_fim:
+        redir = redir.filter(func.date(LogActividade.created_at) <= data_fim)
+
+    redirecionamentos = redir.scalar()
+
+    # 🔥 SCORE REAL
+    score = (
+        (avaliacao_media * 20) * 0.35 +
+        taxa * 0.25 +
+        total * 0.20 +
+        (1 / (tempo_medio + 1)) * 100 * 0.12 +
+        redirecionamentos * 0.08
+    )
+
+    return {
+        "total_atendimentos": total,
+        "atendimentos_periodo": concluidas,
+        "tempo_medio": round(tempo_medio, 2),
+        "avaliacao_media": round(avaliacao_media, 2),
+        "avaliacao_count": avaliacao_count,
+        "taxa_conclusao": round(taxa, 2),
+        "redirecionamentos": redirecionamentos,
+        "score": round(score, 2)
+    }
 
 
-# ═══════════════════════════════════════════════════════════════
-# GET /api/atendentes/proximo-balcao
-# ═══════════════════════════════════════════════════════════════
-
-@atendente_bp.route('/proximo-balcao', methods=['GET'])
-@jwt_required()
-def proximo_balcao():
-    """
-    GET /api/atendentes/proximo-balcao
-
-    Devolve o próximo número de balcão disponível.
-    Usado pelo frontend para pré-preencher o campo.
-
-    Resposta (200):
-        { "proximo_balcao": 4 }
-    """
-    _, erro, codigo = _verificar_admin()
-    if erro:
-        return erro, codigo
-
-    return jsonify({"proximo_balcao": _proximo_balcao_livre()}), 200
-
-
-# ═══════════════════════════════════════════════════════════════
-# GET /api/atendentes/
-# ═══════════════════════════════════════════════════════════════
-
+# ─────────────────────────────────────────────
+# 📋 LISTAR ATENDENTES
+# ─────────────────────────────────────────────
 @atendente_bp.route('/', methods=['GET'])
 @jwt_required()
 def listar_atendentes():
-    """
-    GET /api/atendentes/
-
-    Lista todos os atendentes com estatísticas do dia.
-    Apenas administradores.
-
-    Resposta (200):
-        [
-            {
-                "id": 9, "nome": "Atendente Secretaria",
-                "email": "worker1@teste.com",
-                "tipo": "atendente", "ativo": true,
-                "balcao": 1, "servico_id": 1,
-                "departamento": "Secretaria Académica",
-                "atendimentos_hoje": 5, "tempo_medio": 8
-            },
-            ...
-        ]
-    """
     _, erro, codigo = _verificar_admin()
     if erro:
         return erro, codigo
 
-    try:
-        hoje       = date.today()
-        atendentes = Atendente.query.order_by(Atendente.nome).all()
+    periodo = request.args.get('periodo', 'hoje')
+    data_de = request.args.get('data_de')
+    data_ate = request.args.get('data_ate')
 
-        resultado = []
-        for a in atendentes:
-            # Estatísticas do dia
-            senhas_c = Senha.query.filter(
-                Senha.atendente_id == a.id,
-                Senha.status       == 'concluida',
-                func.date(Senha.atendimento_concluido_em) == hoje
-            ).all()
+    data_inicio, data_fim = _calcular_intervalo(periodo, data_de, data_ate)
 
-            tempos    = [s.tempo_atendimento_minutos for s in senhas_c
-                         if s.tempo_atendimento_minutos]
-            tempo_med = round(sum(tempos) / len(tempos)) if tempos else 0
+    atendentes = Atendente.query.filter_by(ativo=True).all()
+    resultado = []
 
-            resultado.append({
-                "id":                a.id,
-                "nome":              a.nome,
-                "email":             a.email,
-                "tipo":              a.tipo,
-                "ativo":             a.ativo,
-                "balcao":            a.balcao,
-                "servico_id":        a.servico_id,
-                "departamento":      a.servico.nome if a.servico else "Geral",
-                "atendimentos_hoje": len(senhas_c),
-                "tempo_medio":       tempo_med
-            })
+    for a in atendentes:
+        metricas = _calcular_metricas(a.id, data_inicio, data_fim)
 
-        return jsonify(resultado), 200
+        resultado.append({
+            "id": a.id,
+            "nome": a.nome,
+            "balcao": a.balcao,
+            **metricas
+        })
 
-    except Exception as e:
-        print(f"❌ Erro ao listar atendentes: {e}")
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+    return jsonify(resultado)
 
 
-# ═══════════════════════════════════════════════════════════════
-# POST /api/atendentes/
-# ═══════════════════════════════════════════════════════════════
-
-@atendente_bp.route('/', methods=['POST'])
+# ─────────────────────────────────────────────
+# 🏆 TOP 3 (TRABALHADOR DO DIA/MÊS)
+# ─────────────────────────────────────────────
+@atendente_bp.route('/top', methods=['GET'])
 @jwt_required()
-def criar_atendente():
-    """
-    POST /api/atendentes/
-
-    Cria novo atendente. Apenas administradores.
-
-    Corpo (JSON):
-        {
-            "nome":       "João Silva",         -- obrigatório
-            "email":      "joao@imtsb.ao",      -- obrigatório
-            "senha":      "senha123",            -- obrigatório
-            "tipo":       "atendente",           -- opcional (default: "atendente")
-            "balcao":     1,                     -- opcional (auto se em conflito)
-            "servico_id": 1                      -- opcional
-        }
-
-    Comportamento do balcão:
-        - Se tipo = "admin"     → balcao sempre NULL (admins não têm balcão).
-        - Se tipo = "atendente" e balcao não enviado → auto-atribui o próximo livre.
-        - Se tipo = "atendente" e balcao enviado mas ocupado → auto-atribui próximo.
-        - Se tipo = "atendente" e balcao enviado e livre → usa o valor enviado.
-
-    Resposta (201):
-        { "mensagem": "...", "atendente": {...} }
-    """
+def top_atendentes():
     _, erro, codigo = _verificar_admin()
     if erro:
         return erro, codigo
 
-    try:
-        data = request.get_json() or {}
+    response = listar_atendentes().get_json()
 
-        # — Validações obrigatórias ─────────────────────────────
-        for campo in ['nome', 'email', 'senha']:
-            if not data.get(campo):
-                return jsonify({"erro": f"Campo '{campo}' é obrigatório"}), 400
+    ordenados = sorted(response, key=lambda x: x["score"], reverse=True)
 
-        # — Email duplicado ──────────────────────────────────────
-        if Atendente.query.filter_by(email=data['email'].lower()).first():
-            return jsonify({"erro": "Este email já está registado"}), 400
-
-        # — Serviço existe (se fornecido) ────────────────────────
-        servico_id = data.get('servico_id')
-        if servico_id and not Servico.query.get(servico_id):
-            return jsonify({"erro": f"Serviço ID {servico_id} não encontrado"}), 400
-
-        # — Lógica de balcão automático ──────────────────────────
-        tipo   = data.get('tipo', 'atendente')
-        balcao = None  # admins nunca têm balcão
-
-        if tipo == 'atendente':
-            balcao_pedido = data.get('balcao')
-
-            if balcao_pedido:
-                # Verificar se o balcão pedido está livre
-                em_uso = Atendente.query.filter_by(
-                    balcao=balcao_pedido, ativo=True
-                ).first()
-
-                if em_uso:
-                    # Balcão ocupado → atribuir o próximo livre automaticamente
-                    balcao = _proximo_balcao_livre()
-                    print(f"[INFO] Balcão {balcao_pedido} ocupado por '{em_uso.nome}'. "
-                          f"Atribuído balcão {balcao} automaticamente.")
-                else:
-                    # Balcão pedido está livre → usar
-                    balcao = balcao_pedido
-            else:
-                # Nenhum balcão pedido → calcular o próximo livre
-                balcao = _proximo_balcao_livre()
-                print(f"[INFO] Balcão não especificado. Atribuído balcão {balcao} automaticamente.")
-
-        # — Criar atendente ──────────────────────────────────────
-        novo = Atendente(
-            nome       = data['nome'],
-            email      = data['email'].lower(),
-            senha      = data['senha'],
-            tipo       = tipo,
-            balcao     = balcao,
-            servico_id = servico_id
-        )
-
-        db.session.add(novo)
-        db.session.commit()
-
-        print(f"[OK] Atendente '{novo.nome}' criado — balcão: {novo.balcao}")
-
-        return jsonify({
-            "mensagem":  "Atendente criado com sucesso",
-            "atendente": {
-                "id":         novo.id,
-                "nome":       novo.nome,
-                "email":      novo.email,
-                "tipo":       novo.tipo,
-                "balcao":     novo.balcao,
-                "servico_id": novo.servico_id
-            }
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Erro ao criar atendente: {e}")
-        import traceback; traceback.print_exc()
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-# ═══════════════════════════════════════════════════════════════
-# PUT /api/atendentes/:id
-# ═══════════════════════════════════════════════════════════════
-
-@atendente_bp.route('/<int:atendente_id>', methods=['PUT'])
-@jwt_required()
-def editar_atendente(atendente_id):
-    """
-    PUT /api/atendentes/:id
-
-    Edita atendente existente. Apenas administradores.
-    O mesmo comportamento de balcão automático aplica-se aqui.
-    """
-    _, erro, codigo = _verificar_admin()
-    if erro:
-        return erro, codigo
-
-    try:
-        atendente = Atendente.query.get(atendente_id)
-        if not atendente:
-            return jsonify({"erro": "Atendente não encontrado"}), 404
-
-        data = request.get_json() or {}
-
-        # — Nome ─────────────────────────────────────────────────
-        if 'nome' in data and data['nome']:
-            atendente.nome = data['nome']
-
-        # — Email ────────────────────────────────────────────────
-        if 'email' in data and data['email']:
-            email_novo = data['email'].lower()
-            existente  = Atendente.query.filter_by(email=email_novo).first()
-            if existente and existente.id != atendente_id:
-                return jsonify({"erro": "Email já em uso por outro atendente"}), 400
-            atendente.email = email_novo
-
-        # — Senha ────────────────────────────────────────────────
-        if 'senha' in data and data['senha']:
-            atendente.set_senha(data['senha'])
-
-        # — Tipo ─────────────────────────────────────────────────
-        if 'tipo' in data and data['tipo'] in ['admin', 'atendente']:
-            atendente.tipo = data['tipo']
-
-        # — Balcão (automático se em conflito) ───────────────────
-        if 'balcao' in data:
-            novo_balcao = data['balcao']
-            if novo_balcao and atendente.tipo == 'atendente':
-                outro = Atendente.query.filter(
-                    Atendente.balcao == novo_balcao,
-                    Atendente.ativo  == True,
-                    Atendente.id     != atendente_id
-                ).first()
-                if outro:
-                    # Conflito → próximo livre (excluindo o próprio)
-                    novo_balcao = _proximo_balcao_livre(excluir_id=atendente_id)
-                    print(f"[INFO] Conflito de balcão na edição. Atribuído {novo_balcao}.")
-            atendente.balcao = novo_balcao
-
-        # — Serviço ──────────────────────────────────────────────
-        if 'servico_id' in data:
-            sid = data['servico_id']
-            if sid and not Servico.query.get(sid):
-                return jsonify({"erro": f"Serviço ID {sid} não encontrado"}), 400
-            atendente.servico_id = sid
-
-        # — Ativo ────────────────────────────────────────────────
-        if 'ativo' in data:
-            atendente.ativo = bool(data['ativo'])
-            if not atendente.ativo:
-                atendente.balcao = None  # Liberta o balcão ao desactivar
-
-        db.session.commit()
-
-        return jsonify({
-            "mensagem":  "Atendente actualizado com sucesso",
-            "atendente": {
-                "id":         atendente.id,
-                "nome":       atendente.nome,
-                "email":      atendente.email,
-                "tipo":       atendente.tipo,
-                "ativo":      atendente.ativo,
-                "balcao":     atendente.balcao,
-                "servico_id": atendente.servico_id
-            }
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Erro ao editar atendente: {e}")
-        return jsonify({"erro": "Erro interno do servidor"}), 500
-
-
-# ═══════════════════════════════════════════════════════════════
-# DELETE /api/atendentes/:id
-# ═══════════════════════════════════════════════════════════════
-
-@atendente_bp.route('/<int:atendente_id>', methods=['DELETE'])
-@jwt_required()
-def remover_atendente(atendente_id):
-    """
-    DELETE /api/atendentes/:id
-
-    Desactiva atendente (ativo=False) e liberta o balcão.
-    Não apaga o registo — preserva histórico de atendimentos.
-    Apenas administradores.
-    """
-    user, erro, codigo = _verificar_admin()
-    if erro:
-        return erro, codigo
-
-    try:
-        atendente = Atendente.query.get(atendente_id)
-        if not atendente:
-            return jsonify({"erro": "Atendente não encontrado"}), 404
-
-        # Não pode remover a si próprio
-        if atendente.id == user.id:
-            return jsonify({"erro": "Não pode remover a sua própria conta"}), 400
-
-        # Não pode remover o único admin
-        if atendente.tipo == 'admin':
-            admins_ativos = Atendente.query.filter_by(tipo='admin', ativo=True).count()
-            if admins_ativos <= 1:
-                return jsonify({
-                    "erro": "Não é possível remover o único administrador activo"
-                }), 400
-
-        atendente.ativo  = False
-        atendente.balcao = None  # Liberta o balcão para outros
-
-        db.session.commit()
-
-        return jsonify({
-            "mensagem": f"Atendente '{atendente.nome}' desactivado com sucesso"
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Erro ao remover atendente: {e}")
-        return jsonify({"erro": "Erro interno do servidor"}), 500
+    return jsonify({
+        "top_1": ordenados[0] if len(ordenados) > 0 else None,
+        "top_2": ordenados[1] if len(ordenados) > 1 else None,
+        "top_3": ordenados[2] if len(ordenados) > 2 else None
+    })
