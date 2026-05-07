@@ -7,6 +7,8 @@ from app.models.atendente import Atendente
 from app.models.log_actividade import LogActividade
 from app.models.senha import Senha
 from app.models.servico import Servico
+from datetime import date
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +30,24 @@ def obter_snapshot(servico_id=None, data_str=None):
             Senha.data_emissao == data_ref,
         ).order_by(Senha.atendimento_concluido_em.desc()).limit(50).all()
 
-        ultimo_log = LogActividade.query.filter_by(acao="chamada").order_by(LogActividade.created_at.desc()).first()
+        hoje = date.today()   # garante que `hoje` está definido neste scope
+ 
+        # FIX-BACKEND-01: filtrar lastCalled por hoje
+        # Sem este filtro, devolve a última chamada de QUALQUER dia anterior
+        ultimo_log = LogActividade.query.filter(
+            LogActividade.acao == "chamada",
+            func.date(LogActividade.created_at) == hoje
+        ).order_by(LogActividade.created_at.desc()).first()
+ 
         last_called = None
         if ultimo_log:
             senha_l = Senha.query.get(ultimo_log.senha_id) if ultimo_log.senha_id else None
-            if senha_l:
+            if senha_l and senha_l.data_emissao == hoje:   # dupla verificação
                 last_called = {
-                    "code": senha_l.numero,
-                    "service": senha_l.servico.nome if senha_l.servico else "",
+                    "code":        senha_l.numero,
+                    "service":     senha_l.servico.nome if senha_l.servico else "",
                     "counterName": f"Balcão {senha_l.numero_balcao}" if senha_l.numero_balcao else "Balcão",
-                    "at": ultimo_log.created_at.isoformat() if ultimo_log.created_at else None,
+                    "at":          ultimo_log.created_at.isoformat() if ultimo_log.created_at else None,
                 }
 
         atendentes = Atendente.query.filter(

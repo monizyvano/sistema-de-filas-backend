@@ -245,27 +245,78 @@
      ★ PRODUTIVIDADE — métricas avançadas + pesquisa + mês
   ════════════════════════════════════════════════════════════ */
   async function carregarTrabalhadores() {
-    const perfBody    = document.getElementById('performanceBody');
-    const workersBody = document.getElementById('workersBody');
-    const loadMsg     = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.2rem;">A carregar…</td></tr>';
-    if (perfBody)    perfBody.innerHTML    = loadMsg;
-    if (workersBody) workersBody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;">A carregar…</td></tr>';
-
+  const perfBody    = document.getElementById('performanceBody');
+  const workersBody = document.getElementById('workersBody');
+  const loadMsg     = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.2rem;">A carregar…</td></tr>';
+  if (perfBody)    perfBody.innerHTML    = loadMsg;
+  if (workersBody) workersBody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;">A carregar…</td></tr>';
+ 
+  let lista = null;
+  let fonte  = '';
+ 
+  // FIX-D1 — tentar o novo endpoint /admin/atendentes/metrics primeiro
+  try {
+    const r = await api('/admin/atendentes/metrics?periodo=hoje');
+    if (r.ok) {
+      lista  = await r.json();
+      fonte  = 'admin/metrics';
+    }
+  } catch (_) {}
+ 
+  // FIX-D1 — fallback para o endpoint antigo /atendentes/
+  if (!lista) {
     try {
-      const r = await api('/atendentes/');
-      if (!r.ok) throw new Error(r.status);
-      const lista = await r.json();
-      _todosTrabalhadores = Array.isArray(lista) ? lista : [];
-      renderProdutividade(_todosTrabalhadores);
-      renderGestaoMembros(_todosTrabalhadores);
-      renderTrabalhadorMes(_todosTrabalhadores);
+      const r2 = await api('/atendentes/?periodo=hoje');
+      if (r2.ok) {
+        lista = await r2.json();
+        fonte = 'atendentes';
+      } else {
+        // FIX-D3 — mostrar status real do erro em vez de "Erro ao carregar"
+        const errData = await r2.json().catch(() => ({}));
+        const msg = errData.erro || errData.message || `HTTP ${r2.status}`;
+        const errRow = `<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1.2rem;">
+          ⚠ Erro ao carregar trabalhadores: ${msg}
+          <br><small style="color:#9ca3af;margin-top:.3rem;display:block;">
+            Verifique se a migration da tabela 'avaliacoes' foi aplicada:
+            <code>flask db upgrade</code>
+          </small>
+        </td></tr>`;
+        if (perfBody)    perfBody.innerHTML    = errRow;
+        if (workersBody) workersBody.innerHTML = errRow.replace('colspan="7"','colspan="4"');
+        return;
+      }
     } catch (e) {
-      console.error('Trabalhadores:', e);
-      const err = '<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1rem;">Erro ao carregar</td></tr>';
-      if (perfBody)    perfBody.innerHTML    = err;
-      if (workersBody) workersBody.innerHTML = err;
+      console.error('Trabalhadores: Error:', e);
+      const errRow = `<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1rem;">
+        Erro de ligação ao servidor
+      </td></tr>`;
+      if (perfBody)    perfBody.innerHTML    = errRow;
+      if (workersBody) workersBody.innerHTML = errRow.replace('colspan="7"','colspan="4"');
+      return;
     }
   }
+ 
+  // FIX-D2 — normalizar campos entre os dois endpoints
+  _todosTrabalhadores = (Array.isArray(lista) ? lista : []).map(t => ({
+    ...t,
+    // endpoint antigo usa atendimentos_periodo; novo usa atendimentos_concluidos
+    atendimentos_hoje: t.atendimentos_hoje
+      ?? t.atendimentos_concluidos
+      ?? t.atendimentos_periodo
+      ?? t.total_atendimentos
+      ?? 0,
+    // garantir que score existe
+    score: t.score ?? t._score ?? 0,
+    // garantir departamento
+    departamento: t.departamento || t.servico?.nome || 'Geral',
+  }));
+ 
+  console.info(`[Trabalhadores] ${_todosTrabalhadores.length} carregados via ${fonte}`);
+ 
+  renderProdutividade(_todosTrabalhadores);
+  renderGestaoMembros(_todosTrabalhadores);
+  renderTrabalhadorMes(_todosTrabalhadores);
+}
 
   /* ── Calcular score composto (0–100) ──────────────────── */
   function calcularScore(t) {
@@ -466,55 +517,75 @@
 
   /* ── Adicionar membro ────────────────────────────────── */
   async function adicionarTrabalhador() {
-    const nome  = (document.getElementById('newWorkerName')?.value  || '').trim();
-    const email = (document.getElementById('newWorkerEmail')?.value || '').trim();
-    const senha = (document.getElementById('newWorkerPass')?.value  || '').trim();
-    const role  = (document.getElementById('newWorkerRole')?.value  || 'atendente');
-    const dept  = (document.getElementById('newWorkerDept')?.value  || '');
-    const msgEl = document.getElementById('workerFormMsg');
-
-    const setMsg = (t, ok) => {
-      if (!msgEl) return;
-      msgEl.textContent = t;
-      msgEl.style.color = ok ? '#22c55e' : '#ef4444';
-      msgEl.style.fontWeight = '600';
-    };
-
-    if (!nome || !email || !senha) { setMsg('Nome, email e senha são obrigatórios.', false); return; }
-    if (senha.length < 6) { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
-
-    const mapaServico = {
-      'Secretaria Academica':1,'Contabilidade':2,
-      'Direccao Pedagogica':3,'Biblioteca':4,'Apoio ao Cliente':5
-    };
-    const servicoId = role === 'admin' ? null : (mapaServico[dept] || null);
-
-    const btn = document.getElementById('btnAddWorker');
-    if (btn) { btn.disabled = true; btn.textContent = 'A criar…'; }
-
-    try {
-      const r = await api('/atendentes/', {
-        method:'POST',
-        body: JSON.stringify({ nome, email, senha, tipo:role, servico_id:servicoId })
+  const nome  = (document.getElementById('newWorkerName')?.value  || '').trim();
+  const email = (document.getElementById('newWorkerEmail')?.value || '').trim();
+  const senha = (document.getElementById('newWorkerPass')?.value  || '').trim();
+  const role  = (document.getElementById('newWorkerRole')?.value  || 'atendente');
+  const dept  = (document.getElementById('newWorkerDept')?.value  || '');
+  const msgEl = document.getElementById('workerFormMsg');
+ 
+  const setMsg = (t, ok) => {
+    if (!msgEl) return;
+    msgEl.textContent = t;
+    msgEl.style.color      = ok ? '#22c55e' : '#ef4444';
+    msgEl.style.fontWeight = '600';
+  };
+ 
+  if (!nome || !email || !senha) { setMsg('Nome, email e senha são obrigatórios.', false); return; }
+  if (senha.length < 6)          { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
+ 
+  // FIX-D4 — mapa departamento → servico_id (IDs da tua BD)
+  const mapaServico = {
+    'Secretaria Academica':  1,
+    'Contabilidade':         2,
+    'Direccao Pedagogica':   3,
+    'Biblioteca':            4,
+    'Apoio ao Cliente':      5,
+  };
+  const servicoId = (role === 'admin') ? null : (mapaServico[dept] || null);
+ 
+  const btn = document.getElementById('btnAddWorker');
+  if (btn) { btn.disabled = true; btn.textContent = 'A criar…'; }
+ 
+  try {
+    // FIX-D4 — endpoint correcto: /api/atendentes/ (não /api/workers)
+    const r = await api('/atendentes/', {
+      method: 'POST',
+      body: JSON.stringify({
+        nome,
+        email,
+        senha,
+        tipo:       role,
+        servico_id: servicoId,
+      }),
+    });
+ 
+    let d = {};
+    try { d = await r.json(); } catch (_) {}
+ 
+    if (r.ok) {
+      const bal = d.atendente?.balcao ? ` (Balcão ${d.atendente.balcao})` : '';
+      setMsg(`✅ "${nome}" criado com sucesso!${bal}`, true);
+      ['newWorkerName','newWorkerEmail','newWorkerPass'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
       });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) {
-        const bal = d.atendente?.balcao ? ` (Balcão ${d.atendente.balcao})` : '';
-        setMsg(`✅ "${nome}" criado com sucesso!${bal}`, true);
-        ['newWorkerName','newWorkerEmail','newWorkerPass'].forEach(id => {
-          const el = document.getElementById(id); if (el) el.value = '';
-        });
-        await carregarTrabalhadores();
-        setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
-      } else {
-        setMsg(d.erro || 'Erro ao criar membro.', false);
-      }
-    } catch (e) {
-      console.error('Adicionar:', e); setMsg('Erro de ligação.', false);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Adicionar membro'; }
+      await carregarTrabalhadores();
+      setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
+    } else {
+      // Mostrar erro real do backend
+      const errMsg = d.erro || d.message || d.detalhes
+        ? (d.erro || d.message || JSON.stringify(d.detalhes))
+        : `Erro HTTP ${r.status}`;
+      setMsg(errMsg, false);
     }
+  } catch (e) {
+    console.error('Adicionar trabalhador:', e);
+    setMsg('Erro de ligação ao servidor.', false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Adicionar membro'; }
   }
+}
 
   /* ════════════════════════════════════════════════════════════
      HISTÓRICO COM FILTROS DE PERÍODO

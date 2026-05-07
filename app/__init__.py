@@ -158,6 +158,9 @@ def register_blueprints(app):
     from app.controllers.config_controller import config_bp
     from app.controllers.atendente_controller import atendente_bp
     from app.controllers.utente_controller import utente_bp
+    from app.controllers.avaliacao_controller import avaliacao_bp
+    from app.controllers.admin_metrics_controller import admin_metrics_bp
+    
 
     # ✅ REGISTRO CORRETO COM PREFIXOS
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -168,6 +171,8 @@ def register_blueprints(app):
     app.register_blueprint(config_bp, url_prefix='/api/configuracoes')
     app.register_blueprint(atendente_bp, url_prefix='/api/atendentes')
     app.register_blueprint(utente_bp, url_prefix='/api/utentes')
+    app.register_blueprint(avaliacao_bp, url_prefix="/api/tickets")
+    app.register_blueprint(admin_metrics_bp, url_prefix="/api/admin")
 
     print("\n" + "="*60)
     print("BLUEPRINTS REGISTRADOS:")
@@ -179,6 +184,8 @@ def register_blueprints(app):
     print("  - /api/configuracoes")
     print("  - /api/atendentes")
     print("  - /api/utentes")
+    print("  - /api/tickets")
+    print("  - /api/admin")
     print("="*60 + "\n")
 
 
