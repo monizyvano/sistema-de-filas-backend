@@ -1,33 +1,47 @@
 /**
- * static/js/dash.js — Sprint 4 COMPLETO
+ * static/js/dash.js — Sprint 4 COMPLETO + FIX BASE URL
  * ═══════════════════════════════════════════════════════════════
- * ADIÇÕES SPRINT 4:
- *   ✅ Som + vibração em TODAS as acções do trabalhador
- *   ✅ Notificações visuais específicas por tipo de acção
- *   ✅ redirectCustomer() — funcional: abre modal, chama API real
- *   ✅ Modal de redirecionamento com lista de serviços dinâmica
- *   ✅ denyCurrentTicket() — notificação completa
- *   ✅ concludeAttendance() — som de conclusão
- *   ✅ callNextCustomer() — som + vibração de chamada
- *   ✅ togglePause() — som de pausa/retoma
+ * FIX CRÍTICO APLICADO:
+ *   ANTES: fetch("/api/filas/chamar", ...) — URL relativa FIXA
+ *          → funciona em :5000 (Flask)
+ *          → quebra em :5500 (Live Server) → ERR_CONNECTION_REFUSED
  *
- * DEPENDÊNCIAS:
- *   notifications.js deve ser carregado antes deste ficheiro.
+ *   DEPOIS: fetch(`${BASE()}/filas/chamar`, ...)
+ *          → lê window.IMTSBApiConfig.baseUrl (já resolvido por api-config.js)
+ *          → funciona em :5000 ("/api/filas/chamar")
+ *          → funciona em :5500 ("http://localhost:5000/api/filas/chamar")
+ *          → funciona em qualquer IP da rede local
+ *
+ * TODAS as chamadas fetch() neste ficheiro foram actualizadas.
  * ═══════════════════════════════════════════════════════════════
  */
 (function () {
   "use strict";
 
   const store     = window.IMTSBStore;
-  const N         = window.IMTSBNotifications;   // ← sistema de notificações
+  const N         = window.IMTSBNotifications;
   const ANGOLA_TZ = "Africa/Luanda";
+
+  /* ── BASE URL dinâmica ────────────────────────────────────
+     FIX: lê api-config.js que já resolve a URL correcta
+     para qualquer porta/dispositivo.
+  ──────────────────────────────────────────────────────── */
+  const BASE = () => {
+    const url = (window.IMTSBApiConfig?.baseUrl || '/api').replace(/\/$/, '');
+    // Se for caminho relativo e não estiver na porta Flask, converte para absoluto
+    if (url.startsWith('/') && window.location.port && window.location.port !== '5000') {
+      const { protocol, hostname } = window.location;
+      return `${protocol}//${hostname}:5000${url}`;
+    }
+    return url;
+  };
 
   /* ── Estado ──────────────────────────────────────────────── */
   let senhaAtual       = null;
   let timerInterval    = null;
   let pollingInterval  = null;
   let timerSegundos    = 0;
-  let _servicosCache   = [];   // cache para o modal de redirecionamento
+  let _servicosCache   = [];
 
   /* ── Formatadores ────────────────────────────────────────── */
   function nowKeyLuanda() {
@@ -101,7 +115,7 @@
     await Promise.all([atualizarEstatisticas(), atualizarHistorico(), atualizarFilaAoVivo()]);
   }
 
-  /* ── Dados do trabalhador ────────────────────────────────── */
+  /* ── Cabeçalho do trabalhador ────────────────────────────── */
   function carregarDadosTrabalhador() {
     const user = store.getUser();
     if (!user) return;
@@ -117,7 +131,8 @@
   /* ── Estatísticas ────────────────────────────────────────── */
   async function atualizarEstatisticas() {
     try {
-      const resp = await fetch("/api/dashboard/trabalhador/estatisticas", {
+      // FIX: usar BASE() em vez de "/api/" fixo
+      const resp = await fetch(`${BASE()}/dashboard/trabalhador/estatisticas`, {
         headers: { Authorization: `Bearer ${store.getToken()}` }
       });
       if (resp.status === 401) { store.logout(); return; }
@@ -137,8 +152,9 @@
     const user = store.getUser();
     if (!user) return;
     try {
+      // FIX: usar BASE()
       const resp = await fetch(
-        `/api/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`,
+        `${BASE()}/senhas?atendente_id=${user.id}&status=concluida&page=1&per_page=25`,
         { headers: { Authorization: `Bearer ${store.getToken()}` } }
       );
       if (!resp.ok) return;
@@ -175,8 +191,9 @@
     if (!list) return;
     try {
       const serviceFilter = user?.servico_id ? `&servico_id=${user.servico_id}` : "";
+      // FIX: usar BASE()
       const resp = await fetch(
-        `/api/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`,
+        `${BASE()}/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`,
         { headers: { Authorization: `Bearer ${store.getToken()}` } }
       );
       if (!resp.ok) return;
@@ -256,16 +273,18 @@
     }
     if (nomeFicheiro) {
       const senhaId = senha.id;
+      // FIX: usar BASE() para URL do ficheiro
+      const fileUrl = `${BASE()}/senhas/${senhaId}/ficheiro`.replace('/api/api/', '/api/');
       html += `
         <div style="margin-top:.75rem;padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;
              border-radius:10px;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
           <span style="font-size:.8rem;color:#1d4ed8;font-weight:600;">
             📎 ${nomeFicheiro.split('_').slice(2).join('_') || nomeFicheiro}
           </span>
-          <a href="/api/senhas/${senhaId}/ficheiro" target="_blank" download
+          <a href="${fileUrl}" target="_blank" download
              style="background:#2563eb;color:white;padding:.35rem .9rem;border-radius:8px;
                     font-size:.78rem;font-weight:700;text-decoration:none;">⬇ Download</a>
-          <a href="/api/senhas/${senhaId}/ficheiro" target="_blank"
+          <a href="${fileUrl}" target="_blank"
              style="background:#e0f2fe;color:#0369a1;padding:.35rem .9rem;border-radius:8px;
                     font-size:.78rem;font-weight:700;text-decoration:none;">👁 Visualizar</a>
         </div>`;
@@ -286,7 +305,7 @@
   }
 
   /* ════════════════════════════════════════════════════════════
-     ACÇÕES PRINCIPAIS — TODAS COM SOM + VIBRAÇÃO + NOTIFICAÇÃO
+     ACÇÕES PRINCIPAIS
   ════════════════════════════════════════════════════════════ */
 
   /* ── CHAMAR PRÓXIMA ──────────────────────────────────────── */
@@ -306,7 +325,8 @@
     if (btn) { btn.disabled = true; btn.textContent = "A chamar..."; }
 
     try {
-      const resp = await fetch("/api/filas/chamar", {
+      // FIX: usar BASE()
+      const resp = await fetch(`${BASE()}/filas/chamar`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
         body:    JSON.stringify({ servico_id: servicoId, numero_balcao: balcao })
@@ -331,12 +351,11 @@
       iniciarTimer();
       await atualizarTudo();
 
-      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de chamada */
       N && N.onCall(senhaAtual.numero, balcao);
 
     } catch (err) {
       console.error("[chamar]", err);
-      N && N.notify('error', 'Erro de ligação ao servidor.');
+      N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
     }
@@ -351,7 +370,8 @@
     if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
 
     try {
-      const resp = await fetch(`/api/filas/concluir/${senhaId}`, {
+      // FIX: usar BASE()
+      const resp = await fetch(`${BASE()}/filas/concluir/${senhaId}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` }
       });
@@ -363,7 +383,6 @@
       limparAtendimentoAtual();
       await atualizarTudo();
 
-      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de conclusão */
       N && N.onConclude(numSenha);
 
     } catch (err) {
@@ -386,7 +405,8 @@
     if (btn) { btn.disabled = true; btn.textContent = "A negar..."; }
 
     try {
-      const resp = await fetch(`/api/senhas/${senhaId}/finalizar`, {
+      // FIX: usar BASE()
+      const resp = await fetch(`${BASE()}/senhas/${senhaId}/finalizar`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
         body:    JSON.stringify({ observacoes: `NEGADO: ${motivo}` })
@@ -399,7 +419,6 @@
       limparAtendimentoAtual();
       await atualizarTudo();
 
-      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de negação */
       N && N.onDeny(numSenha);
 
     } catch (err) {
@@ -411,7 +430,6 @@
 
   /* ── REDIRECIONAR — MODAL + API REAL ─────────────────────── */
 
-  /* Abrir modal de redirecionamento */
   window.redirectCustomer = async function () {
     if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
 
@@ -421,38 +439,32 @@
       return;
     }
 
-    /* Actualizar cabeçalho do modal */
     const titleEl = document.getElementById("redirSenhaNum");
     const servicoEl = document.getElementById("redirServicoBadge");
     if (titleEl)   titleEl.textContent  = senhaAtual.numero;
     if (servicoEl) servicoEl.textContent = senhaAtual.servico?.nome || "–";
 
-    /* Carregar serviços no select (se não carregados) */
     await _carregarServicosNoModal();
 
-    /* Limpar campos */
     const motivoInput = document.getElementById("redirMotivo");
     if (motivoInput) motivoInput.value = "";
 
     modal.style.display = "flex";
-
-    /* Fechar ao clicar no overlay */
     modal.onclick = (e) => { if (e.target === modal) fecharModalRedir(); };
   };
 
-  /* Carregar lista de serviços no select do modal */
   async function _carregarServicosNoModal() {
     const select = document.getElementById("redirServicoSelect");
     if (!select) return;
 
-    /* Usar cache se já carregados */
     if (_servicosCache.length) {
       _renderSelectServicos(select);
       return;
     }
 
     try {
-      const resp = await fetch('/api/servicos');
+      // FIX: usar BASE()
+      const resp = await fetch(`${BASE()}/servicos`);
       if (!resp.ok) return;
       const data = await resp.json();
       _servicosCache = Array.isArray(data) ? data : (data.servicos || data);
@@ -475,7 +487,6 @@
       });
   }
 
-  /* Confirmar redirecionamento */
   window.confirmarRedirecionamento = async function () {
     const senhaId   = document.getElementById("currentSenhaId")?.value;
     const select    = document.getElementById("redirServicoSelect");
@@ -494,8 +505,6 @@
     }
 
     const motivo = (motivoEl?.value || '').trim() || 'Sem motivo indicado';
-
-    /* Encontrar nome do serviço para notificação */
     const servicoDestino = _servicosCache.find(s => s.id === servicoId);
     const nomeDestino    = servicoDestino?.nome || `Serviço #${servicoId}`;
 
@@ -504,7 +513,8 @@
     if (msgEl) msgEl.textContent = '';
 
     try {
-      const resp = await fetch(`/api/filas/redirecionar/${senhaId}`, {
+      // FIX: usar BASE()
+      const resp = await fetch(`${BASE()}/filas/redirecionar/${senhaId}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
         body:    JSON.stringify({ servico_id: servicoId, motivo })
@@ -522,7 +532,6 @@
       limparAtendimentoAtual();
       await atualizarTudo();
 
-      /* ✅ SOM + VIBRAÇÃO + NOTIFICAÇÃO de redirecionamento */
       N && N.onRedirect(numSenha, nomeDestino);
 
     } catch (err) {
@@ -533,7 +542,6 @@
     }
   };
 
-  /* Fechar modal de redirecionamento */
   window.fecharModalRedir = function () {
     const modal = document.getElementById("modalRedirecionar");
     if (modal) { modal.style.display = "none"; modal.onclick = null; }
@@ -553,7 +561,6 @@
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
       setStatus("Pausado", "#d97706");
 
-      /* ✅ Notificação de pausa */
       N && N.notify('pause', 'Atendimento pausado. Clique em "Retomar" para continuar.', 4000);
     } else {
       btn.dataset.pausado = "";
@@ -570,13 +577,9 @@
       }
       setStatus(senhaAtual ? "Em Atendimento" : "Disponível", senhaAtual ? "#d97706" : "#10b981");
 
-      /* ✅ Notificação de retoma */
       N && N.notify('resume', 'Atendimento retomado.', 2500);
     }
   };
-
-  /* ── REDIRECIONAR (antigo alias — agora usa o modal) ─────── */
-  /* redirectCustomer() já está definido acima com o modal */
 
   /* ── ADICIONAR OBSERVAÇÃO ───────────────────────────────── */
   window.addObservation = function () {
@@ -587,8 +590,6 @@
     const obsEl = document.getElementById("obsValue");
     if (obsEl) obsEl.textContent = obs || "Sem observações";
     preencherPreviewDocumentos(senhaAtual);
-
-    /* ✅ Notificação de observação */
     N && N.notify('info', 'Observação adicionada.', 2500);
   };
 
@@ -664,7 +665,8 @@
       semFich.style.display  = "none";
       const nomeDisplay = nomeFich.split("_").slice(2).join("_") || nomeFich;
       if (ficNome) ficNome.textContent = `📎 ${nomeDisplay}`;
-      _urlFicheiroAtual = `/api/senhas/${senhaAtual.id}/ficheiro`;
+      // FIX: usar BASE() — mas a rota /api/senhas/:id/ficheiro precisa de /api/
+      _urlFicheiroAtual = `${BASE()}/senhas/${senhaAtual.id}/ficheiro`;
       if (btnDl) btnDl.href = _urlFicheiroAtual;
     } else {
       if (ficBloco) ficBloco.style.display = "none";
@@ -697,7 +699,7 @@
 
     const ficheiroHtml = nomeFich
       ? `<div class="row"><span class="label">Documento</span>
-           <span class="value"><a href="/api/senhas/${senhaAtual.id}/ficheiro" target="_blank">
+           <span class="value"><a href="${BASE()}/senhas/${senhaAtual.id}/ficheiro" target="_blank">
            ${nomeFich.split("_").slice(2).join("_") || nomeFich}</a></span></div>`
       : "";
 
@@ -772,13 +774,10 @@
     actualizarBotoes();
     setStatus("Disponível", "#10b981");
 
-    /* Pré-carregar serviços para o modal de redirecionamento */
     await _carregarServicosNoModal().catch(() => {});
-
     await atualizarTudo();
     iniciarPolling();
 
-    /* Som de boas-vindas (subtil) */
     setTimeout(() => N && N.play('info'), 800);
   });
 

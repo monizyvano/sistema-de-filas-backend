@@ -1,25 +1,39 @@
 """
 app/services/metrics_service.py
 ═══════════════════════════════════════════════════════════════
-Serviço de Métricas por Atendente
+Serviço de Métricas por Atendente — VERSÃO CORRIGIDA
 
-Responsabilidades:
-  - Calcular métricas individuais por atendente (com filtros de data)
-  - Calcular score composto ponderado
-  - Devolver ranking ordenado para o dashboard admin
-  - Queries eficientes (sem N+1) usando GROUP BY + subqueries
+CORRECÇÕES APLICADAS:
+  ✅ FIX-M1: calcular_score() devolve Optional[float] — None quando
+     não existem dados de produção reais (total_atendimentos == 0).
+     O frontend NUNCA mais verá scores sintéticos para atendentes
+     sem produção.
 
-Funções públicas:
-  get_atendente_metrics(atendente_id, data_inicio, data_fim) → dict
-  get_todos_atendentes_metrics(data_inicio, data_fim) → list[dict]
-  calcular_score(metrics) → float
+  ✅ FIX-M2: get_atendente_metrics() inclui campo 'dados_insuficientes'
+     (bool) no dict de retorno. O frontend usa este flag para
+     decidir o que mostrar — score, badge ou "Sem dados".
 
-FÓRMULA DO SCORE (0–100):
-  35% avaliação média (0–5 → 0–100)
-  25% taxa de conclusão (%)
-  20% total atendimentos (normalizado 0–100)
-  12% tempo médio invertido (quanto menor, melhor)
-  8%  redirecionamentos invertidos (quanto menos, melhor)
+  ✅ FIX-M3: get_todos_atendentes_metrics() propaga 'dados_insuficientes'
+     para cada item da lista, e passa None ao campo 'score' quando
+     o atendente não tem produção real.
+
+  ✅ FIX-M4: Normalização de avaliação_media: se aval_total == 0
+     devolve 0.0 (e dados_insuficientes fica True via total == 0),
+     NÃO usa valor neutro fictício.
+
+REGRA DE OURO:
+  O backend é a ÚNICA autoridade para:
+    - score de produtividade
+    - badge/categoria
+    - flag de dados insuficientes
+  O frontend DEVE:
+    - renderizar
+    - formatar
+    - ordenar
+  O frontend NÃO DEVE:
+    - estimar
+    - normalizar
+    - inventar valores neutros
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -59,6 +73,9 @@ _PESOS = {
     "redir":         0.08,
 }
 
+# Mínimo de atendimentos para o score ser considerado fiável
+_MIN_ATENDIMENTOS_PARA_SCORE = 1
+
 
 # ─────────────────────────────────────────────────────────────
 # FUNÇÃO PRINCIPAL — métricas de UM atendente
@@ -79,26 +96,27 @@ def get_atendente_metrics(
 
     Returns:
         {
-          "avaliacao_media":    float,   # 0.0–5.0
-          "avaliacoes_total":   int,     # quantas avaliações recebeu
-          "total_atendimentos": int,     # total de senhas atribuídas
+          "avaliacao_media":    float,   # 0.0–5.0 (0.0 se sem avaliações)
+          "avaliacoes_total":   int,
+          "total_atendimentos": int,
           "atendimentos_concluidos": int,
           "taxa_conclusao":     float,   # 0.0–100.0
           "tempo_medio":        float,   # minutos (só concluídas)
           "redirecionamentos":  int,
+          "dados_insuficientes": bool,   # ← NOVO: True se sem produção real
         }
 
-    Raises:
-        ValueError — se atendente_id não existir
+    FIX-M2: 'dados_insuficientes' é True quando total_atendimentos == 0.
+    Quando True, o frontend deve exibir "—" em vez de qualquer score.
     """
-    # ── Filtros de data (aplicados a data_emissao) ──────────
+    # ── Filtros de data ──────────────────────────────────────
     filtros_base = [Senha.atendente_id == atendente_id]
     if data_inicio:
         filtros_base.append(Senha.data_emissao >= data_inicio)
     if data_fim:
         filtros_base.append(Senha.data_emissao <= data_fim)
 
-    # ── Consulta agregada principal (evita N+1) ─────────────
+    # ── Consulta agregada principal ──────────────────────────
     resultado = db.session.query(
         func.count(Senha.id).label("total"),
         func.sum(
@@ -115,7 +133,6 @@ def get_atendente_metrics(
             )
         ).label("tempo_medio"),
         func.sum(
-            # Redirecionamentos: observações contendo "REDIR:"
             case(
                 (
                     (Senha.observacoes.isnot(None)) &
@@ -133,13 +150,8 @@ def get_atendente_metrics(
     redirs        = int(resultado.redirecionamentos or 0)
     taxa          = round((concluidas / total * 100), 2) if total > 0 else 0.0
 
-    # ── Avaliação média (tabela separada) ───────────────────
-    filtros_aval = [Avaliacao.atendente_id == atendente_id]
-    # Nota: avaliacoes não têm data própria — filtrar via JOIN com senha
-    if data_inicio or data_fim:
-        filtros_aval_join = list(filtros_base[1:])  # reutiliza filtros de data
-    else:
-        filtros_aval_join = []
+    # FIX-M4: avaliação — 0.0 real quando sem avaliações (não valor neutro)
+    filtros_aval_join = list(filtros_base[1:])  # filtros de data sem o atendente_id
 
     aval_query = db.session.query(
         func.avg(Avaliacao.score).label("media"),
@@ -151,8 +163,12 @@ def get_atendente_metrics(
         aval_query = aval_query.filter(f)
 
     aval = aval_query.one()
+    # FIX-M4: 0.0 quando sem avaliações — NÃO usar valor neutro fictício
     aval_media = round(float(aval.media or 0.0), 2)
     aval_total = int(aval.total or 0)
+
+    # FIX-M2: flag de dados insuficientes — critério objectivo
+    dados_insuficientes = total < _MIN_ATENDIMENTOS_PARA_SCORE
 
     return {
         "avaliacao_media":         aval_media,
@@ -162,16 +178,24 @@ def get_atendente_metrics(
         "taxa_conclusao":          taxa,
         "tempo_medio":             round(tempo_medio, 1),
         "redirecionamentos":       redirs,
+        "dados_insuficientes":     dados_insuficientes,  # ← FIX-M2
     }
 
 
 # ─────────────────────────────────────────────────────────────
-# FUNÇÃO — score composto ponderado (0–100)
+# FUNÇÃO — score composto ponderado (0–100 ou None)
 # ─────────────────────────────────────────────────────────────
 
-def calcular_score(metrics: dict, max_atendimentos: int = None) -> float:
+def calcular_score(
+    metrics: dict,
+    max_atendimentos: int = None
+) -> Optional[float]:
     """
     Calcula o score composto de um atendente a partir das suas métricas.
+
+    FIX-M1: Devolve None quando não existem dados de produção reais.
+    O frontend deve tratar None como "Sem dados suficientes" e NÃO
+    atribuir qualquer badge, ranking ou posição no pódio.
 
     Fórmula (score de 0 a 100):
       35% — avaliação média normalizada (0–5 → 0–100)
@@ -186,11 +210,20 @@ def calcular_score(metrics: dict, max_atendimentos: int = None) -> float:
                            se None usa _REF_MAX_ATENDIMENTOS global
 
     Returns:
-        score arredondado a 1 decimal (0.0–100.0)
+        score arredondado a 1 decimal (0.0–100.0) ou None se sem dados.
     """
+    # FIX-M1: sem dados reais → None, nunca um valor sintético
+    if metrics.get("dados_insuficientes"):
+        return None
+
+    if metrics.get("total_atendimentos", 0) < _MIN_ATENDIMENTOS_PARA_SCORE:
+        return None
+
     ref = max_atendimentos or _REF_MAX_ATENDIMENTOS
 
     # ── Componente: avaliação (0–5 → 0–100) ─────────────────
+    # FIX-M4: se aval_media == 0 (sem avaliações), contribuição = 0
+    # NÃO usar valor neutro de 70 como antes
     p_aval = (metrics.get("avaliacao_media", 0) / 5.0) * 100
 
     # ── Componente: taxa de conclusão (já em %) ──────────────
@@ -201,7 +234,6 @@ def calcular_score(metrics: dict, max_atendimentos: int = None) -> float:
     p_atend = min(total / ref * 100, 100.0) if ref > 0 else 0.0
 
     # ── Componente: tempo médio invertido ────────────────────
-    # 0 min → 100 pts;  ≥ MAXIMO → 0 pts; linear entre ambos
     tempo = metrics.get("tempo_medio", 0) or 0
     if tempo <= _TEMPO_IDEAL_MIN:
         p_tempo = 100.0
@@ -212,9 +244,8 @@ def calcular_score(metrics: dict, max_atendimentos: int = None) -> float:
         p_tempo = max(0.0, (1 - (tempo - _TEMPO_IDEAL_MIN) / intervalo) * 100)
 
     # ── Componente: redirecionamentos invertidos ─────────────
-    # 0 redirs → 100 pts;  cada redir subtrai 10 pts (mín 0)
-    redir    = metrics.get("redirecionamentos", 0) or 0
-    p_redir  = max(0.0, 100.0 - redir * 10)
+    redir   = metrics.get("redirecionamentos", 0) or 0
+    p_redir = max(0.0, 100.0 - redir * 10)
 
     score = (
         p_aval  * _PESOS["avaliacao"]    +
@@ -240,6 +271,9 @@ def get_todos_atendentes_metrics(
     """
     Devolve lista de atendentes com métricas + score, ordenada por score DESC.
 
+    FIX-M3: Atendentes com dados_insuficientes=True terão score=None
+    e aparecem NO FIM da lista (após os que têm dados reais).
+
     Args:
         data_inicio       — Filtro de data início
         data_fim          — Filtro de data fim
@@ -250,14 +284,8 @@ def get_todos_atendentes_metrics(
         Lista de dicts com campos:
           id, nome, email, balcao, tipo, departamento,
           + todos os campos de get_atendente_metrics()
-          + score (float)
-
-    Nota de performance:
-        A função faz 2 queries agregadas globais (uma por tabela)
-        para calcular máximos de referência, depois 1 query por
-        atendente. Para N atendentes → 2 + N queries.
-        Aceitável para equipas ≤ 20. Para equipas maiores,
-        refactorizar para query única com GROUP BY.
+          + score: Optional[float]  ← None se sem dados reais
+          + dados_insuficientes: bool
     """
     # ── Carregar atendentes ──────────────────────────────────
     query = Atendente.query
@@ -270,8 +298,7 @@ def get_todos_atendentes_metrics(
     if not atendentes:
         return []
 
-    # ── Calcular o máximo real de atendimentos no período ────
-    # (usado para normalizar o score de forma relativa)
+    # ── Calcular máximo real de atendimentos ─────────────────
     filtros_max = [Senha.status == "concluida"]
     if data_inicio:
         filtros_max.append(Senha.data_emissao >= data_inicio)
@@ -286,15 +313,12 @@ def get_todos_atendentes_metrics(
 
     # ── Calcular métricas por atendente ─────────────────────
     resultado = []
-    ids = [a.id for a in atendentes]
-
-    # Pré-carregar todas as métricas num único loop de queries
-    # (cada get_atendente_metrics faz 2 queries — aceitável)
     for atendente in atendentes:
         try:
             metricas = get_atendente_metrics(
                 atendente.id, data_inicio, data_fim
             )
+            # FIX-M1 + FIX-M3: score é None quando sem dados reais
             score = calcular_score(metricas, max_atend)
 
             resultado.append({
@@ -308,7 +332,8 @@ def get_todos_atendentes_metrics(
                     atendente.servico.nome if atendente.servico else "Geral"
                 ),
                 **metricas,
-                "score": score,
+                "score":               score,               # Optional[float]
+                "dados_insuficientes": metricas["dados_insuficientes"],
             })
         except Exception as exc:
             logger.error(
@@ -317,8 +342,13 @@ def get_todos_atendentes_metrics(
             )
             continue
 
-    # ── Ordenar por score descendente ───────────────────────
-    resultado.sort(key=lambda x: x["score"], reverse=True)
+    # FIX-M3: ordenar — scores reais primeiro (desc), sem dados no fim
+    resultado.sort(
+        key=lambda x: (
+            x["score"] is None,     # False (0) vai antes de True (1)
+            -(x["score"] or 0),     # score desc para os que têm dados
+        )
+    )
 
     return resultado
 
@@ -330,10 +360,6 @@ def get_todos_atendentes_metrics(
 def parse_date(value: str, field_name: str = "data") -> Optional[date]:
     """
     Converte string 'YYYY-MM-DD' para date.
-
-    Args:
-        value      — string a converter
-        field_name — nome do campo para mensagem de erro
 
     Returns:
         date ou None se value for None/vazio
