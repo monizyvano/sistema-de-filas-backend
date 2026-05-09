@@ -153,19 +153,39 @@ def get_atendente_metrics(
     # FIX-M4: avaliação — 0.0 real quando sem avaliações (não valor neutro)
     filtros_aval_join = list(filtros_base[1:])  # filtros de data sem o atendente_id
 
-    aval_query = db.session.query(
-        func.avg(Avaliacao.score).label("media"),
-        func.count(Avaliacao.id).label("total"),
-    ).join(Senha, Avaliacao.senha_id == Senha.id)
+    try:
+        aval_query = db.session.query(
+            func.avg(Avaliacao.score).label("media"),
+            func.count(Avaliacao.id).label("total"),
+        ).join(Senha, Avaliacao.senha_id == Senha.id)
 
-    aval_query = aval_query.filter(Avaliacao.atendente_id == atendente_id)
-    for f in filtros_aval_join:
-        aval_query = aval_query.filter(f)
+        aval_query = aval_query.filter(Avaliacao.atendente_id == atendente_id)
+        for f in filtros_aval_join:
+            aval_query = aval_query.filter(f)
 
-    aval = aval_query.one()
-    # FIX-M4: 0.0 quando sem avaliações — NÃO usar valor neutro fictício
-    aval_media = round(float(aval.media or 0.0), 2)
-    aval_total = int(aval.total or 0)
+        aval = aval_query.one()
+        # FIX-M4: 0.0 quando sem avaliações — NÃO usar valor neutro fictício
+        aval_media = round(float(aval.media or 0.0), 2)
+        aval_total = int(aval.total or 0)
+    except Exception as _aval_exc:
+        _msg = str(_aval_exc).lower()
+        if "avaliacoes" in _msg or "doesn't exist" in _msg or "no such table" in _msg:
+            # Tabela avaliacoes ausente → fallback para Senha.avaliacao_nota
+            _fb = db.session.query(
+                func.avg(Senha.avaliacao_nota).label("media"),
+                func.count(Senha.id).label("total"),
+            ).filter(
+                Senha.atendente_id == atendente_id,
+                Senha.avaliacao_nota.isnot(None),
+                Senha.avaliacao_nota > 0,
+                *filtros_aval_join,
+            ).one()
+            aval_media = round(float(_fb.media or 0.0), 2)
+            aval_total = int(_fb.total or 0)
+        else:
+            logger.warning("Avaliacao query error atendente %s: %s", atendente_id, _aval_exc)
+            aval_media = 0.0
+            aval_total = 0
 
     # FIX-M2: flag de dados insuficientes — critério objectivo
     dados_insuficientes = total < _MIN_ATENDIMENTOS_PARA_SCORE
