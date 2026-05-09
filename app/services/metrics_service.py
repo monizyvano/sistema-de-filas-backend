@@ -332,11 +332,22 @@ def get_todos_atendentes_metrics(
     if data_fim:
         filtros_max.append(Senha.data_emissao <= data_fim)
 
-    max_row = db.session.query(
-        func.max(func.count(Senha.id)).label("max_total")
-    ).filter(*filtros_max).group_by(Senha.atendente_id).first()
+    # MySQL não aceita MAX(COUNT(...)) no mesmo SELECT com GROUP BY.
+    # Fazemos em 2 passos: subquery com COUNT por atendente e depois MAX no exterior.
+    counts_subq = db.session.query(
+        Senha.atendente_id.label("atendente_id"),
+        func.count(Senha.id).label("total_concluidas")
+    ).filter(
+        *filtros_max
+    ).group_by(
+        Senha.atendente_id
+    ).subquery()
 
-    max_atend = int(max_row.max_total) if max_row and max_row.max_total else _REF_MAX_ATENDIMENTOS
+    max_total = db.session.query(
+        func.max(counts_subq.c.total_concluidas)
+    ).scalar()
+
+    max_atend = int(max_total) if max_total else _REF_MAX_ATENDIMENTOS
 
     # ── Calcular métricas por atendente ─────────────────────
     resultado = []
