@@ -1,6 +1,7 @@
 """Controller: Snapshot em Tempo Real."""
 
 import logging
+import json
 from datetime import date, datetime
 
 from app.models.atendente import Atendente
@@ -72,6 +73,11 @@ def obter_snapshot(servico_id=None, data_str=None):
             Atendente.tipo.in_(["atendente", "admin"]),
         ).all()
 
+        eventos_logs = LogActividade.query.filter(
+            func.date(LogActividade.created_at) == hoje,
+            LogActividade.acao.in_(["senha_chamada", "senha_redirecionada", "senha_concluida"])
+        ).order_by(LogActividade.created_at.desc()).limit(20).all()
+
         return {
             "ok": True,
             "updatedAt": datetime.utcnow().isoformat() + "Z",
@@ -80,6 +86,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             "lastCalled": last_called,
             "stats": _calcular_stats(data_ref),
             "users": [_atendente_dict(a) for a in atendentes],
+            "events": [_evento_dict(e) for e in eventos_logs],
         }, 200
     except Exception as exc:
         logger.error("Erro snapshot: %s", exc)
@@ -92,6 +99,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             "lastCalled": None,
             "stats": {},
             "users": [],
+            "events": [],
         }, 500
 
 
@@ -271,3 +279,19 @@ def _calcular_stats(data_ref):
             "por_servico": [],
             "por_atendente": [],
         }
+
+
+def _evento_dict(e):
+    dados = {}
+    if e.descricao:
+        try:
+            dados = json.loads(e.descricao)
+        except Exception:
+            dados = {"raw": e.descricao}
+    return {
+        "tipo": e.acao,
+        "senha_id": e.senha_id,
+        "atendente_id": e.atendente_id,
+        "dados": dados,
+        "timestamp": e.created_at.isoformat() if e.created_at else None,
+    }
