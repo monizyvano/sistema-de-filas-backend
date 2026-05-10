@@ -34,6 +34,7 @@
     },
     _listeners:       [],
     _pollingInterval: null,
+    _pollingBusy:     false,
 
     /* ── Subscriptions ───────────────────────────────────── */
     subscribe(callback) {
@@ -295,9 +296,18 @@
     startPolling(intervalMs) {
       this.stopPolling();
       this._pollingInterval = setInterval(async () => {
+        if (this._pollingBusy) return;
+        this._pollingBusy = true;
+        const t0 = Date.now();
         const client = getApiClient();
-        if (apiConfig.enabled && client?.getSnapshot) await this.refreshSnapshot();
-        else { await this.refreshQueue(); await this.refreshStats(); }
+        try {
+          if (apiConfig.enabled && client?.getSnapshot) await this.refreshSnapshot();
+          else { await this.refreshQueue(); await this.refreshStats(); }
+        } finally {
+          const dt = Date.now() - t0;
+          if (dt > 3000) console.info(`[store][polling] ciclo lento: ${dt}ms`);
+          this._pollingBusy = false;
+        }
       }, Number(intervalMs) > 0 ? Number(intervalMs) : 5000);
     },
 
@@ -306,6 +316,7 @@
         clearInterval(this._pollingInterval);
         this._pollingInterval = null;
       }
+      this._pollingBusy = false;
     }
   };
 

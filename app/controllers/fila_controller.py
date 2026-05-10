@@ -16,6 +16,7 @@ from app.schemas.senha_schema import SenhaSchema
 from app.models.senha import Senha
 from app.extensions import db
 from datetime import datetime
+import json
 
 fila_bp      = Blueprint('fila', __name__)
 senha_schema = SenhaSchema()
@@ -31,6 +32,16 @@ def _log(acao, senha_id=None, atendente_id=None, descricao=None):
         ))
     except Exception as e:
         print(f"[AVISO] Log falhou (não crítico): {e}")
+
+
+def _log_evento(tipo, senha_id=None, atendente_id=None, payload=None):
+    """Regista evento semântico com payload serializado em JSON."""
+    data = payload or {}
+    try:
+        descricao = json.dumps(data, ensure_ascii=False)
+    except Exception:
+        descricao = str(data)
+    _log(tipo, senha_id=senha_id, atendente_id=atendente_id, descricao=descricao)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -63,6 +74,18 @@ def chamar_proxima():
                 'erro': 'Nenhuma senha aguardando',
                 'mensagem': 'Não há senhas na fila para este serviço'
             }), 404
+
+        _log_evento(
+            'senha_chamada',
+            senha_id=senha.id,
+            atendente_id=atendente_id,
+            payload={
+                "numero": senha.numero,
+                "servico_id": senha.servico_id,
+                "numero_balcao": numero_balcao,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
 
         return jsonify({
             'mensagem': 'Senha chamada com sucesso',
@@ -132,8 +155,17 @@ def concluir_atendimento(senha_id):
             delta  = inicio - senha.emitida_em
             senha.tempo_espera_minutos = max(0, int(delta.total_seconds() / 60))
 
-        _log('concluida', senha.id, atendente_id,
-             f'Senha {senha.numero} concluída pelo atendente {atendente_id}')
+        _log_evento(
+            'senha_concluida',
+            senha_id=senha.id,
+            atendente_id=atendente_id,
+            payload={
+                "numero": senha.numero,
+                "servico_id": senha.servico_id,
+                "tempo_atendimento_minutos": senha.tempo_atendimento_minutos,
+                "timestamp": agora.isoformat()
+            }
+        )
 
         db.session.commit()
         print(f"[OK] Senha {senha.numero} concluída (atendente {atendente_id})")
@@ -200,8 +232,18 @@ def redirecionar_senha(senha_id):
         senha.chamada_em              = None
         senha.atendimento_iniciado_em = None
 
-        _log('redirecionada', senha.id, atendente_id,
-             f'Senha {senha.numero}: {servico_anterior} → {servico_destino.nome}. Motivo: {motivo}')
+        _log_evento(
+            'senha_redirecionada',
+            senha_id=senha.id,
+            atendente_id=atendente_id,
+            payload={
+                "numero": senha.numero,
+                "servico_origem": servico_anterior,
+                "servico_destino": servico_destino.nome,
+                "motivo": motivo,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
 
         db.session.commit()
         print(f"[OK] Senha {senha.numero}: {servico_anterior} → {servico_destino.nome}")

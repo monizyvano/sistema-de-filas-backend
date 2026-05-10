@@ -36,6 +36,7 @@
   let servicoSelecionado    = null;
   let minhaSenha            = null;
   let pollingGeral          = null;
+  let pollingLastCalled     = null;
   let pollingAcompanhamento = null;
   let statusAnterior        = null;
   let obsAnterior           = null;
@@ -53,6 +54,7 @@
 
   // IMPROVEMENT-01 — AbortController para cancelar fetch anterior
   let _abortUltimaChamada   = null;
+  let _ultimoEventoTs       = null;
 
   const STORAGE_KEY         = 'imtsb_minha_senha';
   // ADD-03 — chave para persistir avaliações pendentes
@@ -251,6 +253,37 @@
     _ultimaChamadaNum = null;
   }
 
+  function _tratarEventosSemanticos(events = []) {
+    if (!Array.isArray(events) || !events.length || !minhaSenha?.numero) return;
+    const ordenados = [...events].sort((a, b) =>
+      new Date(a?.timestamp || 0) - new Date(b?.timestamp || 0)
+    );
+
+    for (const ev of ordenados) {
+      const ts = ev?.timestamp || null;
+      if (_ultimoEventoTs && ts && new Date(ts) <= new Date(_ultimoEventoTs)) continue;
+
+      const tipo = ev?.tipo || '';
+      const numero = ev?.dados?.numero || '';
+      if (!numero || numero !== minhaSenha.numero) continue;
+
+      if (tipo === 'senha_redirecionada') {
+        const destino = ev?.dados?.servico_destino || 'outro serviço';
+        const motivo  = ev?.dados?.motivo || 'Sem motivo';
+        mostrarMensagem(`↪ A sua senha foi redireccionada para <strong>${destino}</strong>.<br><em>${motivo}</em>`, 'ok');
+        N && N.onRedirect(numero, destino);
+      } else if (tipo === 'senha_concluida') {
+        mostrarMensagem(`✅ Atendimento da senha <strong>${numero}</strong> concluído.`, 'ok');
+        N && N.onConclude(numero);
+      } else if (tipo === 'senha_chamada') {
+        const balcao = ev?.dados?.numero_balcao || '—';
+        N && N.onCall(numero, balcao);
+      }
+
+      if (ts) _ultimoEventoTs = ts;
+    }
+  }
+
   async function atualizarUltimaChamada() {
     const numEl     = document.getElementById('ultimaChamada');
     const balcaoEl  = document.getElementById('ultimoBalcao');
@@ -269,11 +302,12 @@
     let servico = null;
     let hora    = null;
 
-    /* Tentativa 1 — snapshot (fonte mais fiável) */
+    /* Fonte ÚNICA — snapshot */
     try {
       const r = await fetch(`${BASE()}/realtime/snapshot`, { signal });
       if (r.ok) {
         const snap = await r.json();
+        _tratarEventosSemanticos(snap?.events || []);
         const lc   = snap.lastCalled;
         // FIX-09 — só aceitar se o timestamp for de hoje
         if (lc?.code && _eDHoje(lc.at)) {
@@ -284,46 +318,6 @@
         }
       }
     } catch (e) { if (e.name === 'AbortError') return; }
-
-    /* Tentativa 2 — tv endpoint (já filtra por hoje no backend) */
-    if (!numero) {
-      try {
-        const r2 = await fetch(`${BASE()}/dashboard/public/tv`, { signal });
-        if (r2.ok) {
-          const tv = await r2.json();
-          if (tv.em_atendimento?.length > 0) {
-            const s = tv.em_atendimento[0];
-            numero  = s.numero;
-            balcao  = `Balcão ${s.balcao}`;
-            servico = s.servico || '—';
-            hora    = formatHora(new Date().toISOString());
-          }
-        }
-      } catch (e) { if (e.name === 'AbortError') return; }
-    }
-
-    /* Tentativa 3 — senhas concluídas/atendendo de HOJE
-       FIX-09: adiciona hoje=1 + filtro de data para evitar dados antigos */
-    if (!numero) {
-      try {
-        const hojeISO = new Date().toLocaleDateString('en-CA', { timeZone: ANGOLA_TZ });
-        // FIX-09 — hoje=1 garante que só vêm senhas do dia actual
-        const url = `${BASE()}/senhas?status=atendendo&hoje=1&per_page=1&page=1&data_de=${hojeISO}&data_ate=${hojeISO}`;
-        const r3 = await fetch(url, { signal });
-        if (r3.ok) {
-          const d  = await r3.json();
-          const sl = d.senhas || (Array.isArray(d) ? d : []);
-          // FIX-09 — validar chamada_em é de hoje antes de mostrar
-          const valida = sl.find(s => _eDHoje(s.chamada_em || s.emitida_em));
-          if (valida) {
-            numero  = valida.numero;
-            balcao  = valida.numero_balcao ? `Balcão ${valida.numero_balcao}` : 'Balcão';
-            servico = valida.servico?.nome || '—';
-            hora    = valida.chamada_em ? formatHora(valida.chamada_em) : null;
-          }
-        }
-      } catch (e) { if (e.name === 'AbortError') return; }
-    }
 
     // FIX-09 — se nenhuma fonte devolveu dados válidos de hoje, limpar painel
     if (!numero) {
@@ -788,19 +782,25 @@
      FIX-06 — clearInterval correcto antes de reatribuir
   ════════════════════════════════════════════════════════════ */
   function iniciarPollingGeral() {
-    // FIX-06 — parar sempre antes de criar novo
+    // FIX-06 — parar sempre antes de criar novos
     pararPollingGeral();
 
+    // Canal leve: última chamada (mais frequente)
+    pollingLastCalled = setInterval(async () => {
+      try { await atualizarUltimaChamada(); } catch (_) {}
+    }, 3000);
+
+    // Canal pesado: estatísticas (menos frequente)
     pollingGeral = setInterval(async () => {
       // FIX-05 — sair se ciclo anterior ainda não terminou
       if (_pollingEmCurso) return;
       _pollingEmCurso = true;
       try {
-        await Promise.all([atualizarEstatisticas(), atualizarUltimaChamada()]);
+        await atualizarEstatisticas();
       } finally {
         _pollingEmCurso = false;
       }
-    }, 5000);
+    }, 8000);
   }
 
   function pararPollingGeral() {
@@ -808,6 +808,10 @@
     if (pollingGeral) {
       clearInterval(pollingGeral);
       pollingGeral = null;
+    }
+    if (pollingLastCalled) {
+      clearInterval(pollingLastCalled);
+      pollingLastCalled = null;
     }
     _pollingEmCurso = false;
   }
