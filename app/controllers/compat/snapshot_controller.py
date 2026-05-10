@@ -50,6 +50,23 @@ def obter_snapshot(servico_id=None, data_str=None):
                     "at":          ultimo_log.created_at.isoformat() if ultimo_log.created_at else None,
                 }
 
+        # Fallback: alguns fluxos não registam LogActividade.acao=="chamada".
+        # Neste caso, usar a senha mais recente chamada/atendendo do dia.
+        if not last_called:
+            ultima_senha = Senha.query.filter(
+                Senha.data_emissao == hoje,
+                Senha.status.in_(["chamada", "chamando", "atendendo"]),
+                Senha.chamada_em.isnot(None)
+            ).order_by(Senha.chamada_em.desc()).first()
+
+            if ultima_senha:
+                last_called = {
+                    "code":        ultima_senha.numero,
+                    "service":     ultima_senha.servico.nome if ultima_senha.servico else "",
+                    "counterName": f"Balcão {ultima_senha.numero_balcao}" if ultima_senha.numero_balcao else "Balcão",
+                    "at":          ultima_senha.chamada_em.isoformat() if ultima_senha.chamada_em else None,
+                }
+
         atendentes = Atendente.query.filter(
             Atendente.ativo.is_(True),
             Atendente.tipo.in_(["atendente", "admin"]),
