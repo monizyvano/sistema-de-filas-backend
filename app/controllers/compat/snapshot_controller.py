@@ -1,6 +1,7 @@
 """Controller: Snapshot em Tempo Real."""
 
 import logging
+import json
 from datetime import date, datetime
 
 from app.models.atendente import Atendente
@@ -30,7 +31,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             Senha.data_emissao == data_ref,
         ).order_by(Senha.atendimento_concluido_em.desc()).limit(50).all()
 
-        hoje = date.today()   # garante que `hoje` está definido neste scope
+        hoje = data_ref  # manter consistência da data em todo o snapshot
  
         # FIX-BACKEND-01: filtrar lastCalled por hoje
         # Sem este filtro, devolve a última chamada de QUALQUER dia anterior
@@ -50,10 +51,47 @@ def obter_snapshot(servico_id=None, data_str=None):
                     "at":          ultimo_log.created_at.isoformat() if ultimo_log.created_at else None,
                 }
 
+        # Fallback: alguns fluxos não registam LogActividade.acao=="chamada".
+        # Neste caso, usar a senha mais recente chamada/atendendo do dia.
+        if not last_called:
+            ultima_senha = Senha.query.filter(
+                Senha.data_emissao == hoje,
+                Senha.status.in_(["chamada", "chamando", "atendendo"]),
+                Senha.chamada_em.isnot(None)
+            ).order_by(Senha.chamada_em.desc()).first()
+
+            if ultima_senha:
+                last_called = {
+                    "code":        ultima_senha.numero,
+                    "service":     ultima_senha.servico.nome if ultima_senha.servico else "",
+                    "counterName": f"Balcão {ultima_senha.numero_balcao}" if ultima_senha.numero_balcao else "Balcão",
+                    "at":          ultima_senha.chamada_em.isoformat() if ultima_senha.chamada_em else None,
+                }
+
         atendentes = Atendente.query.filter(
             Atendente.ativo.is_(True),
             Atendente.tipo.in_(["atendente", "admin"]),
         ).all()
+
+        eventos_logs = LogActividade.query.filter(
+            func.date(LogActividade.created_at) == hoje,
+            LogActividade.acao.in_(["senha_chamada", "senha_redirecionada", "senha_concluida", "senha_negada"])
+        ).order_by(LogActividade.created_at.desc()).limit(20).all()
+
+        if not last_called:
+            ultimo_evento_chamada = next(
+                (e for e in eventos_logs if e.acao == "senha_chamada"),
+                None
+            )
+            if ultimo_evento_chamada:
+                dados_evento = _evento_dict(ultimo_evento_chamada).get("dados", {})
+                numero_balcao = dados_evento.get("numero_balcao")
+                last_called = {
+                    "code": dados_evento.get("numero"),
+                    "service": dados_evento.get("servico_nome", ""),
+                    "counterName": f"Balcão {numero_balcao}" if numero_balcao else "Balcão",
+                    "at": ultimo_evento_chamada.created_at.isoformat() if ultimo_evento_chamada.created_at else None,
+                }
 
         return {
             "ok": True,
@@ -63,6 +101,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             "lastCalled": last_called,
             "stats": _calcular_stats(data_ref),
             "users": [_atendente_dict(a) for a in atendentes],
+            "events": [_evento_dict(e) for e in eventos_logs],
         }, 200
     except Exception as exc:
         logger.error("Erro snapshot: %s", exc)
@@ -75,6 +114,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             "lastCalled": None,
             "stats": {},
             "users": [],
+            "events": [],
         }, 500
 
 
@@ -254,3 +294,19 @@ def _calcular_stats(data_ref):
             "por_servico": [],
             "por_atendente": [],
         }
+
+
+def _evento_dict(e):
+    dados = {}
+    if e.descricao:
+        try:
+            dados = json.loads(e.descricao)
+        except Exception:
+            dados = {"raw": e.descricao}
+    return {
+        "tipo": e.acao,
+        "senha_id": e.senha_id,
+        "atendente_id": e.atendente_id,
+        "dados": dados,
+        "timestamp": e.created_at.isoformat() if e.created_at else None,
+    }
