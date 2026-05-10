@@ -54,6 +54,7 @@
 
   // IMPROVEMENT-01 — AbortController para cancelar fetch anterior
   let _abortUltimaChamada   = null;
+  let _ultimoEventoTs       = null;
 
   const STORAGE_KEY         = 'imtsb_minha_senha';
   // ADD-03 — chave para persistir avaliações pendentes
@@ -252,6 +253,37 @@
     _ultimaChamadaNum = null;
   }
 
+  function _tratarEventosSemanticos(events = []) {
+    if (!Array.isArray(events) || !events.length || !minhaSenha?.numero) return;
+    const ordenados = [...events].sort((a, b) =>
+      new Date(a?.timestamp || 0) - new Date(b?.timestamp || 0)
+    );
+
+    for (const ev of ordenados) {
+      const ts = ev?.timestamp || null;
+      if (_ultimoEventoTs && ts && new Date(ts) <= new Date(_ultimoEventoTs)) continue;
+
+      const tipo = ev?.tipo || '';
+      const numero = ev?.dados?.numero || '';
+      if (!numero || numero !== minhaSenha.numero) continue;
+
+      if (tipo === 'senha_redirecionada') {
+        const destino = ev?.dados?.servico_destino || 'outro serviço';
+        const motivo  = ev?.dados?.motivo || 'Sem motivo';
+        mostrarMensagem(`↪ A sua senha foi redireccionada para <strong>${destino}</strong>.<br><em>${motivo}</em>`, 'ok');
+        N && N.onRedirect(numero, destino);
+      } else if (tipo === 'senha_concluida') {
+        mostrarMensagem(`✅ Atendimento da senha <strong>${numero}</strong> concluído.`, 'ok');
+        N && N.onConclude(numero);
+      } else if (tipo === 'senha_chamada') {
+        const balcao = ev?.dados?.numero_balcao || '—';
+        N && N.onCall(numero, balcao);
+      }
+
+      if (ts) _ultimoEventoTs = ts;
+    }
+  }
+
   async function atualizarUltimaChamada() {
     const numEl     = document.getElementById('ultimaChamada');
     const balcaoEl  = document.getElementById('ultimoBalcao');
@@ -275,6 +307,7 @@
       const r = await fetch(`${BASE()}/realtime/snapshot`, { signal });
       if (r.ok) {
         const snap = await r.json();
+        _tratarEventosSemanticos(snap?.events || []);
         const lc   = snap.lastCalled;
         // FIX-09 — só aceitar se o timestamp for de hoje
         if (lc?.code && _eDHoje(lc.at)) {
