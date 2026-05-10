@@ -75,8 +75,23 @@ def obter_snapshot(servico_id=None, data_str=None):
 
         eventos_logs = LogActividade.query.filter(
             func.date(LogActividade.created_at) == hoje,
-            LogActividade.acao.in_(["senha_chamada", "senha_redirecionada", "senha_concluida"])
+            LogActividade.acao.in_(["senha_chamada", "senha_redirecionada", "senha_concluida", "senha_negada"])
         ).order_by(LogActividade.created_at.desc()).limit(20).all()
+
+        if not last_called:
+            ultimo_evento_chamada = next(
+                (e for e in eventos_logs if e.acao == "senha_chamada"),
+                None
+            )
+            if ultimo_evento_chamada:
+                dados_evento = _evento_dict(ultimo_evento_chamada).get("dados", {})
+                numero_balcao = dados_evento.get("numero_balcao")
+                last_called = {
+                    "code": dados_evento.get("numero"),
+                    "service": dados_evento.get("servico_nome", ""),
+                    "counterName": f"Balcão {numero_balcao}" if numero_balcao else "Balcão",
+                    "at": ultimo_evento_chamada.created_at.isoformat() if ultimo_evento_chamada.created_at else None,
+                }
 
         return {
             "ok": True,

@@ -272,6 +272,14 @@
         const motivo  = ev?.dados?.motivo || 'Sem motivo';
         mostrarMensagem(`↪ A sua senha foi redireccionada para <strong>${destino}</strong>.<br><em>${motivo}</em>`, 'ok');
         N && N.onRedirect(numero, destino);
+      } else if (tipo === 'senha_negada') {
+        const motivo = ev?.dados?.motivo || 'Sem motivo indicado';
+        mostrarMensagem(
+          `🚫 A sua senha <strong>${numero}</strong> foi negada.<br><em>${motivo}</em>`,
+          'warn'
+        );
+        N && N.notify('deny', `Senha ${numero} negada. Motivo: ${motivo}`, 10000);
+        N && N.nativeNotify('IMTSB — Senha Negada', `Senha ${numero}: ${motivo}`);
       } else if (tipo === 'senha_concluida') {
         mostrarMensagem(`✅ Atendimento da senha <strong>${numero}</strong> concluído.`, 'ok');
         N && N.onConclude(numero);

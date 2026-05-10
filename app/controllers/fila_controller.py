@@ -82,6 +82,7 @@ def chamar_proxima():
             payload={
                 "numero": senha.numero,
                 "servico_id": senha.servico_id,
+                "servico_nome": senha.servico.nome if senha.servico else "",
                 "numero_balcao": numero_balcao,
                 "timestamp": datetime.utcnow().isoformat()
             }
@@ -310,9 +311,27 @@ def obter_painel_fila(servico_id):
 @jwt_required()
 def cancelar_senha(senha_id):
     try:
+        atendente_id = int(get_jwt_identity())
+        data = request.get_json(silent=True) or {}
+        motivo = str(data.get('motivo', '') or '').strip()[:200]
+
         senha = FilaService.cancelar_senha(senha_id)
         if not senha:
             return jsonify({'erro': 'Senha não encontrada'}), 404
+
+        _log_evento(
+            'senha_negada',
+            senha_id=senha.id,
+            atendente_id=atendente_id,
+            payload={
+                "numero": senha.numero,
+                "servico_id": senha.servico_id,
+                "motivo": motivo or "Sem motivo indicado",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+        db.session.commit()
         return jsonify({'mensagem': 'Senha cancelada', 'senha': senha_schema.dump(senha)}), 200
     except Exception:
+        db.session.rollback()
         return jsonify({'erro': 'Erro ao cancelar senha'}), 500
