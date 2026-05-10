@@ -43,6 +43,14 @@ logger = logging.getLogger(__name__)
 admin_metrics_bp = Blueprint("admin_metrics", __name__)
 
 
+def _is_missing_table_error(exc: Exception) -> bool:
+    """Detecta se o erro é a tabela avaliacoes não existir ainda (antes de flask db upgrade)."""
+    msg = str(exc).lower()
+    return "avaliacoes" in msg and any(
+        kw in msg for kw in ("doesn't exist", "no such table", "does not exist")
+    )
+
+
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
@@ -163,6 +171,8 @@ def listar_metricas():
             apenas_atendentes=True,
         )
     except Exception as exc:
+        if _is_missing_table_error(exc):
+            return jsonify({"erro": "Métricas indisponíveis: execute flask db upgrade para criar tabela avaliacoes."}), 503
         logger.error("Erro ao calcular métricas: %s", exc, exc_info=True)
         return jsonify({"erro": "Erro interno ao calcular métricas."}), 500
 
@@ -219,6 +229,8 @@ def metricas_atendente(atendente_id: int):
         metricas = get_atendente_metrics(atendente_id, data_inicio, data_fim)
         score    = calcular_score(metricas)
     except Exception as exc:
+        if _is_missing_table_error(exc):
+            return jsonify({"erro": "Métricas indisponíveis: execute flask db upgrade para criar tabela avaliacoes."}), 503
         logger.error(
             "Erro métricas atendente %s: %s", atendente_id, exc, exc_info=True
         )
@@ -289,12 +301,15 @@ def top_atendentes():
             apenas_atendentes=True,
         )
     except Exception as exc:
+        if _is_missing_table_error(exc):
+            return jsonify({"erro": "Métricas indisponíveis: execute flask db upgrade para criar tabela avaliacoes."}), 503
         logger.error("Erro top atendentes: %s", exc, exc_info=True)
         return jsonify({"erro": "Erro interno."}), 500
 
+    com_score = [x for x in lista if x.get("score") is not None]
     top = [
         {"lugar": i + 1, **item}
-        for i, item in enumerate(lista[:n_top])
+        for i, item in enumerate(com_score[:n_top])
     ]
 
     return jsonify({

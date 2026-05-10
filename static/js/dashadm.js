@@ -42,6 +42,7 @@
   let lineChart        = null;
   let barChart         = null;
   let pollingInterval  = null;
+  let _pollingBusy     = false;
   let periodoActivo    = 'semana';
   let _todosTrabalhadores = [];
   let _filtroNome        = '';
@@ -329,7 +330,7 @@
       score: (t.score !== undefined && t.score !== null) ? t.score : null,
       // FIX-D5: preservar flag de dados insuficientes do backend
       dados_insuficientes: t.dados_insuficientes
-        ?? (t.total_atendimentos === 0 || t.total_atendimentos == null),
+        ?? (t.score == null || t.total_atendimentos === 0 || t.total_atendimentos == null),
       departamento: t.departamento || t.servico?.nome || 'Geral',
     }));
 
@@ -378,7 +379,7 @@
     const inact      = filtrado.filter(t => !t.ativo);
 
     const comDados  = atendentes.filter(t => !t.dados_insuficientes && t.score !== null)
-                                .sort((a,b) => (b.score||0) - (a.score||0));
+                                .sort((a, b) => b.score - a.score);
     const semDados  = atendentes.filter(t => t.dados_insuficientes  || t.score === null);
     const todos     = [...comDados, ...semDados, ...admins, ...inact];
 
@@ -411,7 +412,7 @@
         <td>${t.taxa_conclusao != null ? (t.taxa_conclusao+'%') : '—'}</td>
         <td>${t.ativo ? '<span style="color:#22c55e">Activo</span>' : '<span style="color:#9ca3af">Inactivo</span>'}</td>
         <td>
-          ${badge && sc !== null
+          ${sc !== null
             ? `<span style="background:${badge.bg};color:${badge.cor};
                  padding:.25rem .65rem;border-radius:20px;font-size:.75rem;font-weight:700;
                  white-space:nowrap;">${badge.label} (${sc}%)</span>`
@@ -440,7 +441,7 @@
         !t.dados_insuficientes &&
         (t.atendimentos_hoje || 0) > 0   // pelo menos 1 atendimento hoje
       )
-      .sort((a,b) => (b.score||0) - (a.score||0));
+      .sort((a, b) => b.score - a.score);
 
     // FIX-D4: quando sem candidatos com dados reais — estado neutro claro
     if (!candidatos.length) {
@@ -1080,11 +1081,22 @@
   function iniciarPolling() {
     pararPolling();
     pollingInterval = setInterval(async () => {
-      await atualizarKPIs(); await atualizarFilas();
-    }, 15000);
+      if (_pollingBusy) return;
+      _pollingBusy = true;
+      const t0 = Date.now();
+      try {
+        await atualizarKPIs();
+        await atualizarFilas();
+      } finally {
+        const dt = Date.now() - t0;
+        if (dt > 3000) console.info(`[dashadm][polling] ciclo lento: ${dt}ms`);
+        _pollingBusy = false;
+      }
+    }, 10000);
   }
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    _pollingBusy = false;
   }
 
   function configurarBotoes() {
