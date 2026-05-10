@@ -30,7 +30,7 @@ def obter_snapshot(servico_id=None, data_str=None):
             Senha.data_emissao == data_ref,
         ).order_by(Senha.atendimento_concluido_em.desc()).limit(50).all()
 
-        hoje = date.today()   # garante que `hoje` está definido neste scope
+        hoje = data_ref  # manter consistência da data em todo o snapshot
  
         # FIX-BACKEND-01: filtrar lastCalled por hoje
         # Sem este filtro, devolve a última chamada de QUALQUER dia anterior
