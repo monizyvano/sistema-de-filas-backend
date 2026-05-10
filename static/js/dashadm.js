@@ -42,6 +42,7 @@
   let lineChart        = null;
   let barChart         = null;
   let pollingInterval  = null;
+  let _pollingBusy     = false;
   let periodoActivo    = 'semana';
   let _todosTrabalhadores = [];
   let _filtroNome        = '';
@@ -1080,11 +1081,22 @@
   function iniciarPolling() {
     pararPolling();
     pollingInterval = setInterval(async () => {
-      await atualizarKPIs(); await atualizarFilas();
-    }, 15000);
+      if (_pollingBusy) return;
+      _pollingBusy = true;
+      const t0 = Date.now();
+      try {
+        await atualizarKPIs();
+        await atualizarFilas();
+      } finally {
+        const dt = Date.now() - t0;
+        if (dt > 3000) console.info(`[dashadm][polling] ciclo lento: ${dt}ms`);
+        _pollingBusy = false;
+      }
+    }, 10000);
   }
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    _pollingBusy = false;
   }
 
   function configurarBotoes() {

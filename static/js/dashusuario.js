@@ -36,6 +36,7 @@
   let servicoSelecionado    = null;
   let minhaSenha            = null;
   let pollingGeral          = null;
+  let pollingLastCalled     = null;
   let pollingAcompanhamento = null;
   let statusAnterior        = null;
   let obsAnterior           = null;
@@ -748,19 +749,25 @@
      FIX-06 — clearInterval correcto antes de reatribuir
   ════════════════════════════════════════════════════════════ */
   function iniciarPollingGeral() {
-    // FIX-06 — parar sempre antes de criar novo
+    // FIX-06 — parar sempre antes de criar novos
     pararPollingGeral();
 
+    // Canal leve: última chamada (mais frequente)
+    pollingLastCalled = setInterval(async () => {
+      try { await atualizarUltimaChamada(); } catch (_) {}
+    }, 3000);
+
+    // Canal pesado: estatísticas (menos frequente)
     pollingGeral = setInterval(async () => {
       // FIX-05 — sair se ciclo anterior ainda não terminou
       if (_pollingEmCurso) return;
       _pollingEmCurso = true;
       try {
-        await Promise.all([atualizarEstatisticas(), atualizarUltimaChamada()]);
+        await atualizarEstatisticas();
       } finally {
         _pollingEmCurso = false;
       }
-    }, 5000);
+    }, 8000);
   }
 
   function pararPollingGeral() {
@@ -768,6 +775,10 @@
     if (pollingGeral) {
       clearInterval(pollingGeral);
       pollingGeral = null;
+    }
+    if (pollingLastCalled) {
+      clearInterval(pollingLastCalled);
+      pollingLastCalled = null;
     }
     _pollingEmCurso = false;
   }
