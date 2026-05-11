@@ -87,10 +87,17 @@
             <article class="chart-card">
                 <div class="chart-header">
                     <h3 class="chart-title">Fluxo de Atendimentos</h3>
-                    <div class="chart-filter">
+                    <div class="chart-toolbar">
+                        <div class="chart-filter">
                         <button class="filter-btn" onclick="changeChartPeriod('day')">Dia</button>
                         <button class="filter-btn active" onclick="changeChartPeriod('week')">Semana</button>
                         <button class="filter-btn" onclick="changeChartPeriod('month')">Mes</button>
+                        </div>
+                        <div class="period-nav">
+                            <button class="filter-btn" type="button" onclick="navigateChartPeriod(-1)">Anterior</button>
+                            <span id="chartRangeLabel" class="range-label">Semana atual</span>
+                            <button class="filter-btn" type="button" onclick="navigateChartPeriod(1)">Proximo</button>
+                        </div>
                     </div>
                 </div>
                 <div class="chart-container">
@@ -110,17 +117,22 @@
 
         <section class="performance-section">
             <div class="performance-header">
-                <h3 class="performance-title">Produtividade por Funcionario</h3>
+                <h3 class="performance-title">Produtividade por Funcionário</h3>
+                <div class="performance-actions">
+                    <div class="employee-month-card" id="employeeOfMonthCard">Empregado do mês: a calcular</div>
+                    <button class="export-btn secondary-btn" type="button" id="btnOpenActivities">Ver atividades</button>
+                </div>
             </div>
             
             <table class="performance-table">
                 <thead>
                     <tr>
-                        <th>Funcionario</th>
+                        <th>Funcionário</th>
                         <th>Atendimentos</th>
-                        <th>Tempo Medio</th>
-                        <th>Taxa Conclusao</th>
+                        <th>Tempo Médio</th>
+                        <th>Taxa Conclusão</th>
                         <th>Desempenho</th>
+                        <th>Detalhes</th>
                     </tr>
                 </thead>
                 <tbody id="performanceBody"></tbody>
@@ -129,23 +141,98 @@
 
         <section class="performance-section">
             <div class="performance-header">
-                <h3 class="performance-title">Historico Completo</h3>
+                <div>
+                    <h3 class="performance-title">Quadros detalhados por funcionário</h3>
+                    <p class="activities-subtitle">Cada quadro mostra produtividade, horas atendidas, avaliações e últimos registos.</p>
+                </div>
+                <div class="employee-month-card" id="historyPersistenceCard">Histórico permanente ativo</div>
             </div>
-            <table class="performance-table">
-                <thead>
-                    <tr>
-                        <th>Senha</th>
-                        <th>Servico</th>
-                        <th>Atendido por</th>
-                        <th>Duracao</th>
-                        <th>Avaliacao</th>
-                        <th>Documentos</th>
-                    </tr>
-                </thead>
-                <tbody id="historyBody"></tbody>
-            </table>
+            <div class="employee-cards-grid" id="employeeDetailCards"></div>
         </section>
+    </main>
 
+    <section class="activities-modal hidden" id="activitiesModal">
+        <div class="activities-backdrop" id="activitiesBackdrop"></div>
+        <div class="activities-panel">
+            <div class="activities-panel-header">
+                <div>
+                    <h3 class="performance-title">Ver atividades</h3>
+                    <p class="activities-subtitle">Histórico do administrador e dos atendentes numa area separada.</p>
+                </div>
+                <button class="export-btn danger-btn" type="button" id="btnCloseActivities">Fechar</button>
+            </div>
+
+            <section class="performance-section modal-section">
+                <div class="performance-header">
+                    <h3 class="performance-title">Visualização e Desempenho</h3>
+                    <div class="history-filters">
+                        <select id="historyWorkerFilter">
+                            <option value="all">Todos os funcionários</option>
+                        </select>
+                        <select id="historyRangeFilter">
+                            <option value="all">Todo o histórico</option>
+                            <option value="week">Ultimas 4 semanas</option>
+                            <option value="month">Ultimos 6 meses</option>
+                        </select>
+                    </div>
+                </div>
+                <table class="performance-table">
+                    <thead>
+                        <tr>
+                            <th>Dia</th>
+                            <th>Hora</th>
+                            <th>Funcionário</th>
+                            <th>Atendimentos</th>
+                            <th>Tempo Trabalhado</th>
+                            <th>Desempenho</th>
+                        </tr>
+                    </thead>
+                    <tbody id="visualizationBody"></tbody>
+                </table>
+            </section>
+
+            <section class="performance-section modal-section">
+                <div class="performance-header">
+                    <h3 class="performance-title">Histórico Completo</h3>
+                </div>
+                <table class="performance-table">
+                    <thead>
+                        <tr>
+                            <th>Dia</th>
+                            <th>Hora</th>
+                            <th>Senha</th>
+                            <th>Serviço</th>
+                            <th>Atendido por</th>
+                            <th>Duração</th>
+                            <th>Avaliação</th>
+                            <th>Documentos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+            </section>
+
+            <section class="performance-section modal-section">
+                <div class="performance-header">
+                    <h3 class="performance-title">Atividades dos Administradores</h3>
+                </div>
+                <table class="performance-table">
+                    <thead>
+                        <tr>
+                            <th>Dia</th>
+                            <th>Hora</th>
+                            <th>Administrador</th>
+                            <th>Ação</th>
+                            <th>Detalhes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adminActivityBody"></tbody>
+                </table>
+            </section>
+        </div>
+    </section>
+
+    <main class="dashboard-container">
         <section class="performance-section">
             <div class="performance-header">
                 <h3 class="performance-title">Adicionar Trabalhador</h3>

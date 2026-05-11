@@ -9,20 +9,20 @@
   const docsList = document.getElementById("requiredDocs");
   const dynamicFields = document.getElementById("dynamicFields");
   const inputEmail = document.getElementById("notificationEmail");
-  const inputFiles = document.getElementById("attachments");
+  const attachmentsFields = document.getElementById("attachmentsFields");
   const msg = document.getElementById("formMsg");
   const form = document.getElementById("serviceForm");
 
   const defs = {
     "Matricula": {
-      docs: ["Bilhete de Identidade", "Certificado", "2 fotos"],
+      docs: ["Bilhete de Identidade","Certidão de Nascimento", "Cópia do BI dos pais", "Declaração Escolar ou Certificado de Habilitações (da escola anterior)", "Cartão de Vacina",  "2 fotos tipo Passe"],
       fields: [
         { key: "nome_aluno", label: "Nome do aluno", type: "text", required: true },
         { key: "ano", label: "Ano/Turma", type: "text", required: true }
       ]
     },
     "Reconfirmacao": {
-      docs: ["Cartao do aluno", "Comprovativo de pagamento"],
+      docs: ["Comprovativo da matrícula anterior", "Boletim de Notas", "Bilhete de Identidade", "2 fotos tipo Passe", "Comprovativo de pagamento"],
       fields: [
         { key: "numero_aluno", label: "Numero do aluno", type: "text", required: true },
         { key: "classe", label: "Classe", type: "text", required: true }
@@ -36,7 +36,7 @@
       ]
     },
     "Pedido de declaracao": {
-      docs: ["Documento de identificacao", "Formulario do pedido"],
+      docs: ["Bilhete de Identidade", "Número de Estudante", "Formulario do pedido"],
       fields: [
         { key: "tipo_declaracao", label: "Tipo de declaracao", type: "text", required: true },
         { key: "motivo", label: "Motivo", type: "textarea", required: true }
@@ -72,6 +72,19 @@
     })));
   }
 
+  async function readAttachmentInputs(container) {
+    const inputs = Array.from(container.querySelectorAll("input[type='file'][data-doc-name]"));
+    const allFiles = await Promise.all(inputs.map(async (input) => {
+      const files = await readFiles(input.files || []);
+      return files.map((file) => ({
+        ...file,
+        documentLabel: input.getAttribute("data-doc-name") || file.name
+      }));
+    }));
+
+    return allFiles.flat();
+  }
+
   function renderPage() {
     const def = defs[service] || defs["Apoio ao Cliente"];
     if (titleEl) titleEl.textContent = service;
@@ -82,6 +95,31 @@
       li.textContent = d;
       docsList.appendChild(li);
     });
+
+    if (attachmentsFields) {
+      attachmentsFields.innerHTML = "";
+      def.docs.forEach((doc, index) => {
+        const wrap = document.createElement("div");
+        wrap.className = "attachment-field";
+
+        const label = document.createElement("label");
+        const inputId = `attachment-${index}`;
+        label.setAttribute("for", inputId);
+        label.textContent = `Anexar ${doc}`;
+
+        const input = document.createElement("input");
+        input.type = "file";
+        input.id = inputId;
+        input.name = `attachment_${index}`;
+        input.setAttribute("data-doc-name", doc);
+        input.required = !/opcional/i.test(doc);
+        if (/2 fotos/i.test(doc)) input.multiple = true;
+
+        wrap.appendChild(label);
+        wrap.appendChild(input);
+        attachmentsFields.appendChild(wrap);
+      });
+    }
 
     dynamicFields.innerHTML = "";
     def.fields.forEach((f) => {
@@ -108,7 +146,7 @@
     });
 
     try {
-      const attachments = await readFiles(inputFiles.files || []);
+      const attachments = attachmentsFields ? await readAttachmentInputs(attachmentsFields) : [];
       const result = window.IMTSBStore.issueTicket({
         service,
         userEmail: session.email,

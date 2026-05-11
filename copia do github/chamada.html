@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Chamadas - IMTSB</title>
+  <link rel="stylesheet" href="css/chamada.css">
+</head>
+<body>
+  <header class="call-header">
+    <div>
+      <p class="eyebrow">Instituto Medio Tecnico Sao Benedito</p>
+      <h1>Painel de Atendimento</h1>
+    </div>
+    <div class="clock" id="screenClock">--:--</div>
+  </header>
+
+  <main class="call-layout">
+    <section class="main-call" aria-live="polite">
+      <p class="label">Senha chamada</p>
+      <div class="ticket-code" id="calledCode">---</div>
+      <div class="counter-line" id="calledCounter">Aguardando chamada</div>
+      <p class="service-line" id="calledService">.</p>
+      <div class="call-actions">
+        <button class="screen-btn primary" type="button" id="enableAudioBtn">Ativar som</button>
+        <button class="screen-btn" type="button" id="repeatCallBtn">Repetir chamada</button>
+      </div>
+    </section>
+
+    <aside class="side-panel">
+      <section class="status-block">
+        <h2>Em atendimento</h2>
+        <div class="serving-list" id="servingList"></div>
+      </section>
+
+      <section class="status-block compact">
+        <h2>Resumo</h2>
+        <div class="summary-grid">
+          <div>
+            <span>Aguardando</span>
+            <strong id="waitingTotal">0</strong>
+          </div>
+          <div>
+            <span>Atendidos</span>
+            <strong id="servedTotal">0</strong>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <section class="history-strip">
+    <h2>Ultimas chamadas</h2>
+    <div class="history-list" id="recentCalls"></div>
+  </section>
+
+  <script src="js/api-config.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/realtime-store.js"></script>
+  <script src="js/chamada.js"></script>
+</body>
+</html>

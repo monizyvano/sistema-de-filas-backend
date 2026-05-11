@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes do Funcionario</title>
+    <link rel="stylesheet" href="css/funcionario-detalhe.css">
+</head>
+<body>
+    <main class="detail-page">
+        <header class="detail-header">
+            <div>
+                <p class="detail-kicker">Analise individual</p>
+                <h1 id="detailWorkerName">Funcionario</h1>
+                <p id="detailWorkerMeta">Horas, entradas, saidas e atendimentos.</p>
+            </div>
+            <div class="detail-actions">
+                <button type="button" class="back-btn" onclick="window.location.href='dashadm.html'">Voltar ao painel</button>
+            </div>
+        </header>
+
+        <section class="summary-grid" id="summaryGrid"></section>
+
+        <section class="detail-card">
+            <div class="section-header">
+                <h2>Jornadas registadas</h2>
+                <p>Hora de chegada, saida e total trabalhado por dia.</p>
+            </div>
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        <th>Dia</th>
+                        <th>Chegada</th>
+                        <th>Saida</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody id="shiftTableBody"></tbody>
+            </table>
+        </section>
+
+        <section class="detail-card">
+            <div class="section-header">
+                <h2>Atendimentos concluidos</h2>
+                <p>Historico completo para apoiar a nomeacao automatica do empregado do mes.</p>
+            </div>
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        <th>Dia</th>
+                        <th>Hora</th>
+                        <th>Senha</th>
+                        <th>Servico</th>
+                        <th>Duracao</th>
+                        <th>Avaliacao</th>
+                        <th>Comentario</th>
+                        <th>Documentos</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody"></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="js/api-config.js"></script>
+    <script src="js/api-client.js"></script>
+    <script src="js/realtime-store.js"></script>
+    <script src="js/funcionario-detalhe.js"></script>
+</body>
+</html>

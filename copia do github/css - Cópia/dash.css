@@ -487,22 +487,6 @@
     transition: all .2s ease;
 }   
 
-.btn-panel-screen{
-    padding: .6rem 1rem;
-    border-radius: 14px;
-    border: 1px solid rgba(64,25,3,.25);
-    background: rgba(255,255,255,.9);
-    color: var(--primary-brown-dark);
-    font-weight: 700;
-    text-decoration: none;
-}
-
-.btn-panel-screen:hover{
-    background: var(--primary-brown-dark);
-    color: #fff;
-    transition: all .2s ease;
-}
-
 
 
 

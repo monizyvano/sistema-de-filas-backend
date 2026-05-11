@@ -15,10 +15,7 @@
       counterPriority: 0,
       currentTicketId: null,
       lastCalled: null,
-      lastCompleted: null,
       dailyArchives: [],
-      attendanceLogs: [],
-      adminActivityLogs: [],
       users: [
         { id: "u-admin-1", name: "Administrador 1", email: "admin1@sb.com", phone: "939000001", password: "Admin1234", role: "admin" },
         { id: "u-admin-2", name: "Administrador 2", email: "admin2@sb.com", phone: "939000002", password: "Admin2234", role: "admin" },
@@ -82,8 +79,6 @@
       if (!Array.isArray(parsed.queue)) parsed.queue = [];
       if (!Array.isArray(parsed.history)) parsed.history = [];
       if (!Array.isArray(parsed.dailyArchives)) parsed.dailyArchives = [];
-      if (!Array.isArray(parsed.attendanceLogs)) parsed.attendanceLogs = [];
-      if (!Array.isArray(parsed.adminActivityLogs)) parsed.adminActivityLogs = [];
       parsed.users = parsed.users.map((user) => {
         if (!user.phone) {
           if (user.email === "admin1@sb.com") user.phone = "939000001";
@@ -116,7 +111,6 @@
       }
       if (typeof parsed.counterPriority !== "number") parsed.counterPriority = 0;
       if (!Object.prototype.hasOwnProperty.call(parsed, "currentTicketId")) parsed.currentTicketId = null;
-      if (!Object.prototype.hasOwnProperty.call(parsed, "lastCompleted")) parsed.lastCompleted = null;
       return parsed;
     } catch (_error) {
       const data = seedData();
@@ -181,25 +175,6 @@
     return null;
   }
 
-  function sameDay(firstIso, secondIso) {
-    if (!firstIso || !secondIso) return false;
-    return String(firstIso).slice(0, 10) === String(secondIso).slice(0, 10);
-  }
-
-  function findOpenAttendanceLog(data, workerName) {
-    return data.attendanceLogs.find((log) => log.workerName === workerName && !log.checkOutAt);
-  }
-
-  function addAdminActivity(data, payload) {
-    data.adminActivityLogs.unshift({
-      id: `admin-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      adminName: String(payload.adminName || "Administrador").trim(),
-      action: String(payload.action || "Acao administrativa").trim(),
-      details: String(payload.details || "").trim(),
-      at: nowIso()
-    });
-  }
-
   const store = {
     dataKey: DATA_KEY,
     apiEnabled: !!(window.IMTSBApiConfig && window.IMTSBApiConfig.enabled),
@@ -223,21 +198,6 @@
       return clone(readData());
     },
 
-    getAdminSnapshot() {
-      const data = readData();
-      const archivedHistory = data.dailyArchives.flatMap((archive) => archive.history || []);
-      const archivedQueue = data.dailyArchives.flatMap((archive) => archive.queue || []);
-      const fullHistory = [...clone(data.history), ...clone(archivedHistory)]
-        .sort((a, b) => new Date(b.completedAt || b.createdAt || 0).getTime() - new Date(a.completedAt || a.createdAt || 0).getTime());
-
-      return {
-        ...clone(data),
-        fullHistory,
-        archivedHistoryCount: archivedHistory.length,
-        archivedQueueCount: archivedQueue.length
-      };
-    },
-
     getSession,
 
     requireRole(roles) {
@@ -252,58 +212,6 @@
     logout() {
       clearSession();
       window.location.href = "index.html";
-    },
-
-    logAdminActivity(payload) {
-      return updateData((data) => {
-        addAdminActivity(data, payload || {});
-        return { ok: true, message: "Atividade do administrador registada." };
-      });
-    },
-
-    startWorkSession(workerName, department) {
-      const name = String(workerName || "").trim();
-      if (!name) return { ok: false, message: "Trabalhador invalido." };
-
-      return updateData((data) => {
-        const openLog = findOpenAttendanceLog(data, name);
-        if (openLog) {
-          return { ok: true, log: clone(openLog), message: "Sessao de trabalho ja estava aberta." };
-        }
-
-        const latestClosedToday = data.attendanceLogs.find((log) => log.workerName === name && log.checkOutAt && sameDay(log.checkInAt, nowIso()));
-        if (latestClosedToday) {
-          return { ok: true, log: clone(latestClosedToday), message: "Turno do dia ja foi registado." };
-        }
-
-        const log = {
-          id: `shift-${Date.now()}`,
-          workerName: name,
-          department: normalizeDepartment(department),
-          checkInAt: nowIso(),
-          checkOutAt: null,
-          workedSeconds: 0
-        };
-
-        data.attendanceLogs.unshift(log);
-        return { ok: true, log: clone(log), message: "Entrada registada com sucesso." };
-      });
-    },
-
-    endWorkSession(workerName) {
-      const name = String(workerName || "").trim();
-      if (!name) return { ok: false, message: "Trabalhador invalido." };
-
-      return updateData((data) => {
-        const openLog = findOpenAttendanceLog(data, name);
-        if (!openLog) {
-          return { ok: true, message: "Nao havia sessao aberta." };
-        }
-
-        openLog.checkOutAt = nowIso();
-        openLog.workedSeconds = Math.max(0, Math.floor((new Date(openLog.checkOutAt).getTime() - new Date(openLog.checkInAt).getTime()) / 1000));
-        return { ok: true, log: clone(openLog), message: "Saida registada com sucesso." };
-      });
     },
 
     login(identifier, password, selectedRole, loginMethod) {
@@ -415,17 +323,11 @@
           department
         });
 
-        addAdminActivity(data, {
-          adminName: payload.adminName || "Administrador",
-          action: "Adicionou trabalhador",
-          details: `${name} - ${department}`
-        });
-
         return { ok: true, message: "Trabalhador adicionado com sucesso." };
       });
     },
 
-    removeWorker(workerId, adminName) {
+    removeWorker(workerId) {
       const id = String(workerId || "").trim();
       if (!id) return { ok: false, message: "Trabalhador invalido." };
 
@@ -436,11 +338,6 @@
         const hasCurrent = data.queue.some((item) => item.status === "em_atendimento" && item.attendedBy === worker.name);
         if (hasCurrent) return { ok: false, message: "Nao e possivel remover trabalhador em atendimento." };
         data.users.splice(index, 1);
-        addAdminActivity(data, {
-          adminName: adminName || "Administrador",
-          action: "Removeu trabalhador",
-          details: `${worker.name} - ${worker.department || "Sem setor"}`
-        });
         return { ok: true, message: "Trabalhador removido com sucesso." };
       });
     },
@@ -531,15 +428,7 @@
         next.calledAt = nowIso();
         next.attendedBy = who;
         data.currentTicketId = next.id;
-        data.lastCalled = {
-          code: next.code,
-          service: next.service,
-          department: next.department,
-          counterNumber: next.counterNumber,
-          counterName: next.counterName,
-          attendedBy: who,
-          at: nowIso()
-        };
+        data.lastCalled = { code: next.code, service: next.service, counterName: next.counterName, at: nowIso() };
 
         return { ok: true, ticket: clone(next) };
       });
@@ -584,15 +473,6 @@ Observacoes: ${ticket.notes || "Sem observacoes"}
         data.history.unshift(ticket);
         data.queue = data.queue.filter((item) => item.id !== ticket.id);
         if (data.currentTicketId === ticket.id) data.currentTicketId = null;
-        data.lastCompleted = {
-          code: ticket.code,
-          service: ticket.service,
-          department: ticket.department,
-          counterNumber: ticket.counterNumber,
-          counterName: ticket.counterName,
-          attendedBy: who,
-          at: ticket.completedAt
-        };
 
         return { ok: true, ticket: clone(ticket) };
       });
@@ -688,7 +568,7 @@ Observacoes: ${ticket.notes || "Sem observacoes"}
       });
     },
 
-    archiveAndResetDay(label, adminName) {
+    archiveAndResetDay(label) {
       const archiveLabel = String(label || "").trim() || new Date().toISOString().slice(0, 10);
 
       return updateData((data) => {
@@ -698,7 +578,6 @@ Observacoes: ${ticket.notes || "Sem observacoes"}
           createdAt: nowIso(),
           queue: clone(data.queue),
           history: clone(data.history),
-          attendanceLogs: clone(data.attendanceLogs.filter((log) => sameDay(log.checkInAt, nowIso()) || sameDay(log.checkOutAt, nowIso()))),
           counterNormal: data.counterNormal,
           counterPriority: data.counterPriority,
           totalTickets: data.queue.length + data.history.length
@@ -711,13 +590,6 @@ Observacoes: ${ticket.notes || "Sem observacoes"}
         data.counterPriority = 0;
         data.currentTicketId = null;
         data.lastCalled = null;
-        data.lastCompleted = null;
-
-        addAdminActivity(data, {
-          adminName: adminName || "Administrador",
-          action: "Guardou dia e reiniciou o painel",
-          details: archiveLabel
-        });
 
         return { ok: true, archive: clone(snapshot), message: "Historico guardado e painel reiniciado." };
       });
