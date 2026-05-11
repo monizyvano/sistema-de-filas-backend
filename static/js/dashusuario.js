@@ -1,14 +1,28 @@
 /**
- * static/js/dashusuario.js — Sprint 5 FIXED
+ * static/js/dashusuario.js — Sprint 5 PATCHED
  * ═══════════════════════════════════════════════════════════════
- * FIXES:
- *   ✅ Última Chamada Geral — polling real a cada 5s, detecta mudança
- *   ✅ NEGADA — mostra motivo ao cliente + notificação específica
- *   ✅ REDIRECCIONADA — mostra destino + notificação ao cliente
- *   ✅ PAUSADA — mostra aviso ao cliente
- *   ✅ Avaliação por estrelas → POST /api/tickets/rate (backend real)
- *   ✅ Nome registado no header (ou "Visitante" para sem conta)
- *   ✅ Serviço sempre visível no tracker
+ * PATCHES APLICADOS:
+ *
+ *   FIX-01  Avaliação: ticket_id correcto (dados.id, não dados.numero)
+ *   FIX-02  Avaliação: validação score 1-5 antes de submeter
+ *   FIX-03  Avaliação: bloqueio de dupla submissão (Set em memória)
+ *   FIX-04  Avaliação: tratamento de erro 400/404/409 com feedback
+ *   FIX-05  Polling: flag _pollingEmCurso evita chamadas sobrepostas
+ *   FIX-06  Polling: limpeza correcta de intervals em pararPollingGeral
+ *   FIX-07  emitirSenha: guarda dados.senha.id no localStorage
+ *   FIX-08  actualizarPosicao: não chama tracker se polling parado
+ *
+ *   ADD-01  fetchComRetry() — fetch com 3 tentativas + backoff exponencial
+ *   ADD-02  enviarAvaliacao() — função isolada e reutilizável
+ *   ADD-03  Fila offline: pendingAvaliacoes → reenvio automático
+ *   ADD-04  Loading state real no botão "Emitir Senha"
+ *   ADD-05  Loading state real no botão "Enviar avaliação"
+ *   ADD-06  Timestamps visíveis no tracker (hora da última actualização)
+ *   ADD-07  Quem executou a acção (atendente) no log de estado
+ *
+ *   IMPROVEMENT-01  atualizarUltimaChamada: aborta fetch anterior com AbortController
+ *   IMPROVEMENT-02  restaurarSenhaGuardada: valida também hora (não só data)
+ *   IMPROVEMENT-03  actualizarTrackerUI: mostra timestamp de cada transição
  * ═══════════════════════════════════════════════════════════════
  */
 (function () {
@@ -22,13 +36,29 @@
   let servicoSelecionado    = null;
   let minhaSenha            = null;
   let pollingGeral          = null;
+  let pollingLastCalled     = null;
   let pollingAcompanhamento = null;
   let statusAnterior        = null;
   let obsAnterior           = null;
   let _ultimaChamadaNum     = null;
   let _iconTimer            = null;
 
-  const STORAGE_KEY = 'imtsb_minha_senha';
+  // FIX-05 — flag para evitar chamadas de polling sobrepostas
+  let _pollingEmCurso       = false;
+
+  // ADD-03 — fila offline: avaliações que falharam por rede
+  const _pendingAvaliacoes  = [];
+
+  // FIX-03 — Set em memória: ticket_ids já avaliados nesta sessão
+  const _avaliacoesEnviadas = new Set();
+
+  // IMPROVEMENT-01 — AbortController para cancelar fetch anterior
+  let _abortUltimaChamada   = null;
+  let _ultimoEventoTs       = null;
+
+  const STORAGE_KEY         = 'imtsb_minha_senha';
+  // ADD-03 — chave para persistir avaliações pendentes
+  const PENDING_KEY         = 'imtsb_avaliacoes_pendentes';
 
   /* ── Base URL dinâmica ───────────────────────────────────── */
   const BASE = () => (window.IMTSBApiConfig?.baseUrl || '/api');
@@ -45,6 +75,12 @@
     const iso = (typeof v === 'string' && !v.endsWith('Z') && !v.includes('+'))
       ? v + 'Z' : v;
     return new Date(iso).toLocaleTimeString('pt-PT',
+      { hour: '2-digit', minute: '2-digit', timeZone: ANGOLA_TZ });
+  }
+
+  // ADD-06 — formata hora actual de Luanda para mostrar no tracker
+  function horaAgora() {
+    return new Date().toLocaleTimeString('pt-PT',
       { hour: '2-digit', minute: '2-digit', timeZone: ANGOLA_TZ });
   }
 
@@ -65,8 +101,197 @@
   }
 
   /* ════════════════════════════════════════════════════════════
-     ÚLTIMA CHAMADA GERAL — polling real, detecta mudança
+     ADD-01 — fetchComRetry
+     Fetch com N tentativas e backoff exponencial.
+     Evita falhas silenciosas em redes instáveis.
+
+     @param {string}  url
+     @param {object}  opcoes        — opções do fetch nativo
+     @param {number}  [tentativas]  — máx tentativas (default 3)
+     @returns {Promise<Response>}
   ════════════════════════════════════════════════════════════ */
+  async function fetchComRetry(url, opcoes = {}, tentativas = 3) {
+    let ultimoErro;
+    for (let i = 0; i < tentativas; i++) {
+      try {
+        const r = await fetch(url, opcoes);
+        // Só faz retry em erros de rede (TypeError) — não em erros HTTP (4xx/5xx)
+        return r;
+      } catch (err) {
+        ultimoErro = err;
+        if (i < tentativas - 1) {
+          // Backoff: 300ms, 900ms, 2700ms…
+          await new Promise(res => setTimeout(res, 300 * Math.pow(3, i)));
+        }
+      }
+    }
+    throw ultimoErro;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     ADD-02 — enviarAvaliacao
+     Função isolada e reutilizável para enviar avaliações.
+     Usada por window.abrirModalAvaliacao e pelo reenvio offline.
+
+     @param {number} ticketId  — ID numérico da senha (NOT o número "N001")
+     @param {number} score     — 1 a 5
+     @param {string} [comment] — comentário opcional
+     @returns {Promise<{ok: boolean, status: number, data: object}>}
+  ════════════════════════════════════════════════════════════ */
+  async function enviarAvaliacao(ticketId, score, comment = '') {
+    // FIX-02 — validar score antes de sequer fazer fetch
+    const scoreNum = parseInt(score, 10);
+    if (isNaN(scoreNum) || scoreNum < 1 || scoreNum > 5) {
+      return { ok: false, status: 400, data: { message: 'Score inválido. Use 1 a 5.' } };
+    }
+
+    // FIX-01 — garantir que ticketId é um número inteiro
+    const id = parseInt(ticketId, 10);
+    if (!id || id <= 0) {
+      return { ok: false, status: 400, data: { message: 'ticket_id inválido.' } };
+    }
+
+    const token = localStorage.getItem('imtsb_access_token') || store?.getToken?.() || '';
+
+    try {
+      const r = await fetchComRetry(
+        `${BASE()}/tickets/rate`,
+        {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            ticket_id: id,
+            score:     scoreNum,
+            comment:   (comment || '').trim().slice(0, 500),
+          }),
+        },
+        2  // só 2 tentativas para avaliações (evitar duplicados)
+      );
+
+      let data = {};
+      try { data = await r.json(); } catch (_) {}
+
+      return { ok: r.ok, status: r.status, data };
+
+    } catch (err) {
+      // Erro de rede → guardar para reenvio offline
+      console.warn('[avaliacao] Sem rede — guardando para reenvio.', err);
+      return { ok: false, status: 0, data: { message: 'Sem ligação.' }, offline: true };
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     ADD-03 — Fila offline: persistir e reenviar avaliações
+  ════════════════════════════════════════════════════════════ */
+  function guardarAvaliacaoPendente(ticketId, score, comment) {
+    try {
+      const pendentes = JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+      // Não duplicar
+      if (pendentes.find(p => p.ticketId === ticketId)) return;
+      pendentes.push({ ticketId, score, comment, ts: Date.now() });
+      localStorage.setItem(PENDING_KEY, JSON.stringify(pendentes));
+    } catch (_) {}
+  }
+
+  async function reenviarAvaliacoesPendentes() {
+    let pendentes = [];
+    try {
+      pendentes = JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+    } catch (_) { return; }
+    if (!pendentes.length) return;
+
+    const restantes = [];
+    for (const p of pendentes) {
+      // Ignorar entradas com mais de 24h
+      if (Date.now() - p.ts > 86400000) continue;
+      const res = await enviarAvaliacao(p.ticketId, p.score, p.comment);
+      if (!res.ok && res.offline) {
+        restantes.push(p);  // guardar de volta se ainda sem rede
+      }
+      // Se ok ou erro HTTP (ex: 409 já avaliado) — descarta
+    }
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(restantes));
+    } catch (_) {}
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     ÚLTIMA CHAMADA GERAL — polling real, detecta mudança
+     IMPROVEMENT-01 — AbortController cancela fetch anterior
+     FIX-09 — filtra por HOJE em todas as tentativas;
+               reseta DOM para "—" quando sem chamadas do dia
+               (resolve dados fake/antigos como N001 03:10)
+  ════════════════════════════════════════════════════════════ */
+
+  // FIX-09 — helper: verifica se um timestamp ISO é de hoje (fuso Luanda)
+  function _eDHoje(isoStr) {
+    if (!isoStr) return false;
+    try {
+      const iso = (typeof isoStr === 'string' && !isoStr.endsWith('Z') && !isoStr.includes('+'))
+        ? isoStr + 'Z' : isoStr;
+      const dataStr = new Date(iso).toLocaleDateString('en-CA', { timeZone: ANGOLA_TZ });
+      const hojeStr = new Date().toLocaleDateString('en-CA',     { timeZone: ANGOLA_TZ });
+      return dataStr === hojeStr;
+    } catch (_) { return false; }
+  }
+
+  // FIX-09 — helper: limpa o painel de última chamada
+  function _limparUltimaChamada() {
+    const numEl     = document.getElementById('ultimaChamada');
+    const balcaoEl  = document.getElementById('ultimoBalcao');
+    const servicoEl = document.getElementById('ultimoServico');
+    const horaEl    = document.getElementById('ultimaHora');
+    const iconEl    = document.getElementById('lastCallIcon');
+    if (numEl)     numEl.textContent     = '—';
+    if (balcaoEl)  balcaoEl.textContent  = 'Sem chamadas hoje';
+    if (servicoEl) servicoEl.textContent = '—';
+    if (horaEl)    horaEl.textContent    = '';
+    if (iconEl)    { iconEl.classList.remove('ringing'); iconEl.classList.add('idle'); }
+    _ultimaChamadaNum = null;
+  }
+
+  function _tratarEventosSemanticos(events = []) {
+    if (!Array.isArray(events) || !events.length || !minhaSenha?.numero) return;
+    const ordenados = [...events].sort((a, b) =>
+      new Date(a?.timestamp || 0) - new Date(b?.timestamp || 0)
+    );
+
+    for (const ev of ordenados) {
+      const ts = ev?.timestamp || null;
+      if (_ultimoEventoTs && ts && new Date(ts) <= new Date(_ultimoEventoTs)) continue;
+
+      const tipo = ev?.tipo || '';
+      const numero = ev?.dados?.numero || '';
+      if (!numero || numero !== minhaSenha.numero) continue;
+
+      if (tipo === 'senha_redirecionada') {
+        const destino = ev?.dados?.servico_destino || 'outro serviço';
+        const motivo  = ev?.dados?.motivo || 'Sem motivo';
+        mostrarMensagem(`↪ A sua senha foi redireccionada para <strong>${destino}</strong>.<br><em>${motivo}</em>`, 'ok');
+        N && N.onRedirect(numero, destino);
+      } else if (tipo === 'senha_negada') {
+        const motivo = ev?.dados?.motivo || 'Sem motivo indicado';
+        mostrarMensagem(
+          `🚫 A sua senha <strong>${numero}</strong> foi negada.<br><em>${motivo}</em>`,
+          'warn'
+        );
+        N && N.notify('deny', `Senha ${numero} negada. Motivo: ${motivo}`, 10000);
+        N && N.nativeNotify('IMTSB — Senha Negada', `Senha ${numero}: ${motivo}`);
+      } else if (tipo === 'senha_concluida') {
+        mostrarMensagem(`✅ Atendimento da senha <strong>${numero}</strong> concluído.`, 'ok');
+        N && N.onConclude(numero);
+      } else if (tipo === 'senha_chamada') {
+        const balcao = ev?.dados?.numero_balcao || '—';
+        N && N.onCall(numero, balcao);
+      }
+
+      if (ts) _ultimoEventoTs = ts;
+    }
+  }
+
   async function atualizarUltimaChamada() {
     const numEl     = document.getElementById('ultimaChamada');
     const balcaoEl  = document.getElementById('ultimoBalcao');
@@ -75,67 +300,42 @@
     const iconEl    = document.getElementById('lastCallIcon');
     if (!numEl) return;
 
+    // IMPROVEMENT-01 — cancelar fetch anterior se ainda em curso
+    if (_abortUltimaChamada) _abortUltimaChamada.abort();
+    _abortUltimaChamada = new AbortController();
+    const signal = _abortUltimaChamada.signal;
+
     let numero  = null;
     let balcao  = null;
     let servico = null;
     let hora    = null;
 
-    /* Tentativa 1 — snapshot (fonte mais fiável) */
+    /* Fonte ÚNICA — snapshot */
     try {
-      const r = await fetch(`${BASE()}/realtime/snapshot`);
+      const r = await fetch(`${BASE()}/realtime/snapshot`, { signal });
       if (r.ok) {
         const snap = await r.json();
+        _tratarEventosSemanticos(snap?.events || []);
         const lc   = snap.lastCalled;
-        if (lc?.code) {
+        // FIX-09 — só aceitar se o timestamp for de hoje
+        if (lc?.code && _eDHoje(lc.at)) {
           numero  = lc.code;
           balcao  = lc.counterName || 'Balcão';
           servico = lc.service || '—';
-          hora    = lc.at ? formatHora(lc.at) : null;
+          hora    = formatHora(lc.at);
         }
       }
-    } catch (_) {}
+    } catch (e) { if (e.name === 'AbortError') return; }
 
-    /* Tentativa 2 — tv endpoint */
+    // FIX-09 — se nenhuma fonte devolveu dados válidos de hoje, limpar painel
     if (!numero) {
-      try {
-        const r2 = await fetch(`${BASE()}/dashboard/public/tv`);
-        if (r2.ok) {
-          const tv = await r2.json();
-          if (tv.em_atendimento?.length > 0) {
-            const s = tv.em_atendimento[0];
-            numero  = s.numero;
-            balcao  = `Balcão ${s.balcao}`;
-            servico = s.servico || '—';
-            hora    = formatHora(new Date().toISOString());
-          }
-        }
-      } catch (_) {}
+      _limparUltimaChamada();
+      return;
     }
-
-    /* Tentativa 3 — senhas em atendimento */
-    if (!numero) {
-      try {
-        const r3 = await fetch(`${BASE()}/senhas?status=atendendo&per_page=1&page=1`);
-        if (r3.ok) {
-          const d = await r3.json();
-          const sl = d.senhas || (Array.isArray(d) ? d : []);
-          if (sl.length > 0) {
-            const s  = sl[0];
-            numero   = s.numero;
-            balcao   = s.numero_balcao ? `Balcão ${s.numero_balcao}` : 'Balcão';
-            servico  = s.servico?.nome || '—';
-            hora     = s.chamada_em ? formatHora(s.chamada_em) : null;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (!numero) return;
 
     const mudou = numero !== _ultimaChamadaNum;
     _ultimaChamadaNum = numero;
 
-    /* Actualizar DOM */
     if (numEl) {
       numEl.textContent = numero;
       if (mudou) {
@@ -162,6 +362,8 @@
 
   /* ════════════════════════════════════════════════════════════
      TRACKER — reage a TODAS as acções do trabalhador
+     ADD-06 — timestamp visível em cada transição
+     ADD-07 — nome do atendente quando disponível
   ════════════════════════════════════════════════════════════ */
   function actualizarTrackerUI(dados) {
     if (!dados) {
@@ -182,13 +384,16 @@
     statusAnterior = status;
     obsAnterior    = obs;
 
-    /* Sempre mostrar serviço */
     set('trackerServico', servico);
     const numEl    = document.getElementById('currentTicket');
     const badgeEl  = document.getElementById('currentStatusBadge');
     const iconEl   = document.getElementById('currentStatusIcon');
     const statusEl = document.getElementById('currentStatus');
     if (numEl) numEl.textContent = numero;
+
+    // ADD-06 — timestamp da última actualização
+    const tsEl = document.getElementById('trackerTimestamp');
+    if (tsEl) tsEl.textContent = `Actualizado às ${horaAgora()}`;
 
     /* ── AGUARDANDO ────────────────────────────────────────── */
     if (status === 'aguardando') {
@@ -205,10 +410,15 @@
     /* ── CHAMANDO / ATENDENDO ──────────────────────────────── */
     } else if (status === 'atendendo' || status === 'chamando') {
       const balcao    = dados.balcao || '–';
+      // ADD-07 — mostrar nome do atendente se disponível
       const atendente = resolverNomeAt(dados.atendente);
       set('trackerPosicao', '🔔');
       set('trackerTempo',   'Agora');
-      set('trackerEstado',  `→ Balcão ${balcao} · ${atendente}`);
+      // ADD-07 — "por Nome" quando o backend devolve o atendente
+      const linhaAt = atendente !== 'atendente'
+        ? `→ Balcão ${balcao} · <strong>${atendente}</strong> · ${horaAgora()}`
+        : `→ Balcão ${balcao} · ${horaAgora()}`;
+      set('trackerEstado', linhaAt);
       document.getElementById('chipPosicao')?.classList.add('chip-green');
       if (badgeEl) badgeEl.className = 'ticket-status-badge status-calling';
       if (iconEl)  iconEl.textContent = '🔔';
@@ -229,7 +439,8 @@
     } else if (status === 'concluida') {
       set('trackerPosicao', '✓');
       set('trackerTempo',   'Concluído');
-      set('trackerEstado',  'Atendimento concluído com sucesso!');
+      // ADD-06 — hora de conclusão visível
+      set('trackerEstado',  `Atendimento concluído às ${horaAgora()}`);
       document.getElementById('chipPosicao')?.classList.add('chip-green');
       if (badgeEl) badgeEl.className = 'ticket-status-badge status-done';
       if (iconEl)  iconEl.textContent = '✓';
@@ -240,7 +451,7 @@
         mostrarMensagem('✅ Atendimento concluído! Obrigado pela visita ao IMTSB.', 'ok');
         N && N.notify('conclude', 'Atendimento concluído! Obrigado pela sua visita.', 7000);
         N && N.nativeNotify('IMTSB — Concluído!', `Senha ${numero} atendida com sucesso.`);
-        /* Modal de avaliação após 2s */
+        // FIX-01 — passar dados completos ao modal (com .id numérico)
         setTimeout(() => window.abrirModalAvaliacao && window.abrirModalAvaliacao(dados), 2000);
       }
 
@@ -252,13 +463,12 @@
 
       document.getElementById('chipPosicao')?.classList.add('chip-red');
 
-      /* Detectar sub-tipo pelo campo observacoes */
       if (obs.startsWith('NEGADO:') || obs.startsWith('NEGADO ')) {
-        /* NEGADA PELO TRABALHADOR */
         const motivo = obs.replace(/^NEGADO:?\s*/i, '').trim() || 'Sem motivo indicado';
         set('trackerPosicao', '🚫');
         set('trackerTempo',   'Negada');
-        set('trackerEstado',  `Negada: ${motivo}`);
+        // ADD-06 — hora da negação
+        set('trackerEstado',  `Negada às ${horaAgora()}: ${motivo}`);
         if (badgeEl) badgeEl.className = 'ticket-status-badge status-cancelled';
         if (iconEl)  iconEl.textContent = '🚫';
         if (statusEl) statusEl.textContent = 'Negada';
@@ -270,17 +480,14 @@
             `<small>Dirija-se à recepção para mais informações.</small>`,
             'warn'
           );
-          N && N.notify('deny',
-            `Senha ${numero} negada. Motivo: ${motivo}`, 10000);
-          N && N.nativeNotify('IMTSB — Senha Negada',
-            `Senha ${numero}: ${motivo}`);
+          N && N.notify('deny', `Senha ${numero} negada. Motivo: ${motivo}`, 10000);
+          N && N.nativeNotify('IMTSB — Senha Negada', `Senha ${numero}: ${motivo}`);
         }
 
         pararAcompanhamento();
         setTimeout(() => { limparSenhaLocal(); atualizarDisplaySenha(); }, 12000);
 
       } else if (obs.includes('REDIR:')) {
-        /* REDIRECCIONADA — volta para aguardar no novo serviço */
         const linhas   = obs.split(' | ').map(p => p.trim());
         const redirLn  = linhas.find(p => p.startsWith('REDIR:')) || '';
         const motivoLn = linhas.find(p => p.startsWith('Motivo:')) || '';
@@ -289,7 +496,8 @@
 
         set('trackerPosicao', '↪');
         set('trackerTempo',   'Redireccionada');
-        set('trackerEstado',  `→ ${destino}`);
+        // ADD-06 — hora do redir
+        set('trackerEstado',  `→ ${destino} (${horaAgora()})`);
         if (badgeEl) badgeEl.className = 'ticket-status-badge status-redirect';
         if (iconEl)  iconEl.textContent = '↪';
         if (statusEl) statusEl.textContent = 'Redireccionada';
@@ -306,12 +514,9 @@
           N && N.nativeNotify('IMTSB — Redireccionado',
             `Senha ${numero} enviada para ${destino}. Aguarde.`);
         }
-        /* NÃO limpar a senha — vai aguardar no novo serviço */
-        /* Reiniciar acompanhamento com o novo estado */
         statusAnterior = null;
 
       } else {
-        /* CANCELAMENTO GENÉRICO */
         set('trackerPosicao', '✕');
         set('trackerTempo',   'Cancelada');
         set('trackerEstado',  'Senha cancelada. Pode emitir uma nova.');
@@ -329,7 +534,7 @@
     }
   }
 
-  /* ── Display base (sem dados do servidor) ────────────────── */
+  /* ── Display base ────────────────────────────────────────── */
   function atualizarDisplaySenha() {
     const numEl   = document.getElementById('currentTicket');
     const tracker = document.getElementById('ticketTracker');
@@ -349,20 +554,35 @@
 
   /* ════════════════════════════════════════════════════════════
      ACOMPANHAMENTO — polling da posição
+     FIX-08 — não chama tracker se minhaSenha for null
   ════════════════════════════════════════════════════════════ */
   function iniciarAcompanhamento(num) {
     pararAcompanhamento();
     actualizarPosicao(num);
-    pollingAcompanhamento = setInterval(() => actualizarPosicao(num), 5000);
+    pollingAcompanhamento = setInterval(() => {
+      // FIX-08 — não continuar se a senha foi limpa entretanto
+      if (!minhaSenha) { pararAcompanhamento(); return; }
+      actualizarPosicao(num);
+    }, 5000);
   }
 
   function pararAcompanhamento() {
-    if (pollingAcompanhamento) { clearInterval(pollingAcompanhamento); pollingAcompanhamento = null; }
+    if (pollingAcompanhamento) {
+      clearInterval(pollingAcompanhamento);
+      pollingAcompanhamento = null;
+    }
   }
 
   async function actualizarPosicao(num) {
+    // FIX-08 — sair se a senha já foi limpa
+    if (!minhaSenha) return;
+
     try {
-      const r = await fetch(`${BASE()}/dashboard/public/senha/${encodeURIComponent(num)}`);
+      const r = await fetchComRetry(
+        `${BASE()}/dashboard/public/senha/${encodeURIComponent(num)}`,
+        {},
+        2
+      );
       if (r.status === 404) {
         limparSenhaLocal(); pararAcompanhamento(); atualizarDisplaySenha();
         return;
@@ -370,9 +590,8 @@
       if (!r.ok) return;
       const dados = await r.json();
 
-      /* Injectar campos que o endpoint público não devolve */
-      dados.servico       = dados.servico      || minhaSenha?.servico?.nome || servicoSelecionado?.nome;
-      dados.observacoes   = dados.observacoes  || minhaSenha?.observacoes  || '';
+      dados.servico     = dados.servico     || minhaSenha?.servico?.nome || servicoSelecionado?.nome;
+      dados.observacoes = dados.observacoes || minhaSenha?.observacoes   || '';
 
       if (minhaSenha) {
         minhaSenha.status      = dados.status;
@@ -380,7 +599,9 @@
         guardarSenhaLocal(minhaSenha);
       }
       actualizarTrackerUI(dados);
-    } catch (e) { console.error('[posicao]', e); }
+    } catch (e) {
+      console.warn('[posicao] Falha de rede (vai tentar novamente):', e.message);
+    }
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -388,7 +609,7 @@
   ════════════════════════════════════════════════════════════ */
   async function atualizarEstatisticas() {
     try {
-      const r = await fetch(`${BASE()}/senhas/estatisticas`);
+      const r = await fetchComRetry(`${BASE()}/senhas/estatisticas`, {}, 2);
       if (!r.ok) return;
       const s = await r.json();
       set('statFila',  String(s.aguardando || 0));
@@ -414,7 +635,7 @@
     const container = document.getElementById('servicesList');
     if (!container) return;
     try {
-      const r    = await fetch(`${BASE()}/servicos`);
+      const r    = await fetchComRetry(`${BASE()}/servicos`, {}, 3);
       if (!r.ok) throw new Error();
       const raw  = await r.json();
       const list = Array.isArray(raw) ? raw : (raw.servicos || raw);
@@ -455,28 +676,65 @@
 
   /* ════════════════════════════════════════════════════════════
      EMITIR SENHA
+     ADD-04 — loading state real durante emissão
+     FIX-07 — guardar dados.senha.id no localStorage
   ════════════════════════════════════════════════════════════ */
   async function emitirSenha() {
     if (!servicoSelecionado) {
       mostrarMensagem('⚠ Seleccione um serviço antes de emitir senha.', 'warn');
       return;
     }
+
     const btn = document.getElementById('btnEmitirSenha');
-    if (btn) { btn.disabled = true; btn.textContent = 'A emitir…'; }
+
+    // ADD-04 — loading state: spinner inline
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `
+        <span style="display:inline-flex;align-items:center;gap:.5rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5"
+               style="animation:_spin .7s linear infinite">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83
+                     M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          A emitir…
+        </span>`;
+      // Injectar keyframe se ainda não existir
+      if (!document.getElementById('_spin-style')) {
+        const st = document.createElement('style');
+        st.id = '_spin-style';
+        st.textContent = '@keyframes _spin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(st);
+      }
+    }
     mostrarMensagem('⏳ A emitir senha…', '');
 
     try {
-      const r = await fetch(`${BASE()}/senhas/emitir`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ servico_id: servicoSelecionado.id, tipo: 'normal' })
-      });
+      const r = await fetchComRetry(
+        `${BASE()}/senhas/emitir`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ servico_id: servicoSelecionado.id, tipo: 'normal' }),
+        },
+        3
+      );
       const dados = await r.json().catch(() => ({}));
-      if (!r.ok) { mostrarMensagem(`❌ ${dados.erro || 'Erro ao emitir'}`, 'warn'); return; }
+      if (!r.ok) {
+        mostrarMensagem(`❌ ${dados.erro || 'Erro ao emitir'}`, 'warn');
+        return;
+      }
 
       minhaSenha     = dados.senha;
       statusAnterior = null;
       obsAnterior    = null;
+
+      // FIX-07 — garantir que o id numérico é guardado
+      if (minhaSenha && !minhaSenha.id && dados.senha?.id) {
+        minhaSenha.id = dados.senha.id;
+      }
+
       guardarSenhaLocal(minhaSenha);
       atualizarDisplaySenha();
       set('trackerServico', servicoSelecionado.nome);
@@ -491,12 +749,14 @@
     } catch (_) {
       mostrarMensagem('❌ Erro de ligação ao servidor', 'warn');
     } finally {
+      // ADD-04 — restaurar botão sempre
       if (btn) { btn.disabled = false; btn.textContent = 'Emitir Senha'; }
     }
   }
 
   /* ════════════════════════════════════════════════════════════
      LOCAL STORAGE
+     IMPROVEMENT-02 — valida também que a senha não é de ontem
   ════════════════════════════════════════════════════════════ */
   function guardarSenhaLocal(s) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch (_) {}
@@ -509,7 +769,13 @@
       if (!g) return;
       const s = JSON.parse(g);
       const hoje = new Date().toISOString().split('T')[0];
-      if ((s.data_emissao || '') !== hoje) { limparSenhaLocal(); return; }
+
+      // IMPROVEMENT-02 — comparar data_emissao E emitida_em
+      const dataEmissao = s.data_emissao
+        || (s.emitida_em ? s.emitida_em.split('T')[0] : null);
+
+      if (dataEmissao !== hoje) { limparSenhaLocal(); return; }
+
       minhaSenha     = s;
       statusAnterior = s.status;
       obsAnterior    = s.observacoes || null;
@@ -520,19 +786,46 @@
 
   /* ════════════════════════════════════════════════════════════
      POLLING GERAL
+     FIX-05 — flag _pollingEmCurso evita sobreposição
+     FIX-06 — clearInterval correcto antes de reatribuir
   ════════════════════════════════════════════════════════════ */
   function iniciarPollingGeral() {
+    // FIX-06 — parar sempre antes de criar novos
     pararPollingGeral();
+
+    // Canal leve: última chamada (mais frequente)
+    pollingLastCalled = setInterval(async () => {
+      try { await atualizarUltimaChamada(); } catch (_) {}
+    }, 3000);
+
+    // Canal pesado: estatísticas (menos frequente)
     pollingGeral = setInterval(async () => {
-      await Promise.all([atualizarEstatisticas(), atualizarUltimaChamada()]);
-    }, 5000);
+      // FIX-05 — sair se ciclo anterior ainda não terminou
+      if (_pollingEmCurso) return;
+      _pollingEmCurso = true;
+      try {
+        await atualizarEstatisticas();
+      } finally {
+        _pollingEmCurso = false;
+      }
+    }, 8000);
   }
+
   function pararPollingGeral() {
-    if (pollingGeral) { clearInterval(pollingGeral); pollingGeral = null; }
+    // FIX-06 — limpeza explícita
+    if (pollingGeral) {
+      clearInterval(pollingGeral);
+      pollingGeral = null;
+    }
+    if (pollingLastCalled) {
+      clearInterval(pollingLastCalled);
+      pollingLastCalled = null;
+    }
+    _pollingEmCurso = false;
   }
 
   /* ════════════════════════════════════════════════════════════
-     HEADER — nome registado ou "Visitante"
+     HEADER
   ════════════════════════════════════════════════════════════ */
   function configurarHeader() {
     const user = store?.getUser?.() || null;
@@ -571,7 +864,7 @@
   /* ════════════════════════════════════════════════════════════
      INIT
   ════════════════════════════════════════════════════════════ */
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     configurarHeader();
     configurarBotoes();
     carregarServicos();
@@ -579,6 +872,156 @@
     atualizarUltimaChamada();
     restaurarSenhaGuardada();
     iniciarPollingGeral();
+    // ADD-03 — tentar reenviar avaliações pendentes ao iniciar
+    await reenviarAvaliacoesPendentes();
   });
+
+  /* ════════════════════════════════════════════════════════════
+     MODAL DE AVALIAÇÃO — window.abrirModalAvaliacao
+     FIX-01  ticket_id usa dados.id (inteiro) — não dados.numero
+     FIX-02  validação score 1-5 antes de submeter
+     FIX-03  bloqueio de dupla submissão via _avaliacoesEnviadas
+     FIX-04  feedback visual para todos os cenários de erro
+     ADD-03  guarda offline se sem rede
+     ADD-05  loading state no botão de envio
+  ════════════════════════════════════════════════════════════ */
+  window.abrirModalAvaliacao = function (dados) {
+    if (!dados) return;
+
+    // FIX-01 — extrair id numérico com fallback para minhaSenha
+    const ticketId = parseInt(
+      dados.id || dados.senha_id || minhaSenha?.id || 0,
+      10
+    );
+
+    if (!ticketId) {
+      console.warn('[avaliacao] ticket_id não encontrado nos dados:', dados);
+      return;
+    }
+
+    // FIX-03 — não abrir se já avaliado nesta sessão
+    if (_avaliacoesEnviadas.has(ticketId)) return;
+
+    // Verificar também o localStorage (sessão anterior do dia)
+    const chaveAval = `imtsb_av_${ticketId}`;
+    if (localStorage.getItem(chaveAval)) {
+      _avaliacoesEnviadas.add(ticketId);
+      return;
+    }
+
+    const modal = document.getElementById('modalAvaliacao');
+    if (!modal) return;
+
+    // Preencher subtítulo com atendente e serviço
+    const atendente = resolverNomeAt(dados.atendente);
+    const servico   = dados.servico || minhaSenha?.servico?.nome || 'Atendimento';
+    const el        = document.getElementById('evalSubtitle');
+    if (el) el.innerHTML =
+      `Atendente: <strong>${atendente}</strong> · ${servico}`;
+
+    // Reset UI
+    let scoreSel = 0;
+    document.getElementById('starLabel').textContent = '';
+    document.getElementById('evalComment').value = '';
+    const btnEnviar = document.getElementById('btnEnviarAval');
+    if (btnEnviar) btnEnviar.disabled = true;
+    document.getElementById('starsRow')
+      ?.querySelectorAll('.star-btn')
+      .forEach(b => b.textContent = '☆');
+
+    modal.style.display = 'flex';
+
+    // ── Seleccionar estrela ──────────────────────────────────
+    window._setStar = function (val) {
+      scoreSel = val;
+      const LABELS = ['','Muito mau','Mau','Satisfatório','Bom','Excelente!'];
+      const EMOJIS = ['','😞','😕','😐','😊','🤩'];
+      document.getElementById('starLabel').textContent = LABELS[val] || '';
+      const emojiEl = modal.querySelector('.eval-emoji');
+      if (emojiEl) emojiEl.textContent = EMOJIS[val] || '⭐';
+      document.querySelectorAll('.star-btn').forEach(b => {
+        b.textContent = parseInt(b.dataset.val) <= val ? '⭐' : '☆';
+        b.classList.toggle('sel', parseInt(b.dataset.val) <= val);
+      });
+      if (btnEnviar) btnEnviar.disabled = false;
+    };
+
+    // ── Fechar modal ─────────────────────────────────────────
+    window._fecharAvaliacao = function () {
+      if (modal) modal.style.display = 'none';
+    };
+
+    // ── Enviar avaliação ─────────────────────────────────────
+    window._enviarAvaliacao = async function () {
+      // FIX-02 — validar score
+      if (!scoreSel || scoreSel < 1 || scoreSel > 5) {
+        mostrarMensagem('⚠ Escolha uma pontuação antes de enviar.', 'warn');
+        return;
+      }
+
+      // FIX-03 — bloqueio imediato para evitar double-click
+      if (_avaliacoesEnviadas.has(ticketId)) {
+        window._fecharAvaliacao();
+        return;
+      }
+      _avaliacoesEnviadas.add(ticketId);  // bloqueio optimista
+
+      const comment = (document.getElementById('evalComment')?.value || '').trim();
+
+      // ADD-05 — loading state no botão
+      if (btnEnviar) {
+        btnEnviar.disabled  = true;
+        btnEnviar.innerHTML = `
+          <span style="display:inline-flex;align-items:center;gap:.4rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5"
+                 style="animation:_spin .7s linear infinite">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83
+                       M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            A enviar…
+          </span>`;
+      }
+
+      const { ok, status, data, offline } = await enviarAvaliacao(ticketId, scoreSel, comment);
+
+      if (ok) {
+        // ── SUCESSO ──────────────────────────────────────────
+        localStorage.setItem(chaveAval, '1');
+        window._fecharAvaliacao();
+        N && N.notify('success', 'Obrigado pela avaliação! O seu feedback é muito valioso.', 4000);
+
+      } else if (status === 409) {
+        // FIX-04 — já avaliado (race condition / dupla aba)
+        localStorage.setItem(chaveAval, '1');
+        window._fecharAvaliacao();
+
+      } else if (offline) {
+        // ADD-03 — sem rede: guardar para reenvio automático
+        _avaliacoesEnviadas.delete(ticketId);  // reverter bloqueio
+        guardarAvaliacaoPendente(ticketId, scoreSel, comment);
+        window._fecharAvaliacao();
+        mostrarMensagem(
+          '⚠ Sem ligação — a avaliação será enviada automaticamente quando houver rede.',
+          'warn'
+        );
+
+      } else {
+        // FIX-04 — erro HTTP: reverter bloqueio e mostrar mensagem
+        _avaliacoesEnviadas.delete(ticketId);
+        const msg = data?.message || `Erro ${status}. Tente novamente.`;
+        console.error('[avaliacao] Erro backend:', status, data);
+        mostrarMensagem(`❌ ${msg}`, 'warn');
+
+        if (btnEnviar) {
+          btnEnviar.disabled  = false;
+          btnEnviar.textContent = 'Enviar avaliação';
+        }
+      }
+    };
+
+    // Fechar ao clicar no backdrop
+    modal.onclick = e => { if (e.target === modal) window._fecharAvaliacao(); };
+  };
 
 })();

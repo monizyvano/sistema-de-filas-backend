@@ -9,6 +9,7 @@ from app.models.senha import Senha
 from app.models.atendente import Atendente
 from app.models.log_actividade import LogActividade
 from app.models.configuracao import Configuracao
+from app.models.avaliacao import Avaliacao
 
 __all__ = [
     'BaseModel',
@@ -17,5 +18,6 @@ __all__ = [
     'Senha',
     'Atendente',
     'LogActividade',
-    'Configuracao'
+    'Configuracao',
+    'Avaliacao'
 ]

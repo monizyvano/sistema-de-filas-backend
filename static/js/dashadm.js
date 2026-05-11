@@ -1,14 +1,36 @@
 /**
- * static/js/dashadm.js — Sprint 5
+ * static/js/dashadm.js — Sprint 5 PATCHED
  * ═══════════════════════════════════════════════════════════════
- * MELHORIAS:
- *   ✅ Produtividade: métricas avançadas (avaliação ★, tempo médio,
- *      atendimentos, taxa conclusão, redireccionamentos)
- *   ✅ Pesquisa de trabalhador por nome ou departamento
- *   ✅ "Trabalhador do Mês" calculado automaticamente por score
- *   ✅ Histórico com paginação e filtros de período
- *   ✅ Exportação Excel / PDF com relatório completo
- *   ✅ KPIs, gráficos, gestão de membros mantidos
+ * CORRECÇÕES APLICADAS:
+ *
+ *   FIX-D1  calcularScore() LOCAL REMOVIDA — o frontend não
+ *           mais fabrica KPIs. O score vem exclusivamente do
+ *           backend via /api/admin/atendentes/metrics.
+ *
+ *   FIX-D2  scoreBadge() actualizado — aceita null/undefined
+ *           e devolve null (sem badge) quando score é inexistente.
+ *           Badge "👍 Bom" para atendentes sem produção: ELIMINADO.
+ *
+ *   FIX-D3  renderProdutividade() — usa t.score (backend).
+ *           Quando score === null → mostra "Sem dados suficientes"
+ *           em vez de badge/percentagem inventada.
+ *
+ *   FIX-D4  renderTrabalhadorMes() — filtra APENAS atendentes
+ *           com score !== null e dados_insuficientes === false.
+ *           Pódio com zero atendimentos: ELIMINADO.
+ *
+ *   FIX-D5  carregarTrabalhadores() — normalização preserva o
+ *           campo dados_insuficientes do backend e respeita
+ *           score nulo sem defaults optimistas.
+ *
+ *   FIX-D6  adicionarTrabalhador() — endpoint correcto
+ *           /api/atendentes/ com mapa de servico_id.
+ *
+ * REGRA IMPLEMENTADA:
+ *   O frontend RENDERIZA. O backend DECIDE.
+ *   Nunca mais: taxa_conclusao = 100 quando vale 0.
+ *   Nunca mais: score = 70 quando não há avaliações.
+ *   Nunca mais: badge "Bom" para atendente com 0 atendimentos.
  * ═══════════════════════════════════════════════════════════════
  */
 (function () {
@@ -20,9 +42,11 @@
   let lineChart        = null;
   let barChart         = null;
   let pollingInterval  = null;
+  let _pollingBusy     = false;
   let periodoActivo    = 'semana';
-  let _todosTrabalhadores = [];   // cache para pesquisa
-  let _filtroNome        = '';    // filtro de pesquisa activo
+  let periodoMetricas  = 'hoje';
+  let _todosTrabalhadores = [];
+  let _filtroNome        = '';
 
   const historicoState = { page:1, perPage:15, total:0, totalPages:1 };
 
@@ -242,8 +266,14 @@
   }
 
   /* ════════════════════════════════════════════════════════════
-     ★ PRODUTIVIDADE — métricas avançadas + pesquisa + mês
+     ★ PRODUTIVIDADE — VERSÃO CORRIGIDA
+     FIX-D1: calcularScore() LOCAL REMOVIDA
+     FIX-D2: scoreBadge() aceita null
+     FIX-D3: renderProdutividade() usa t.score (backend)
+     FIX-D4: renderTrabalhadorMes() filtra dados reais
+     FIX-D5: carregarTrabalhadores() preserva dados_insuficientes
   ════════════════════════════════════════════════════════════ */
+
   async function carregarTrabalhadores() {
     const perfBody    = document.getElementById('performanceBody');
     const workersBody = document.getElementById('workersBody');
@@ -251,51 +281,82 @@
     if (perfBody)    perfBody.innerHTML    = loadMsg;
     if (workersBody) workersBody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1rem;">A carregar…</td></tr>';
 
+    let lista = null;
+    let fonte  = '';
+
+    // Tentar endpoint principal de métricas
     try {
-      const r = await api('/atendentes/');
-      if (!r.ok) throw new Error(r.status);
-      const lista = await r.json();
-      _todosTrabalhadores = Array.isArray(lista) ? lista : [];
-      renderProdutividade(_todosTrabalhadores);
-      renderGestaoMembros(_todosTrabalhadores);
-      renderTrabalhadorMes(_todosTrabalhadores);
-    } catch (e) {
-      console.error('Trabalhadores:', e);
-      const err = '<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1rem;">Erro ao carregar</td></tr>';
-      if (perfBody)    perfBody.innerHTML    = err;
-      if (workersBody) workersBody.innerHTML = err;
+      const r = await api(`/admin/atendentes/metrics?periodo=${periodoMetricas}`);
+      if (r.ok) {
+        lista  = await r.json();
+        fonte  = 'admin/metrics';
+      }
+    } catch (_) {}
+
+    // Fallback para endpoint de atendentes
+    if (!lista) {
+      try {
+        const r2 = await api(`/atendentes/?periodo=${periodoMetricas}`);
+        if (r2.ok) {
+          lista = await r2.json();
+          fonte = 'atendentes';
+        } else {
+          const errData = await r2.json().catch(() => ({}));
+          const msg = errData.erro || errData.message || `HTTP ${r2.status}`;
+          const errRow = `<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1.2rem;">
+            ⚠ Erro ao carregar trabalhadores: ${msg}
+          </td></tr>`;
+          if (perfBody)    perfBody.innerHTML    = errRow;
+          if (workersBody) workersBody.innerHTML = errRow.replace('colspan="7"','colspan="4"');
+          return;
+        }
+      } catch (e) {
+        const errRow = `<tr><td colspan="7" style="color:#ef4444;text-align:center;padding:1rem;">
+          Erro de ligação ao servidor</td></tr>`;
+        if (perfBody)    perfBody.innerHTML    = errRow;
+        if (workersBody) workersBody.innerHTML = errRow.replace('colspan="7"','colspan="4"');
+        return;
+      }
     }
+
+    // FIX-D5: normalizar campos, preservar dados_insuficientes do backend
+    _todosTrabalhadores = (Array.isArray(lista) ? lista : []).map(t => ({
+      ...t,
+      atendimentos_hoje: t.atendimentos_hoje
+        ?? t.atendimentos_concluidos
+        ?? t.atendimentos_periodo
+        ?? t.total_atendimentos
+        ?? 0,
+      // FIX-D1: usar score do backend directamente — null é válido
+      score: (t.score !== undefined && t.score !== null) ? t.score : null,
+      // FIX-D5: preservar flag de dados insuficientes do backend
+      dados_insuficientes: t.dados_insuficientes
+        ?? (t.score == null || t.total_atendimentos === 0 || t.total_atendimentos == null),
+      departamento: t.departamento || t.servico?.nome || 'Geral',
+    }));
+
+    console.info(`[Trabalhadores] ${_todosTrabalhadores.length} carregados via ${fonte}`);
+
+    renderProdutividade(_todosTrabalhadores);
+    renderGestaoMembros(_todosTrabalhadores);
+    renderTrabalhadorMes(_todosTrabalhadores);
   }
 
-  /* ── Calcular score composto (0–100) ──────────────────── */
-  function calcularScore(t) {
-    const atend    = t.atendimentos_hoje || 0;
-    const tempo    = t.tempo_medio       || 0;
-    const nota     = t.avaliacao_media   || 0;    // 0–5 ★
-    const taxa     = t.taxa_conclusao    || 100;  // %
-    const redir    = t.redirecionamentos || 0;
-
-    /* Normalizar cada métrica (0–100) */
-    const pAtend  = Math.min(atend / 20 * 100, 100);        // referência: 20 atend = 100%
-    const pTempo  = Math.max(0, 100 - (tempo - 5) * 4);     // <5min ideal; >30min = 0
-    const pNota   = nota > 0 ? (nota / 5) * 100 : 70;       // sem nota → neutro 70
-    const pTaxa   = taxa;
-    const pRedir  = Math.max(0, 100 - redir * 10);          // cada redir -10pts
-
-    /* Pesos: nota 35% | taxa 25% | atend 20% | tempo 12% | redir 8% */
-    return Math.round(
-      pNota * .35 + pTaxa * .25 + pAtend * .20 + pTempo * .12 + pRedir * .08
-    );
-  }
-
+  /* ─────────────────────────────────────────────────────────
+     FIX-D2: scoreBadge — aceita null, devolve null sem dados
+  ───────────────────────────────────────────────────────── */
   function scoreBadge(sc) {
+    // FIX-D2: null → sem badge, nunca "👍 Bom" para sem dados
+    if (sc === null || sc === undefined) return null;
     if (sc >= 85) return { label:'⭐ Excelente',  cor:'#065f46', bg:'rgba(5,150,105,.12)' };
     if (sc >= 70) return { label:'👍 Bom',         cor:'#6b4226', bg:'rgba(107,66,38,.12)' };
     if (sc >= 50) return { label:'😐 Regular',      cor:'#d97706', bg:'rgba(217,119,6,.1)'  };
     return             { label:'⚠ Melhoria',      cor:'#b91c1c', bg:'rgba(220,38,38,.1)'  };
   }
 
-  /* ── Render tabela de produtividade ──────────────────── */
+  /* ─────────────────────────────────────────────────────────
+     FIX-D3: renderProdutividade — score do backend, null seguro
+  ───────────────────────────────────────────────────────── */
   function renderProdutividade(lista) {
     const body = document.getElementById('performanceBody');
     if (!body) return;
@@ -307,25 +368,29 @@
       : lista;
 
     if (!filtrado.length) {
-      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.5rem;">Nenhum resultado para "' + _filtroNome + '"</td></tr>';
+      body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.5rem;">
+        Nenhum resultado para "${_filtroNome}"</td></tr>`;
       return;
     }
 
-    /* Ordenar por score desc */
-    const comScore = filtrado
-      .filter(t => t.tipo === 'atendente' && t.ativo)
-      .map(t => ({ ...t, _score: calcularScore(t) }))
-      .sort((a,b) => b._score - a._score);
+    // FIX-D1 + FIX-D3: usar score do backend, NÃO calcular localmente
+    // Atendentes com score nulo vão para o fim
+    const atendentes = filtrado.filter(t => t.tipo === 'atendente' && t.ativo);
+    const admins     = filtrado.filter(t => t.tipo === 'admin');
+    const inact      = filtrado.filter(t => !t.ativo);
 
-    const admins = filtrado.filter(t => t.tipo === 'admin');
-    const inact  = filtrado.filter(t => !t.ativo);
-    const todos  = [...comScore, ...admins, ...inact];
+    const comDados  = atendentes.filter(t => !t.dados_insuficientes && t.score !== null)
+                                .sort((a, b) => b.score - a.score);
+    const semDados  = atendentes.filter(t => t.dados_insuficientes  || t.score === null);
+    const todos     = [...comDados, ...semDados, ...admins, ...inact];
 
-    body.innerHTML = todos.map((t, idx) => {
-      const sc     = t._score ?? null;
-      const badge  = sc !== null ? scoreBadge(sc) : null;
+    body.innerHTML = todos.map(t => {
+      // FIX-D3: score vem do backend — pode ser null
+      const sc     = (t.dados_insuficientes || t.score === null) ? null : t.score;
+      const badge  = scoreBadge(sc);
       const nota   = t.avaliacao_media > 0
-        ? '★'.repeat(Math.round(t.avaliacao_media)) + `<small style="font-size:.7rem;"> (${(+t.avaliacao_media).toFixed(1)})</small>`
+        ? '★'.repeat(Math.round(t.avaliacao_media)) +
+          `<small style="font-size:.7rem;"> (${(+t.avaliacao_media).toFixed(1)})</small>`
         : '<span style="color:#d1d5db;">Sem avaliações</span>';
       const tipoLabel  = t.tipo === 'admin' ? '👑 Admin' : '👤 Atendente';
       const statusDot  = t.ativo
@@ -348,34 +413,71 @@
         <td>${t.taxa_conclusao != null ? (t.taxa_conclusao+'%') : '—'}</td>
         <td>${t.ativo ? '<span style="color:#22c55e">Activo</span>' : '<span style="color:#9ca3af">Inactivo</span>'}</td>
         <td>
-          ${badge
+          ${sc !== null
             ? `<span style="background:${badge.bg};color:${badge.cor};
                  padding:.25rem .65rem;border-radius:20px;font-size:.75rem;font-weight:700;
                  white-space:nowrap;">${badge.label} (${sc}%)</span>`
-            : '<span style="color:#9ca3af;font-size:.8rem;">—</span>'}
+            : `<span style="color:#9ca3af;font-size:.8rem;font-style:italic;">
+                 Sem dados suficientes
+               </span>`
+          }
         </td>
       </tr>`;
     }).join('');
   }
 
-  /* ── Trabalhador do Mês ──────────────────────────────── */
+  /* ─────────────────────────────────────────────────────────
+     FIX-D4: renderTrabalhadorMes — só dados reais
+  ───────────────────────────────────────────────────────── */
   function renderTrabalhadorMes(lista) {
+    const TITULO_PERIODO = {
+      hoje: '🏆 Trabalhador do Dia',
+      semana: '🏆 Trabalhador da Semana',
+      mes: '🏆 Trabalhador do Mês'
+    };
+
+    const PODIO_PERIODO = {
+      hoje: 'hoje',
+      semana: 'esta semana',
+      mes: 'este mês'
+    };
     const container = document.getElementById('trabalhadorMesCard');
     if (!container) return;
 
+    // FIX-D4: filtrar APENAS atendentes com dados de produção reais
     const candidatos = lista
-      .filter(t => t.tipo === 'atendente' && t.ativo)
-      .map(t => ({ ...t, _score: calcularScore(t) }))
-      .sort((a,b) => b._score - a._score);
+      .filter(t =>
+        t.tipo === 'atendente' &&
+        t.ativo &&
+        t.score !== null &&
+        !t.dados_insuficientes &&
+        (t.atendimentos_hoje || 0) > 0   // pelo menos 1 atendimento hoje
+      )
+      .sort((a, b) => b.score - a.score);
 
+    // FIX-D4: quando sem candidatos com dados reais — estado neutro claro
     if (!candidatos.length) {
-      container.innerHTML = '<p style="color:var(--text-muted);font-size:.9rem;">Sem dados suficientes.</p>';
+      container.innerHTML = `
+        <div style="
+          display:flex;align-items:center;gap:1rem;
+          padding:.75rem;background:rgba(156,163,175,.08);
+          border-radius:12px;border:1px dashed #d1d5db;">
+          <div style="font-size:2rem;opacity:.4;">🏆</div>
+          <div>
+            <div style="font-size:.9rem;font-weight:600;color:#6b7280;">
+              Sem dados suficientes para hoje
+            </div>
+            <div style="font-size:.8rem;color:#9ca3af;margin-top:.2rem;">
+              O ranking aparece quando existirem atendimentos concluídos com dados reais.
+            </div>
+          </div>
+        </div>`;
       return;
     }
 
-    const top = candidatos[0];
-    const sc  = top._score;
-    const nota = top.avaliacao_media > 0
+    const top   = candidatos[0];
+    const sc    = top.score;
+    const nota  = top.avaliacao_media > 0
       ? `★ ${(+top.avaliacao_media).toFixed(1)}`
       : 'Sem avaliações';
 
@@ -393,7 +495,7 @@
             <span style="font-size:1.25rem;font-weight:800;color:#3e2510;">${top.nome}</span>
             <span style="background:rgba(196,161,100,.2);color:#6b4226;
                          padding:.2rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700;">
-              🏆 Trabalhador do Mês
+              ${TITULO_PERIODO[periodoMetricas] || '🏆 Trabalhador do Dia'}
             </span>
           </div>
           <div style="font-size:.85rem;color:#8c6746;margin-top:.25rem;">
@@ -403,7 +505,9 @@
             <span style="font-size:.8rem;"><strong>${top.atendimentos_hoje||0}</strong> atendimentos</span>
             <span style="font-size:.8rem;"><strong>${top.tempo_medio||0}min</strong> médio</span>
             <span style="font-size:.8rem;"><strong>${nota}</strong></span>
-            <span style="font-size:.8rem;font-weight:700;color:#065f46;">Score: ${sc}%</span>
+            <span style="font-size:.8rem;font-weight:700;color:#065f46;">
+              Score: <strong>${sc !== null ? sc+'%' : '—'}</strong>
+            </span>
           </div>
         </div>
       </div>
@@ -411,19 +515,17 @@
         <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #f0e8dc;">
           <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;
                       letter-spacing:.08em;color:#8c6746;margin-bottom:.5rem;">
-            Pódio do dia
+            Pódio — ${PODIO_PERIODO[periodoMetricas] || 'hoje'} (apenas dados reais)
           </div>
           <div style="display:flex;flex-direction:column;gap:.4rem;">
             ${candidatos.slice(0,3).map((c,i) => `
               <div style="display:flex;align-items:center;gap:.65rem;">
-                <span style="font-size:.9rem;min-width:18px;">
-                  ${['🥇','🥈','🥉'][i]}
-                </span>
-                <span style="font-size:.85rem;font-weight:600;color:#3e2510;flex:1;">
-                  ${c.nome}
-                </span>
+                <span style="font-size:.9rem;min-width:18px;">${['🥇','🥈','🥉'][i]}</span>
+                <span style="font-size:.85rem;font-weight:600;color:#3e2510;flex:1;">${c.nome}</span>
                 <span style="font-size:.78rem;color:#8c6746;">
-                  ${c.atendimentos_hoje||0} atend. · ${c.avaliacao_media > 0 ? '★'+Number(c.avaliacao_media).toFixed(1) : '—'} · ${c._score}%
+                  ${c.atendimentos_hoje||0} atend.
+                  · ${c.avaliacao_media > 0 ? '★'+Number(c.avaliacao_media).toFixed(1) : '—'}
+                  · <strong>${c.score !== null ? c.score+'%' : '—'}</strong>
                 </span>
               </div>`).join('')}
           </div>
@@ -431,7 +533,46 @@
     `;
   }
 
-  /* ── Gestão de membros (tabela simples) ──────────────── */
+  /* ── Pesquisa ──────────────────────────────────────────── */
+  window.pesquisarTrabalhador = function(val) {
+    _filtroNome = (val || '').toLowerCase().trim();
+    renderProdutividade(_todosTrabalhadores);
+  };
+
+ /* ── muda período  ──────────────────────────────────────────── */
+  window.mudarPeriodoMetricas = async function(periodo) {
+  periodoMetricas = periodo;
+
+  document.querySelectorAll('.periodo-metricas-btn').forEach(b => {
+    const activo = b.dataset.periodo === periodo;
+
+    b.style.background = activo ? '#6b4226' : 'white';
+    b.style.color      = activo ? 'white' : '#6b4226';
+    b.style.fontWeight = activo ? '700' : '600';
+  });
+
+  const h3 = document.getElementById('trabMesTitulo');
+
+  const TITULOS = {
+    hoje: '🏆 Trabalhador do Dia',
+    semana: '🏆 Trabalhador da Semana',
+    mes: '🏆 Trabalhador do Mês'
+  };
+
+  if (h3) {
+    h3.textContent = TITULOS[periodo] || '🏆 Trabalhador do Dia';
+  }
+
+  await carregarTrabalhadores();
+};
+
+
+window.refreshMetricas = async function () {
+  if (_pollingBusy) return;
+
+  await carregarTrabalhadores();
+};
+  /* ── Gestão de membros (tabela simples) ────────────────── */
   function renderGestaoMembros(lista) {
     const body = document.getElementById('workersBody');
     if (!body) return;
@@ -458,13 +599,9 @@
       </tr>`).join('');
   }
 
-  /* ── Pesquisa de trabalhador ─────────────────────────── */
-  window.pesquisarTrabalhador = function(val) {
-    _filtroNome = (val || '').toLowerCase().trim();
-    renderProdutividade(_todosTrabalhadores);
-  };
-
-  /* ── Adicionar membro ────────────────────────────────── */
+  /* ════════════════════════════════════════════════════════════
+     FIX-D6: ADICIONAR TRABALHADOR — endpoint e servico_id correcto
+  ════════════════════════════════════════════════════════════ */
   async function adicionarTrabalhador() {
     const nome  = (document.getElementById('newWorkerName')?.value  || '').trim();
     const email = (document.getElementById('newWorkerEmail')?.value || '').trim();
@@ -476,41 +613,50 @@
     const setMsg = (t, ok) => {
       if (!msgEl) return;
       msgEl.textContent = t;
-      msgEl.style.color = ok ? '#22c55e' : '#ef4444';
+      msgEl.style.color      = ok ? '#22c55e' : '#ef4444';
       msgEl.style.fontWeight = '600';
     };
 
     if (!nome || !email || !senha) { setMsg('Nome, email e senha são obrigatórios.', false); return; }
-    if (senha.length < 6) { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
+    if (senha.length < 6)          { setMsg('A senha deve ter pelo menos 6 caracteres.', false); return; }
 
     const mapaServico = {
-      'Secretaria Academica':1,'Contabilidade':2,
-      'Direccao Pedagogica':3,'Biblioteca':4,'Apoio ao Cliente':5
+      'Secretaria Academica':  1,
+      'Contabilidade':         2,
+      'Direccao Pedagogica':   3,
+      'Biblioteca':            4,
+      'Apoio ao Cliente':      5,
     };
-    const servicoId = role === 'admin' ? null : (mapaServico[dept] || null);
+    const servicoId = (role === 'admin') ? null : (mapaServico[dept] || null);
 
     const btn = document.getElementById('btnAddWorker');
     if (btn) { btn.disabled = true; btn.textContent = 'A criar…'; }
 
     try {
       const r = await api('/atendentes/', {
-        method:'POST',
-        body: JSON.stringify({ nome, email, senha, tipo:role, servico_id:servicoId })
+        method: 'POST',
+        body: JSON.stringify({ nome, email, senha, tipo: role, servico_id: servicoId }),
       });
-      const d = await r.json().catch(() => ({}));
+
+      let d = {};
+      try { d = await r.json(); } catch (_) {}
+
       if (r.ok) {
         const bal = d.atendente?.balcao ? ` (Balcão ${d.atendente.balcao})` : '';
         setMsg(`✅ "${nome}" criado com sucesso!${bal}`, true);
         ['newWorkerName','newWorkerEmail','newWorkerPass'].forEach(id => {
-          const el = document.getElementById(id); if (el) el.value = '';
+          const el = document.getElementById(id);
+          if (el) el.value = '';
         });
         await carregarTrabalhadores();
         setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 6000);
       } else {
-        setMsg(d.erro || 'Erro ao criar membro.', false);
+        const errMsg = d.erro || d.message || `Erro HTTP ${r.status}`;
+        setMsg(errMsg, false);
       }
     } catch (e) {
-      console.error('Adicionar:', e); setMsg('Erro de ligação.', false);
+      console.error('Adicionar trabalhador:', e);
+      setMsg('Erro de ligação ao servidor.', false);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Adicionar membro'; }
     }
@@ -802,7 +948,7 @@
   }
 
   /* ════════════════════════════════════════════════════════════
-     MODAL DETALHES DE SENHA (admin)
+     MODAL DETALHES DE SENHA
   ════════════════════════════════════════════════════════════ */
   let _dadosModalAdmin = null;
 
@@ -834,7 +980,6 @@
       document.getElementById('mda-duracao').textContent   =
         s.tempo_atendimento_minutos ? `${s.tempo_atendimento_minutos} min` : '–';
 
-      /* Nota de avaliação */
       const notaEl = document.getElementById('mda-nota');
       if (notaEl) notaEl.textContent = s.avaliacao_nota
         ? `${'⭐'.repeat(s.avaliacao_nota)} (${s.avaliacao_nota}/5)`
@@ -941,11 +1086,9 @@
     const nPri = senhas.filter(s=>s.tipo==='prioritaria').length;
     const linhas = senhas.map(s => `<tr>
       <td>${s.numero}${s.tipo==='prioritaria'?' ★':''}</td>
-      <td>${s.servico?.nome||'–'}</td>
-      <td>${s.atendente?.nome||'–'}</td>
+      <td>${s.servico?.nome||'–'}</td><td>${s.atendente?.nome||'–'}</td>
       <td style="font-size:.78rem">${fmtH(s.atendimento_concluido_em||s.emitida_em)}</td>
-      <td>${s.tempo_espera_minutos||'–'}</td>
-      <td>${s.tempo_atendimento_minutos||'–'}</td>
+      <td>${s.tempo_espera_minutos||'–'}</td><td>${s.tempo_atendimento_minutos||'–'}</td>
       <td>${s.avaliacao_nota?'★'.repeat(s.avaliacao_nota):'—'}</td>
     </tr>`).join('');
     const html = `<html><head><meta charset="UTF-8"><title>Relatório IMTSB</title>
@@ -983,11 +1126,22 @@
   function iniciarPolling() {
     pararPolling();
     pollingInterval = setInterval(async () => {
-      await atualizarKPIs(); await atualizarFilas();
-    }, 15000);
+      if (_pollingBusy) return;
+      _pollingBusy = true;
+      const t0 = Date.now();
+      try {
+        await atualizarKPIs();
+        await atualizarFilas();
+      } finally {
+        const dt = Date.now() - t0;
+        if (dt > 3000) console.info(`[dashadm][polling] ciclo lento: ${dt}ms`);
+        _pollingBusy = false;
+      }
+    }, 10000);
   }
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    _pollingBusy = false;
   }
 
   function configurarBotoes() {

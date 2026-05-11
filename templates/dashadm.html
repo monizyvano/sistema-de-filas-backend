@@ -260,8 +260,50 @@
             <!-- 🏆 TRABALHADOR DO MÊS ────────────────────── -->
             <div class="trabmes-section">
                 <div class="trabmes-header">
-                    <h3>🏆 Trabalhador do Dia</h3>
+                    <h3 id="trabMesTitulo">🏆 Trabalhador do Dia</h3>
                     <span class="trabmes-badge">Calculado automaticamente</span>
+                </div>
+
+                <div style="display:flex;gap:.45rem;align-items:center;margin-bottom:.8rem;flex-wrap:wrap;">
+
+                    <button
+                        class="periodo-metricas-btn"
+                        data-periodo="hoje"
+                        onclick="mudarPeriodoMetricas('hoje')"
+                        style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                            background:#6b4226;color:white;font-weight:700;
+                            cursor:pointer;font-size:.82rem;">
+                        Hoje
+                    </button>
+
+                    <button
+                        class="periodo-metricas-btn"
+                        data-periodo="semana"
+                        onclick="mudarPeriodoMetricas('semana')"
+                        style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                            background:white;color:#6b4226;font-weight:600;
+                            cursor:pointer;font-size:.82rem;">
+                        Semana
+                    </button>
+
+                    <button
+                        class="periodo-metricas-btn"
+                        data-periodo="mes"
+                        onclick="mudarPeriodoMetricas('mes')"
+                        style="padding:.4rem .9rem;border-radius:8px;border:1px solid #d9cabc;
+                            background:white;color:#6b4226;font-weight:600;
+                            cursor:pointer;font-size:.82rem;">
+                        Mês
+                    </button>
+
+                    <button
+                        onclick="refreshMetricas()"
+                        title="Actualizar métricas"
+                        style="padding:.4rem .75rem;border-radius:8px;border:1px solid #d9cabc;
+                            background:white;color:#6b4226;font-size:1rem;cursor:pointer;">
+                        ↻
+                    </button>
+
                 </div>
                 <!-- preenchido por dashadm.js → renderTrabalhadorMes() -->
                 <div id="trabalhadorMesCard">
