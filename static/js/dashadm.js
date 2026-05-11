@@ -25,7 +25,7 @@
  *
  *   FIX-D6  adicionarTrabalhador() — endpoint correcto
  *           /api/atendentes/ com mapa de servico_id.
- *
+ 
  * REGRA IMPLEMENTADA:
  *   O frontend RENDERIZA. O backend DECIDE.
  *   Nunca mais: taxa_conclusao = 100 quando vale 0.
@@ -41,6 +41,7 @@
   let pieChart         = null;
   let lineChart        = null;
   let barChart         = null;
+  let _chartsBusy      = false;
   let pollingInterval  = null;
   let _pollingBusy     = false;
   let periodoActivo    = 'semana';
@@ -80,6 +81,7 @@
     });
 
     atualizarHeader();
+    _iniciarListenerAccoes();
     await carregarDashboard();
     configurarBotoes();
     iniciarPolling();
@@ -183,14 +185,22 @@
   /* ════════════════════════════════════════════════════════════
      GRÁFICOS
   ════════════════════════════════════════════════════════════ */
-  async function criarGraficos() {
-    try {
+async function criarGraficos() {
+  console.log('[PR-6][charts] criarGraficos iniciou', Date.now());
+  // evita redraw simultâneo do Chart.js
+  if (_chartsBusy) return;
+
+  _chartsBusy = true;
+
+  try {
       const r = await fetch(`${BASE()}/senhas/estatisticas`);
       if (!r.ok) return;
       const s = await r.json();
       const pieCtx = document.getElementById('pieChart');
       if (pieCtx) {
-        if (pieChart) pieChart.destroy();
+        if (pieChart && typeof pieChart.destroy === 'function') {
+            pieChart.destroy();
+          } 
         pieChart = new Chart(pieCtx, {
           type: 'doughnut',
           data: {
@@ -203,8 +213,19 @@
         });
       }
       await atualizarLineChart(periodoActivo);
-    } catch (e) { console.error('Gráficos:', e); }
-  }
+    } catch (e) {
+
+      console.error('Gráficos:', e);
+
+    } finally {
+
+      // pequeno delay para o canvas estabilizar
+      setTimeout(() => {
+        _chartsBusy = false;
+      }, 250);
+
+}
+}
 
   window.changeChartPeriod = async function(periodo) {
     periodoActivo = periodo;
@@ -220,7 +241,9 @@
       const r = await api(`/dashboard/admin/fluxo?periodo=${periodo}`);
       if (!r.ok) return;
       const d = await r.json();
-      if (lineChart) lineChart.destroy();
+      if (lineChart && typeof lineChart.destroy === 'function') {
+        lineChart.destroy();
+      }
       lineChart = new Chart(ctx, {
         type:'line',
         data:{ labels:d.labels, datasets:[{
@@ -246,7 +269,9 @@
       const { servicos: sv } = await r.json();
       if (!sv?.length) return;
       const labels  = sv.map(s => s.nome.length>14 ? s.nome.slice(0,14)+'…' : s.nome);
-      if (barChart) barChart.destroy();
+      if (barChart && typeof barChart.destroy === 'function') {
+          barChart.destroy();
+        }
       barChart = new Chart(ctx, {
         type:'bar',
         data:{ labels, datasets:[
@@ -1119,6 +1144,82 @@ window.refreshMetricas = async function () {
     if (!w) { showToast('Permita popups.','error'); return; }
     w.document.write(html); w.document.close();
   };
+// PR-6: refresh admin dirigido por eventos críticos
+async function _refreshAdminPosAccao() {
+
+  await Promise.allSettled([
+
+    // KPIs principais
+    atualizarKPIs?.(),
+
+    // filas/snapshot
+    atualizarFilas?.(),
+
+    // produtividade/ranking
+    carregarTrabalhadores?.(),
+
+    // histórico recente
+    atualizarHistorico?.(1),
+
+    // gráficos dependentes de estatísticas
+    criarGraficos?.(),
+
+    // métricas por serviço
+    atualizarTempoPorServico?.()
+
+  ]);
+  // gráficos por último
+  setTimeout(() => {
+    criarGraficos?.().catch(() => {});
+  }, 180);
+
+}
+
+  // PR-6: refresh cross-tab vindo do dashboard worker
+let _refreshAdminBusy   = false;
+let _refreshAdminQueued = false;
+
+function _iniciarListenerAccoes() {
+
+  window.addEventListener('storage', function (e) {
+
+    if (e.key !== 'imtsb_accao') return;
+
+    console.log('[PR-6][storage]', e.newValue);
+    // evita overlap destrutivo
+      if (_refreshAdminBusy) {
+        _refreshAdminQueued = true;
+        return;
+      }
+
+    _refreshAdminBusy = true;
+
+    Promise.allSettled([
+
+      _refreshAdminPosAccao()
+    ]).finally(() => {
+
+      // pequeno throttle
+      setTimeout(() => {
+
+        _refreshAdminBusy = false;
+
+        // executa refresh perdido
+        if (_refreshAdminQueued) {
+
+          _refreshAdminQueued = false;
+
+          _refreshAdminPosAccao().catch(() => {});
+
+        }
+
+      }, 300);
+
+    });
+
+  });
+
+}
 
   /* ════════════════════════════════════════════════════════════
      POLLING + UTILITÁRIOS

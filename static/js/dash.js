@@ -42,6 +42,8 @@
   let pollingInterval  = null;
   let timerSegundos    = 0;
   let _servicosCache   = [];
+  let _refreshBusy = false;
+  let _refreshQueued = false;
 
   /* ── Formatadores ────────────────────────────────────────── */
   function nowKeyLuanda() {
@@ -109,6 +111,52 @@
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
   }
+// PR-6: refresh imediato pós-acção crítica
+async function _refreshPosAccao(label) {
+
+  // evita overlap destrutivo
+  if (_refreshBusy) {
+    _refreshQueued = true;
+    return;
+  }
+
+  _refreshBusy = true;
+
+  try {
+
+    // reutiliza loaders já existentes
+    await atualizarTudo();
+
+    // sinal cross-tab para dashboards/admin
+    try {
+
+      const payload = JSON.stringify({
+        tipo: label,
+        ts: Date.now()
+      });
+
+      // evita spam idêntico
+      if (localStorage.getItem('imtsb_accao') !== payload) {
+        localStorage.setItem('imtsb_accao', payload);
+      }
+
+    } catch (_) {}
+
+  } finally {
+
+    _refreshBusy = false;
+
+    // se houve refresh perdido durante busy
+    if (_refreshQueued) {
+
+      _refreshQueued = false;
+
+      setTimeout(() => {
+        _refreshPosAccao('queued');
+      }, 150);
+    }
+  }
+}
 
   /* ── Actualizar tudo ─────────────────────────────────────── */
   async function atualizarTudo() {
@@ -349,7 +397,8 @@
       atualizarDisplayAtual(senhaAtual);
       actualizarBotoes();
       iniciarTimer();
-      await atualizarTudo();
+
+      await _refreshPosAccao('chamada');
 
       N && N.onCall(senhaAtual.numero, balcao);
 
@@ -381,7 +430,7 @@
       }
       const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
-      await atualizarTudo();
+      await _refreshPosAccao('conclusao');
 
       N && N.onConclude(numSenha);
 
@@ -417,7 +466,7 @@
       }
       const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
-      await atualizarTudo();
+      await _refreshPosAccao('negacao');
 
       N && N.onDeny(numSenha);
 
@@ -530,7 +579,7 @@
       const numSenha = senhaAtual?.numero || senhaId;
       fecharModalRedir();
       limparAtendimentoAtual();
-      await atualizarTudo();
+      await _refreshPosAccao('redirecionamento');
 
       N && N.onRedirect(numSenha, nomeDestino);
 
@@ -548,7 +597,7 @@
   };
 
   /* ── PAUSA ───────────────────────────────────────────────── */
-  window.togglePause = function () {
+  window.togglePause = async function () {
     const btn = document.getElementById("pauseBtn");
     if (!btn) return;
     const estaPausado = btn.dataset.pausado === "1";
@@ -562,6 +611,7 @@
       setStatus("Pausado", "#d97706");
 
       N && N.notify('pause', 'Atendimento pausado. Clique em "Retomar" para continuar.', 4000);
+      await _refreshPosAccao('pausa');
     } else {
       btn.dataset.pausado = "";
       btn.textContent = "⏸ Pausar";
@@ -578,6 +628,8 @@
       setStatus(senhaAtual ? "Em Atendimento" : "Disponível", senhaAtual ? "#d97706" : "#10b981");
 
       N && N.notify('resume', 'Atendimento retomado.', 2500);
+
+      await _refreshPosAccao('retoma');
     }
   };
 
