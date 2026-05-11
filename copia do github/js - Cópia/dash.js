@@ -403,9 +403,6 @@ function showStatistics() {
 }
 
 function sair() {
-  if (currentSession && currentSession.role === 'trabalhador' && typeof window.IMTSBStore.endWorkSession === 'function') {
-    window.IMTSBStore.endWorkSession(currentSession.name);
-  }
   window.IMTSBStore.logout();
 }
 
@@ -424,10 +421,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (wa) {
     const parts = currentSession.name.split(' ').filter(Boolean).slice(0, 2);
     wa.textContent = parts.map((p) => p[0].toUpperCase()).join('');
-  }
-
-  if (currentSession.role === 'trabalhador' && typeof window.IMTSBStore.startWorkSession === 'function') {
-    window.IMTSBStore.startWorkSession(currentSession.name, currentSession.department);
   }
 
   window.IMTSBStore.onChange(() => {

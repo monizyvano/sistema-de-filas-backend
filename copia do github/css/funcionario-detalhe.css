@@ -1,0 +1,141 @@
+:root {
+    --primary-brown: #8C6746;
+    --primary-brown-dark: #401903;
+    --accent-beige: #BFA799;
+    --accent-bordeaux: #260505;
+    --success-green: #10B981;
+    --bg-gradient: linear-gradient(135deg, #F8F5F0 0%, #EEE8E0 50%, #E8DFD4 100%);
+    --glass-bg: rgba(255, 255, 255, 0.84);
+    --shadow-soft: 0 10px 30px rgba(64, 25, 3, 0.08);
+    --text-dark: #401903;
+    --text-muted: #7a5b42;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    min-height: 100vh;
+    background: var(--bg-gradient);
+    color: var(--text-dark);
+    font-family: Arial, sans-serif;
+}
+
+.detail-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.detail-header,
+.detail-card,
+.summary-item {
+    background: var(--glass-bg);
+    border-radius: 22px;
+    box-shadow: var(--shadow-soft);
+}
+
+.detail-header {
+    padding: 2rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.detail-kicker {
+    text-transform: uppercase;
+    letter-spacing: .12rem;
+    color: var(--text-muted);
+    font-size: .78rem;
+    margin-bottom: .5rem;
+}
+
+.detail-header h1 {
+    font-size: 2rem;
+    margin-bottom: .5rem;
+}
+
+.back-btn {
+    border: none;
+    border-radius: 12px;
+    padding: .9rem 1.2rem;
+    background: var(--primary-brown);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-item {
+    padding: 1.2rem;
+}
+
+.summary-label {
+    color: var(--text-muted);
+    font-size: .85rem;
+    margin-bottom: .4rem;
+}
+
+.summary-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.detail-card {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: end;
+    margin-bottom: 1rem;
+}
+
+.detail-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.detail-table th,
+.detail-table td {
+    text-align: left;
+    padding: .95rem;
+    border-bottom: 1px solid #e7ddd4;
+}
+
+.detail-table th {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: .78rem;
+}
+
+@media (max-width: 768px) {
+    .detail-page {
+        padding: 1rem;
+    }
+
+    .detail-header,
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .detail-table {
+        display: block;
+        overflow-x: auto;
+    }
+}

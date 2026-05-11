@@ -62,24 +62,6 @@ body {
   font-weight: 700;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.btn-screen {
-  background: #fff;
-  color: var(--primary-brown-dark);
-  padding: 0.62rem 1rem;
-  border: 1px solid rgba(64, 25, 3, 0.24);
-  border-radius: 12px;
-  text-decoration: none;
-  font-weight: 700;
-}
-
 .main-content {
   padding: 2.2rem 1.8rem 2.8rem;
   max-width: 1220px;
@@ -350,15 +332,6 @@ body.reveal-ready .reveal-item.is-visible {
 }
 
 @media (max-width: 900px) {
-  .header-top {
-    flex-wrap: wrap;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: center;
-  }
-
   .cards-grid,
   .footer-grid {
     grid-template-columns: 1fr;
