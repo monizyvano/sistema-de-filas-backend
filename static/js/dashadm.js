@@ -44,6 +44,7 @@
   let pollingInterval  = null;
   let _pollingBusy     = false;
   let periodoActivo    = 'semana';
+  let periodoMetricas  = 'hoje';
   let _todosTrabalhadores = [];
   let _filtroNome        = '';
 
@@ -285,7 +286,7 @@
 
     // Tentar endpoint principal de métricas
     try {
-      const r = await api('/admin/atendentes/metrics?periodo=hoje');
+      const r = await api(`/admin/atendentes/metrics?periodo=${periodoMetricas}`);
       if (r.ok) {
         lista  = await r.json();
         fonte  = 'admin/metrics';
@@ -295,7 +296,7 @@
     // Fallback para endpoint de atendentes
     if (!lista) {
       try {
-        const r2 = await api('/atendentes/?periodo=hoje');
+        const r2 = await api(`/atendentes/?periodo=${periodoMetricas}`);
         if (r2.ok) {
           lista = await r2.json();
           fonte = 'atendentes';
@@ -429,6 +430,17 @@
      FIX-D4: renderTrabalhadorMes — só dados reais
   ───────────────────────────────────────────────────────── */
   function renderTrabalhadorMes(lista) {
+    const TITULO_PERIODO = {
+      hoje: '🏆 Trabalhador do Dia',
+      semana: '🏆 Trabalhador da Semana',
+      mes: '🏆 Trabalhador do Mês'
+    };
+
+    const PODIO_PERIODO = {
+      hoje: 'hoje',
+      semana: 'esta semana',
+      mes: 'este mês'
+    };
     const container = document.getElementById('trabalhadorMesCard');
     if (!container) return;
 
@@ -483,7 +495,7 @@
             <span style="font-size:1.25rem;font-weight:800;color:#3e2510;">${top.nome}</span>
             <span style="background:rgba(196,161,100,.2);color:#6b4226;
                          padding:.2rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700;">
-              🏆 Trabalhador do Dia
+              ${TITULO_PERIODO[periodoMetricas] || '🏆 Trabalhador do Dia'}
             </span>
           </div>
           <div style="font-size:.85rem;color:#8c6746;margin-top:.25rem;">
@@ -503,7 +515,7 @@
         <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #f0e8dc;">
           <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;
                       letter-spacing:.08em;color:#8c6746;margin-bottom:.5rem;">
-            Pódio do dia (apenas com atendimentos reais)
+            Pódio — ${PODIO_PERIODO[periodoMetricas] || 'hoje'} (apenas dados reais)
           </div>
           <div style="display:flex;flex-direction:column;gap:.4rem;">
             ${candidatos.slice(0,3).map((c,i) => `
@@ -527,6 +539,39 @@
     renderProdutividade(_todosTrabalhadores);
   };
 
+ /* ── muda período  ──────────────────────────────────────────── */
+  window.mudarPeriodoMetricas = async function(periodo) {
+  periodoMetricas = periodo;
+
+  document.querySelectorAll('.periodo-metricas-btn').forEach(b => {
+    const activo = b.dataset.periodo === periodo;
+
+    b.style.background = activo ? '#6b4226' : 'white';
+    b.style.color      = activo ? 'white' : '#6b4226';
+    b.style.fontWeight = activo ? '700' : '600';
+  });
+
+  const h3 = document.getElementById('trabMesTitulo');
+
+  const TITULOS = {
+    hoje: '🏆 Trabalhador do Dia',
+    semana: '🏆 Trabalhador da Semana',
+    mes: '🏆 Trabalhador do Mês'
+  };
+
+  if (h3) {
+    h3.textContent = TITULOS[periodo] || '🏆 Trabalhador do Dia';
+  }
+
+  await carregarTrabalhadores();
+};
+
+
+window.refreshMetricas = async function () {
+  if (_pollingBusy) return;
+
+  await carregarTrabalhadores();
+};
   /* ── Gestão de membros (tabela simples) ────────────────── */
   function renderGestaoMembros(lista) {
     const body = document.getElementById('workersBody');
