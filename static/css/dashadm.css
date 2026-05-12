@@ -462,7 +462,7 @@
         }
         /* (o teu dashadm.css original aqui em cima...) */
 
-/* Botão Sair (Admin) */
+/* Botï¿½o Sair (Admin) */
 .logout-btn{
     background: rgba(78, 41, 8, 0.73);
     border: 1px solid rgba(64,25,3,.25);
@@ -505,6 +505,21 @@
     background: #fee2e2;
 }
 
+/* PR-9 realtime highlight */
+.history-row-new {
+  animation: historyHighlightFade 2.2s ease;
+}
+
+@keyframes historyHighlightFade {
+
+  0% {
+    background: rgba(34,197,94,.18);
+  }
+
+  100% {
+    background: transparent;
+  }
+}
 
 
 

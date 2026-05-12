@@ -44,12 +44,42 @@
   let _chartsBusy      = false;
   let pollingInterval  = null;
   let _pollingBusy     = false;
+
+  // PR-11: advanced polling state
+  let _pollingFailures       = 0;
+  let _pollingBackoffMs      = 10000;
+  let _pollingPaused         = false;
+  let _lastSuccessfulPoll    = 0;
+  let _lastPollRequestTs     = 0;
+  let _adaptivePollingMode   = 'normal';
+  let _pollingTickHandle     = null;
+
+  // PR-8: pipeline única anti-race-condition
+  let _currentRefreshVersion = 0;
+  let _isRefreshBusy         = false;
+  let _isRefreshQueued       = false;
+  let _lastSyncTimestamp     = 0;
   let periodoActivo    = 'semana';
   let periodoMetricas  = 'hoje';
   let _todosTrabalhadores = [];
   let _filtroNome        = '';
 
-  const historicoState = { page:1, perPage:15, total:0, totalPages:1 };
+  const historicoState = {
+    page: 1,
+    perPage: 15,
+    total: 0,
+    totalPages: 1,
+
+    // PR-9
+    lastRenderHash: null,
+    lastSnapshot: [],
+    isRendering: false,
+    isPaginating: false,
+    pendingPage: null,
+
+    knownIds: new Set(),
+    lastUpdateTs: 0
+  };
 
   /* ── Helper de base URL ────────────────────────────────── */
   const BASE = () => (window.IMTSBApiConfig?.baseUrl || '/api');
@@ -82,7 +112,8 @@
 
     atualizarHeader();
     _iniciarListenerAccoes();
-    await carregarDashboard();
+    _iniciarListenersResiliencia();
+    await _refreshDashboardAdmin('init');
     configurarBotoes();
     iniciarPolling();
   });
@@ -91,15 +122,8 @@
      CARREGAR DASHBOARD COMPLETO
   ════════════════════════════════════════════════════════════ */
   async function carregarDashboard() {
-    await Promise.all([
-      atualizarKPIs(),
-      atualizarFilas(),
-      carregarTrabalhadores(),
-      atualizarHistorico(1),
-      criarGraficos(),
-      atualizarTempoPorServico()
-    ]);
-  }
+  return _refreshDashboardAdmin('legacy_loader');
+}
 
   /* ════════════════════════════════════════════════════════════
      KPIs
@@ -731,9 +755,154 @@ window.refreshMetricas = async function () {
     historicoState.page = 1;
     atualizarHistorico(1);
   };
+function _gerarLinhaHistoricoHTML(s, isNovo = false) {
+
+  const servico =
+    s.servico?.nome || 'Serviço';
+
+  const atendente =
+    s.atendente?.nome || '–';
+
+  const duracao =
+    s.tempo_atendimento_minutos || 0;
+
+  const espera =
+    s.tempo_espera_minutos || 0;
+
+  const dataHora = s.atendimento_concluido_em
+    ? new Date(
+        (
+          s.atendimento_concluido_em.endsWith('Z')
+            ? s.atendimento_concluido_em
+            : s.atendimento_concluido_em + 'Z'
+        )
+      ).toLocaleString('pt-PT', {
+        timeZone: 'Africa/Luanda',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : '--';
+
+  const tipoBadge = s.tipo === 'prioritaria'
+    ? `
+      <span
+        style="
+          background:rgba(245,158,11,.15);
+          color:#92400e;
+          padding:2px 8px;
+          border-radius:20px;
+          font-size:.75rem;
+          font-weight:700;
+        "
+      >
+        ★ Prior.
+      </span>
+    `
+    : `
+      <span
+        style="
+          background:rgba(107,66,38,.1);
+          color:#6b4226;
+          padding:2px 8px;
+          border-radius:20px;
+          font-size:.75rem;
+        "
+      >
+        Normal
+      </span>
+    `;
+
+  const notaHtml = s.avaliacao_nota
+    ? `${'⭐'.repeat(s.avaliacao_nota)}
+       <small style="font-size:.72rem;">
+         (${s.avaliacao_nota})
+       </small>`
+    : '<span style="color:#d1d5db;">—</span>';
+
+  return `
+    <tr
+      class="${isNovo ? 'history-row-new' : ''}"
+      data-history-id="${s.id}"
+      data-history-hash="${JSON.stringify({
+        id: s.id,
+        nota: s.avaliacao_nota,
+        status: s.status,
+        updated: s.atendimento_concluido_em
+      })}"
+    >
+
+      <td>
+        <strong>${s.numero}</strong>
+        ${tipoBadge}
+      </td>
+
+      <td>${servico}</td>
+
+      <td>${atendente}</td>
+
+      <td style="font-size:.8rem;">
+        ${dataHora}
+      </td>
+
+      <td>
+        ${espera ? espera + 'min' : '–'}
+      </td>
+
+      <td>${duracao}min</td>
+
+      <td>
+        <div
+          style="
+            display:flex;
+            align-items:center;
+            gap:.4rem;
+            flex-wrap:wrap;
+          "
+        >
+
+          <span class="performance-badge badge-excellent">
+            ✓ Concluído
+          </span>
+
+          <span style="font-size:.8rem;">
+            ${notaHtml}
+          </span>
+
+          <button
+            onclick="verDetalhesSenha(${s.id},'${s.numero}','${servico}')"
+            style="
+              background:#f0e8dc;
+              border:none;
+              border-radius:8px;
+              padding:.25rem .6rem;
+              font-size:.78rem;
+              font-weight:700;
+              color:#6b4226;
+              cursor:pointer;
+            "
+          >
+            👁 Ver
+          </button>
+
+        </div>
+      </td>
+
+    </tr>
+  `;
+}
 
   async function atualizarHistorico(page) {
     try {
+      // PR-9: evita overlap visual
+      if (historicoState.isRendering) {
+        return;
+      }
+
+      historicoState.isRendering = true;
+
       const pg = page || historicoState.page;
       const pp = historicoState.perPage;
       const { de, ate } = _calcularIntervalo(_filtroActivo);
@@ -753,6 +922,37 @@ window.refreshMetricas = async function () {
       if (!body) return;
 
       const senhas = data.senhas || [];
+
+      // PR-9: detecta entradas novas
+      const novosIds = [];
+
+      senhas.forEach(s => {
+
+        if (!historicoState.knownIds.has(s.id)) {
+          novosIds.push(s.id);
+        }
+
+      });
+
+      // PR-9: snapshot visual
+      const renderHash = JSON.stringify(
+        senhas.map(s => ({
+          id: s.id,
+          status: s.status,
+          updated: s.atendimento_concluido_em
+        }))
+      );
+
+      // evita redraw idêntico
+      if (
+        historicoState.lastRenderHash === renderHash &&
+        historicoState.page === pg
+      ) {
+        return;
+      }
+
+      historicoState.lastRenderHash = renderHash;
+      historicoState.lastSnapshot = senhas;
       if (!senhas.length && pg === 1) {
         body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">Sem atendimentos no período</td></tr>';
         renderNavegacao(); return;
@@ -763,50 +963,177 @@ window.refreshMetricas = async function () {
             .toLocaleString('pt-PT', { timeZone:'Africa/Luanda',
               day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit' })
         : '--';
+      const scrollTop = body.scrollTop;
 
-      body.innerHTML = senhas.map(s => {
-        const servico   = s.servico?.nome   || 'Serviço';
-        const atendente = s.atendente?.nome || '–';
-        const duracao   = s.tempo_atendimento_minutos || 0;
-        const espera    = s.tempo_espera_minutos      || 0;
-        const dataHora  = fmtTs(s.atendimento_concluido_em || s.emitida_em);
-        const tipoBadge = s.tipo === 'prioritaria'
-          ? '<span style="background:rgba(245,158,11,.15);color:#92400e;padding:2px 8px;border-radius:20px;font-size:.75rem;font-weight:700;">★ Prior.</span>'
-          : '<span style="background:rgba(107,66,38,.1);color:#6b4226;padding:2px 8px;border-radius:20px;font-size:.75rem;">Normal</span>';
-        const notaHtml = s.avaliacao_nota
-          ? `${'⭐'.repeat(s.avaliacao_nota)}<small style="font-size:.72rem;"> (${s.avaliacao_nota})</small>`
-          : '<span style="color:#d1d5db;">—</span>';
-        return `<tr>
-          <td><strong>${s.numero}</strong> ${tipoBadge}</td>
-          <td>${servico}</td>
-          <td>${atendente}</td>
-          <td style="font-size:.8rem;">${dataHora}</td>
-          <td>${espera ? espera+'min' : '–'}</td>
-          <td>${duracao}min</td>
-          <td>
-            <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
-              <span class="performance-badge badge-excellent">✓ Concluído</span>
-              <span style="font-size:.8rem;">${notaHtml}</span>
-              <button onclick="verDetalhesSenha(${s.id},'${s.numero}','${servico}')"
-                style="background:#f0e8dc;border:none;border-radius:8px;padding:.25rem .6rem;
-                       font-size:.78rem;font-weight:700;color:#6b4226;cursor:pointer;">👁 Ver</button>
-            </div>
-          </td>
-        </tr>`;
-      }).join('');
+      const existentes = new Map();
+
+      body.querySelectorAll('tr[data-history-id]')
+        .forEach(tr => {
+
+          existentes.set(
+            tr.dataset.historyId,
+            tr
+          );
+
+        });
+
+      // render incremental
+      senhas.forEach(s => {
+
+        const isNovo =
+          novosIds.includes(s.id);
+
+        const hash = JSON.stringify({
+          id: s.id,
+          nota: s.avaliacao_nota,
+          status: s.status,
+          updated: s.atendimento_concluido_em
+        });
+
+        const existente =
+          existentes.get(String(s.id));
+
+        // linha nova
+        if (!existente) {
+
+          body.insertAdjacentHTML(
+            'beforeend',
+            _gerarLinhaHistoricoHTML(s, isNovo)
+          );
+
+          return;
+        }
+
+        // sem alterações
+        if (
+          existente.dataset.historyHash === hash
+        ) {
+          return;
+        }
+
+        // update incremental
+        existente.outerHTML =
+          _gerarLinhaHistoricoHTML(s, isNovo);
+
+      });
+
+      // remove linhas antigas
+      body.querySelectorAll('tr[data-history-id]')
+        .forEach(tr => {
+
+          const id = Number(
+            tr.dataset.historyId
+          );
+
+          const aindaExiste =
+            senhas.some(s => s.id === id);
+
+          if (!aindaExiste) {
+            tr.remove();
+          }
+
+        });
+
+      body.scrollTop = scrollTop; 
+
+      // PR-9: snapshot realtime
+      senhas.forEach(s => {
+        historicoState.knownIds.add(s.id);
+      });
+
+      historicoState.lastUpdateTs = Date.now();
 
       renderNavegacao();
-    } catch (e) { console.error('Histórico:', e); }
+    } catch (e) {
+    console.error('Histórico:', e);
+  } finally {
+    historicoState.isRendering = false;
   }
 
+  }
+async function navegarHistorico(page) {
+
+  // evita overlap
+  if (historicoState.isPaginating) {
+    return;
+  }
+
+  // página inválida
+  if (
+    page < 1 ||
+    page > historicoState.totalPages
+  ) {
+    return;
+  }
+
+  historicoState.isPaginating = true;
+  historicoState.pendingPage = page;
+
+  try {
+
+    const prevBtn = document.getElementById('historyPrevBtn');
+    const nextBtn = document.getElementById('historyNextBtn');
+
+    // loading visual
+    if (prevBtn) {
+      prevBtn.disabled = true;
+      prevBtn.style.opacity = '.6';
+    }
+
+    if (nextBtn) {
+      nextBtn.disabled = true;
+      nextBtn.style.opacity = '.6';
+    }
+
+    await atualizarHistorico(page);
+
+  } finally {
+
+    historicoState.isPaginating = false;
+    historicoState.pendingPage = null;
+
+    renderNavegacao();
+
+  }
+}
   function renderNavegacao() {
     const bA = document.getElementById('historyPrevBtn');
     const bP = document.getElementById('historyNextBtn');
     const pi = document.getElementById('historyPageInfo');
     const { page, totalPages, total } = historicoState;
-    if (bA) { bA.disabled = page<=1;          bA.onclick = () => atualizarHistorico(page-1); }
-    if (bP) { bP.disabled = page>=totalPages; bP.onclick = () => atualizarHistorico(page+1); }
-    if (pi) pi.textContent = `Página ${page} de ${totalPages} · ${total} registos`;
+    if (bA) {
+
+      bA.disabled =
+        page <= 1 ||
+        historicoState.isPaginating;
+
+      bA.style.opacity =
+        bA.disabled ? '.6' : '1';
+
+      bA.onclick = () => navegarHistorico(page - 1);
+    }
+
+    if (bP) {
+
+      bP.disabled =
+        page >= totalPages ||
+        historicoState.isPaginating;
+
+      bP.style.opacity =
+        bP.disabled ? '.6' : '1';
+
+      bP.onclick = () => navegarHistorico(page + 1);
+    }
+    if (pi) {
+
+    const loading =
+      historicoState.isPaginating
+        ? ' · A carregar...'
+        : '';
+
+    pi.textContent =
+      `Página ${page} de ${totalPages} · ${total} registos${loading}`;
+  }
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -977,58 +1304,194 @@ window.refreshMetricas = async function () {
   ════════════════════════════════════════════════════════════ */
   let _dadosModalAdmin = null;
 
+  // PR-9: modal hardening
+  let _modalDetalhesCache = new Map();
+  let _modalRequestVersion = 0;
+  let _modalLoading = false;
+  let _modalCurrentId = null;
+function _renderModalDetalhesAdmin(s, numero, servico) {
+
+  const horaStr = s.emitida_em
+    ? new Date(
+        s.emitida_em.endsWith('Z')
+          ? s.emitida_em
+          : s.emitida_em + 'Z'
+      ).toLocaleTimeString('pt-PT', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Africa/Luanda'
+      })
+    : '–';
+
+  document.getElementById('mda-atendente').textContent =
+    s.atendente?.nome || '–';
+
+  document.getElementById('mda-hora').textContent =
+    horaStr;
+
+  document.getElementById('mda-duracao').textContent =
+    s.tempo_atendimento_minutos
+      ? `${s.tempo_atendimento_minutos} min`
+      : '–';
+
+  const notaEl = document.getElementById('mda-nota');
+
+  if (notaEl) {
+    notaEl.textContent = s.avaliacao_nota
+      ? `${'⭐'.repeat(s.avaliacao_nota)} (${s.avaliacao_nota}/5)`
+      : 'Sem avaliação';
+  }
+
+  const obs = s.observacoes || '';
+
+  const partes = obs
+    .split(' | ')
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  const nomeFich = partes
+    .find(p => p.startsWith('FICHEIRO:'))
+    ?.replace('FICHEIRO:', '')
+    .trim() || null;
+
+  const linhasForm = partes
+    .filter(p => !p.startsWith('FICHEIRO:'))
+    .join('\n');
+
+  document.getElementById('mda-form').textContent =
+    linhasForm || 'Sem dados de formulário.';
+
+  if (nomeFich) {
+
+    const url = `/api/senhas/${s.id}/ficheiro`;
+
+    document.getElementById('mda-fich-nome').textContent =
+      `📎 ${nomeFich.split('_').slice(2).join('_') || nomeFich}`;
+
+    document.getElementById('mda-btn-dl').href = url;
+
+    document.getElementById('mda-btn-vis').onclick = () =>
+      window.open(url, '_blank', 'noopener,noreferrer');
+
+    document.getElementById('mda-fich-bloco').style.display =
+      'block';
+
+    document.getElementById('mda-sem-fich').style.display =
+      'none';
+
+  } else {
+
+    document.getElementById('mda-fich-bloco').style.display =
+      'none';
+
+    document.getElementById('mda-sem-fich').style.display =
+      'block';
+  }
+}
+
   window.verDetalhesSenha = async function(id, numero, servico) {
+
     const modal = document.getElementById('modalDetalhesAdmin');
+
     if (!modal) return;
-    document.getElementById('mda-titulo').textContent  = `Senha ${numero} · ${servico}`;
-    document.getElementById('mda-form').textContent    = 'A carregar…';
-    document.getElementById('mda-servico').textContent = servico;
-    ['mda-atendente','mda-hora','mda-duracao'].forEach(i => {
-      const el = document.getElementById(i); if (el) el.textContent = '–';
-    });
-    document.getElementById('mda-fich-bloco').style.display = 'none';
-    document.getElementById('mda-sem-fich').style.display   = 'block';
+
+    // evita reopen redundante
+    if (
+      _modalLoading &&
+      _modalCurrentId === id
+    ) {
+      return;
+    }
+
+    _modalCurrentId = id;
+
+    const version = ++_modalRequestVersion;
+
+    document.getElementById('mda-titulo').textContent =
+      `Senha ${numero} · ${servico}`;
+
+    document.getElementById('mda-form').textContent =
+      'A carregar detalhes…';
+
+    document.getElementById('mda-servico').textContent =
+      servico;
+
+    ['mda-atendente','mda-hora','mda-duracao']
+      .forEach(i => {
+
+        const el = document.getElementById(i);
+
+        if (el) {
+          el.textContent = '–';
+        }
+
+      });
+
     modal.style.display = 'flex';
 
+    // PR-9: cache instantâneo
+    if (_modalDetalhesCache.has(id)) {
+
+      const cached =
+        _modalDetalhesCache.get(id);
+
+      _dadosModalAdmin = cached;
+
+      _renderModalDetalhesAdmin(
+        cached,
+        numero,
+        servico
+      );
+
+      return;
+    }
+
+    _modalLoading = true;
+
     try {
+
       const r = await api(`/senhas/${id}`);
-      if (!r.ok) { document.getElementById('mda-form').textContent = 'Erro ao carregar.'; return; }
-      const s = _dadosModalAdmin = await r.json();
 
-      const horaStr = s.emitida_em
-        ? new Date(s.emitida_em.endsWith('Z') ? s.emitida_em : s.emitida_em+'Z')
-            .toLocaleTimeString('pt-PT', { hour:'2-digit',minute:'2-digit',timeZone:'Africa/Luanda' })
-        : '–';
-
-      document.getElementById('mda-atendente').textContent = s.atendente?.nome || '–';
-      document.getElementById('mda-hora').textContent      = horaStr;
-      document.getElementById('mda-duracao').textContent   =
-        s.tempo_atendimento_minutos ? `${s.tempo_atendimento_minutos} min` : '–';
-
-      const notaEl = document.getElementById('mda-nota');
-      if (notaEl) notaEl.textContent = s.avaliacao_nota
-        ? `${'⭐'.repeat(s.avaliacao_nota)} (${s.avaliacao_nota}/5)`
-        : 'Sem avaliação';
-
-      const obs        = s.observacoes || '';
-      const partes     = obs.split(' | ').map(p=>p.trim()).filter(Boolean);
-      const nomeFich   = partes.find(p=>p.startsWith('FICHEIRO:'))?.replace('FICHEIRO:','').trim()||null;
-      const linhasForm = partes.filter(p=>!p.startsWith('FICHEIRO:')).join('\n');
-
-      document.getElementById('mda-form').textContent = linhasForm || 'Sem dados de formulário.';
-
-      if (nomeFich) {
-        const url = `/api/senhas/${id}/ficheiro`;
-        document.getElementById('mda-fich-nome').textContent =
-          `📎 ${nomeFich.split('_').slice(2).join('_')||nomeFich}`;
-        document.getElementById('mda-btn-dl').href    = url;
-        document.getElementById('mda-btn-vis').onclick = () =>
-          window.open(url,'_blank','noopener,noreferrer');
-        document.getElementById('mda-fich-bloco').style.display = 'block';
-        document.getElementById('mda-sem-fich').style.display   = 'none';
+      // stale response
+      if (version !== _modalRequestVersion) {
+        return;
       }
+
+      if (!r.ok) {
+
+        document.getElementById('mda-form').textContent =
+          'Erro ao carregar detalhes.';
+
+        return;
+      }
+
+      const s = await r.json();
+
+      // stale response
+      if (version !== _modalRequestVersion) {
+        return;
+      }
+
+      _dadosModalAdmin = s;
+
+      // cache local
+      _modalDetalhesCache.set(id, s);
+
+      _renderModalDetalhesAdmin(
+        s,
+        numero,
+        servico
+      );
+
     } catch (e) {
-      document.getElementById('mda-form').textContent = 'Erro de ligação.';
+
+      document.getElementById('mda-form').textContent =
+        'Erro de ligação.';
+
+    } finally {
+
+      _modalLoading = false;
+
     }
   };
 
@@ -1181,68 +1644,367 @@ let _refreshAdminQueued = false;
 
 function _iniciarListenerAccoes() {
 
-  window.addEventListener('storage', function (e) {
+  window.addEventListener('storage', (e) => {
 
+    // apenas eventos reais
     if (e.key !== 'imtsb_accao') return;
 
-    console.log('[PR-6][storage]', e.newValue);
-    // evita overlap destrutivo
-      if (_refreshAdminBusy) {
-        _refreshAdminQueued = true;
-        return;
-      }
+    // evita spam redundante
+    if (e.oldValue === e.newValue) return;
 
-    _refreshAdminBusy = true;
+    console.log('[PR-8][storage_sync]', e.newValue);
 
-    Promise.allSettled([
+    // evita overlap
+    if (_isRefreshBusy) {
+      _isRefreshQueued = true;
+      return;
+    }
+    // PR-9: força histórico realtime
+    historicoState.lastRenderHash = null;
 
-      _refreshAdminPosAccao()
-    ]).finally(() => {
-
-      // pequeno throttle
-      setTimeout(() => {
-
-        _refreshAdminBusy = false;
-
-        // executa refresh perdido
-        if (_refreshAdminQueued) {
-
-          _refreshAdminQueued = false;
-
-          _refreshAdminPosAccao().catch(() => {});
-
-        }
-
-      }, 300);
-
-    });
+    _refreshDashboardAdmin('storage_sync');
 
   });
 
 }
+// PR-11: watchdog recovery
+setInterval(() => {
+
+  // polling morto
+  if (
+    !_pollingPaused &&
+    _lastSuccessfulPoll > 0 &&
+    Date.now() - _lastSuccessfulPoll > 90000
+  ) {
+
+    console.warn(
+      '[PR-11] auto_recovery activado'
+    );
+
+    _pollingFailures     = 0;
+    _pollingBackoffMs    = 10000;
+    _adaptivePollingMode = 'recovery';
+
+    _executarPollingSeguro(
+      'auto_recovery'
+    ).catch(() => {});
+  }
+
+}, 30000);
 
   /* ════════════════════════════════════════════════════════════
      POLLING + UTILITÁRIOS
   ════════════════════════════════════════════════════════════ */
-  function iniciarPolling() {
-    pararPolling();
-    pollingInterval = setInterval(async () => {
-      if (_pollingBusy) return;
-      _pollingBusy = true;
-      const t0 = Date.now();
-      try {
-        await atualizarKPIs();
-        await atualizarFilas();
-      } finally {
-        const dt = Date.now() - t0;
-        if (dt > 3000) console.info(`[dashadm][polling] ciclo lento: ${dt}ms`);
-        _pollingBusy = false;
+  // PR-8: pipeline central de refresh admin
+async function _refreshDashboardAdmin(trigger = 'manual') {
+
+  // versão incremental anti-stale
+  const version = ++_currentRefreshVersion;
+
+  // evita overlap
+  if (_isRefreshBusy) {
+    _isRefreshQueued = true;
+    return;
+  }
+
+  _isRefreshBusy = true;
+
+  try {
+
+    _lastSyncTimestamp = Date.now();
+
+    // executa loaders existentes
+    await Promise.allSettled([
+
+      atualizarKPIs(),
+      atualizarFilas(),
+
+      // manter compatibilidade
+      typeof carregarTrabalhadores === 'function'
+        ? carregarTrabalhadores()
+        : Promise.resolve(),
+
+      typeof atualizarHistorico === 'function'
+        ? atualizarHistorico(1)
+        : Promise.resolve(),
+
+      typeof atualizarTempoPorServico === 'function'
+        ? atualizarTempoPorServico()
+        : Promise.resolve()
+
+    ]);
+
+    // evita render stale
+    if (version !== _currentRefreshVersion) {
+      return;
+    }
+
+    // gráficos só renderizam snapshot mais recente
+    if (typeof criarGraficos === 'function') {
+      await criarGraficos();
+    }
+
+  } catch (err) {
+
+    console.error('[dashadm] pipeline refresh:', err);
+
+  } finally {
+
+    _isRefreshBusy = false;
+
+    // refresh perdido durante busy
+    if (_isRefreshQueued) {
+
+      _isRefreshQueued = false;
+
+      setTimeout(() => {
+        _refreshDashboardAdmin('queued');
+      }, 250);
+
+    }
+  }
+}
+// PR-11: intervalo calculado por contexto
+  function _getAdaptivePollingInterval() {
+    // PR-11: scheduler adaptativo
+    function _agendarProximoPolling() {
+      // PR-11: executor único protegido
+      async function _executarPollingSeguro(trigger) {
+        // PR-11: listeners resilientes
+        function _iniciarListenersResiliencia() {
+
+          // visibility API
+          document.addEventListener(
+            'visibilitychange',
+            () => {
+
+              // tab oculta
+              if (document.hidden) {
+                return;
+              }
+
+              // tab voltou
+              if (
+                Date.now() - _lastSuccessfulPoll > 15000
+              ) {
+
+                _executarPollingSeguro(
+                  'visibility_resume'
+                ).catch(() => {});
+
+              } else {
+
+                _agendarProximoPolling();
+
+              }
+            }
+          );
+
+          // offline
+          window.addEventListener('offline', () => {
+
+            console.warn(
+              '[PR-11] offline — polling adaptado'
+            );
+
+            _adaptivePollingMode = 'offline';
+          });
+
+          // online
+          window.addEventListener('online', () => {
+
+            console.info(
+              '[PR-11] online — recovery imediato'
+            );
+
+            _adaptivePollingMode = 'recovery';
+
+            _executarPollingSeguro(
+              'network_reconnect'
+            ).catch(() => {});
+
+          });
+
+          // cleanup
+          window.addEventListener(
+            'beforeunload',
+            () => {
+
+              if (_pollingTickHandle) {
+                clearTimeout(_pollingTickHandle);
+              }
+
+            }
+          );
+        }
+
+        // evita overlap
+        if (_refreshAdminBusy) { 
+          return;
+        }
+        // PR-11: anti-storm multi-tab
+        if (
+          Date.now() - _lastPollRequestTs < 2500
+        ) {
+          return;
+        }
+
+        // pausa explícita
+        if (_pollingPaused) {
+          return;
+        }
+
+        // offline
+        if (!navigator.onLine) {
+
+          _adaptivePollingMode = 'offline';
+
+          _agendarProximoPolling();
+
+          return;
+        }
+
+        // anti-spam
+        if (
+          Date.now() - _lastPollRequestTs < 5000
+        ) {
+
+          _agendarProximoPolling();
+
+          return;
+        }
+
+        _lastPollRequestTs = Date.now();
+
+        _refreshAdminBusy = true;
+
+        try {
+
+          await _refreshAdminPosAccao();
+
+          _pollingFailures     = 0;
+          _pollingBackoffMs    = 10000;
+          _adaptivePollingMode = 'normal';
+
+          _lastSuccessfulPoll  = Date.now();
+
+        } catch (err) {
+
+          _pollingFailures++;
+
+          _pollingBackoffMs =
+            Math.min(
+              _pollingBackoffMs * 2,
+              120000
+            );
+
+          _adaptivePollingMode = 'recovery';
+
+          console.error(
+            '[PR-11][' + trigger + '] falhou:',
+            err
+          );
+
+        } finally {
+
+          setTimeout(() => {
+
+            _refreshAdminBusy = false;
+
+            // refresh perdido
+            if (_refreshAdminQueued) {
+
+              _refreshAdminQueued = false;
+
+              _executarPollingSeguro(
+                'queued'
+              ).catch(() => {});
+
+            }
+
+          }, 300);
+
+          _agendarProximoPolling();
+        }
       }
-    }, 10000);
+
+      // limpa timeout antigo
+      if (_pollingTickHandle) {
+        clearTimeout(_pollingTickHandle);
+      }
+
+      // polling pausado
+      if (_pollingPaused) {
+        return;
+      }
+
+      _pollingTickHandle = setTimeout(() => {
+
+        _executarPollingSeguro(
+          'adaptive_polling'
+        ).catch(() => {});
+
+      }, _getAdaptivePollingInterval());
+    }
+
+    // tab oculta
+    if (document.hidden) {
+      return 60000;
+    }
+
+    // offline
+    if (!navigator.onLine) {
+      return 45000;
+    }
+
+    // recovery
+    if (_adaptivePollingMode === 'recovery') {
+      return 15000;
+    }
+
+    // backoff após falhas
+    if (_pollingFailures >= 3) {
+      return Math.min(_pollingBackoffMs, 120000);
+    }
+
+    // normal
+    return 10000;
+  }
+
+  // PR-11: adaptive polling
+  function iniciarPolling() {
+
+    // limpa interval antigo
+    if (pollingInterval) {
+
+      clearInterval(pollingInterval);
+
+      pollingInterval = null;
+    }
+
+    // limpa timeout antigo
+    if (_pollingTickHandle) {
+
+      clearTimeout(_pollingTickHandle);
+
+      _pollingTickHandle = null;
+    }
+
+    _pollingPaused = false;
+
+    _agendarProximoPolling();
   }
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
-    _pollingBusy = false;
+    
+
+    if (_pollingTickHandle) {
+    clearTimeout(_pollingTickHandle);
+    _pollingTickHandle = null;
+  }
+
+      _pollingBusy = false;
+      _pollingPaused = true;
   }
 
   function configurarBotoes() {

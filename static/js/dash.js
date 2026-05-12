@@ -45,6 +45,19 @@
   let _refreshBusy = false;
   let _refreshQueued = false;
 
+ // PR-7: chave de pausa por atendente
+function _pauseStorageKey() {
+
+  const u = store?.getUser?.();
+
+  // fallback defensivo
+  if (!u || !u.id) {
+    return 'imtsb_pausa_global';
+  }
+
+  return `imtsb_pausa_${u.id}`;
+}
+
   /* ── Formatadores ────────────────────────────────────────── */
   function nowKeyLuanda() {
     return new Intl.DateTimeFormat("en-CA", { timeZone: ANGOLA_TZ }).format(new Date());
@@ -100,7 +113,10 @@
 
   /* ── Polling ─────────────────────────────────────────────── */
   function iniciarPolling() {
-    pararPolling();
+
+    // PR-7: evitar múltiplos intervals
+    if (pollingInterval) return;
+
     pollingInterval = setInterval(async () => {
       await atualizarEstatisticas();
       await atualizarHistorico();
@@ -359,6 +375,19 @@ async function _refreshPosAccao(label) {
   /* ── CHAMAR PRÓXIMA ──────────────────────────────────────── */
   window.callNextCustomer = async function () {
     const user = store.getUser();
+
+// PR-7: impedir chamadas durante pausa
+    if (localStorage.getItem(_pauseStorageKey()) === '1') {
+
+      N && N.notify(
+        'warn',
+        'Está em pausa. Clique em "Retomar" antes de chamar nova senha.',
+        3500
+      );
+
+      return;
+    }
+
     if (!user) return;
 
     const servicoId = user.servico_id;
@@ -599,11 +628,24 @@ async function _refreshPosAccao(label) {
   /* ── PAUSA ───────────────────────────────────────────────── */
   window.togglePause = async function () {
     const btn = document.getElementById("pauseBtn");
+
     if (!btn) return;
-    const estaPausado = btn.dataset.pausado === "1";
+
+    // PR-7: localStorage é a fonte real
+    const pauseKey = _pauseStorageKey();
+
+    const estaPausado =
+      localStorage.getItem(pauseKey) === '1';
+
+    // sincronizar UI
+    btn.dataset.pausado = estaPausado ? "1" : "";
 
     if (!estaPausado) {
       btn.dataset.pausado = "1";
+
+      // PR-7: persistir pausa
+      localStorage.setItem(pauseKey, '1');
+
       btn.textContent = "▶ Retomar";
       btn.style.cssText += "background:#fff8ed;color:#d97706;border-color:#fde68a;";
       pararPolling();
@@ -614,9 +656,15 @@ async function _refreshPosAccao(label) {
       await _refreshPosAccao('pausa');
     } else {
       btn.dataset.pausado = "";
+
+      // PR-7: remover pausa persistente
+      localStorage.removeItem(pauseKey);
       btn.textContent = "⏸ Pausar";
       btn.style.cssText = "";
-      iniciarPolling();
+      // PR-7: garantir polling activo após retoma
+      if (!pollingInterval) {
+        iniciarPolling();
+      }
       if (senhaAtual) {
         if (timerInterval) clearInterval(timerInterval);
         timerInterval = setInterval(() => {
@@ -822,13 +870,40 @@ async function _refreshPosAccao(label) {
     }
 
     carregarDadosTrabalhador();
+
+    const _eraPausado =
+      localStorage.getItem(_pauseStorageKey()) === '1';
+
     renderTabs();
     actualizarBotoes();
-    setStatus("Disponível", "#10b981");
+
+    if (_eraPausado) {
+
+      const pb = document.getElementById("pauseBtn");
+
+      if (pb) {
+
+        pb.dataset.pausado = "1";
+        pb.textContent = "▶ Retomar";
+
+        pb.style.cssText +=
+          "background:#fff8ed;color:#d97706;border-color:#fde68a;";
+      }
+
+      setStatus("Pausado", "#d97706");
+
+    } else {
+
+      setStatus("Disponível", "#10b981");
+    }
 
     await _carregarServicosNoModal().catch(() => {});
     await atualizarTudo();
-    iniciarPolling();
+
+    // PR-7: não iniciar polling se pausado
+    if (!_eraPausado) {
+      iniciarPolling();
+    }
 
     setTimeout(() => N && N.play('info'), 800);
   });
