@@ -112,8 +112,15 @@
 
     atualizarHeader();
     _iniciarListenerAccoes();
-    _iniciarListenersResiliencia();
+
+    // PR-HOTFIX: guard contra função inacessível do PR11
+    if (typeof _iniciarListenersResiliencia === 'function') {
+      _iniciarListenersResiliencia();
+    }
+
     await _refreshDashboardAdmin('init');
+
+
     configurarBotoes();
     iniciarPolling();
   });
@@ -1685,9 +1692,12 @@ setInterval(() => {
     _pollingBackoffMs    = 10000;
     _adaptivePollingMode = 'recovery';
 
-    _executarPollingSeguro(
-      'auto_recovery'
-    ).catch(() => {});
+    // PR-HOTFIX: fallback recovery
+    if (typeof _executarPollingSeguro === 'function') {
+      _executarPollingSeguro('auto_recovery').catch(() => {});
+    } else {
+      _refreshDashboardAdmin('auto_recovery').catch(() => {});
+    }
   }
 
 }, 30000);
@@ -1788,9 +1798,12 @@ async function _refreshDashboardAdmin(trigger = 'manual') {
                 Date.now() - _lastSuccessfulPoll > 15000
               ) {
 
-                _executarPollingSeguro(
-                  'visibility_resume'
-                ).catch(() => {});
+                // PR-HOTFIX: fallback visibility
+                if (typeof _executarPollingSeguro === 'function') {
+                  _executarPollingSeguro('visibility_resume').catch(() => {});
+                } else {
+                  _refreshDashboardAdmin('visibility_resume').catch(() => {});
+                }
 
               } else {
 
@@ -1992,7 +2005,18 @@ async function _refreshDashboardAdmin(trigger = 'manual') {
 
     _pollingPaused = false;
 
-    _agendarProximoPolling();
+    // PR-HOTFIX: fallback estável para polling
+    if (typeof _agendarProximoPolling === 'function') {
+      _agendarProximoPolling();
+    } else {
+      pollingInterval = setInterval(() => {
+        if (_isRefreshBusy) return;
+
+        _refreshDashboardAdmin('polling_fallback')
+          .catch(() => {});
+      }, 10000);
+    }
+
   }
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
@@ -2052,5 +2076,4 @@ async function _refreshDashboardAdmin(trigger = 'manual') {
   window.sair = function() {
     if (confirm('Sair?')) { pararPolling(); store.logout(); window.location.href='/login'; }
   };
-
 })();
