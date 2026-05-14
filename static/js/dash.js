@@ -484,15 +484,21 @@ async function _refreshPosAccao(label) {
 
     try {
       // FIX: usar BASE()
-      const resp = await fetch(`${BASE()}/senhas/${senhaId}/finalizar`, {
-        method:  "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
-        body:    JSON.stringify({ observacoes: `NEGADO: ${motivo}` })
+      // UX-01: usar endpoint correcto de cancelamento
+      const resp = await fetch(`${BASE()}/filas/cancelar/${senhaId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${store.getToken()}`
+        },
+        body: JSON.stringify({ motivo })
       });
+
       if (!resp.ok) {
         const d = await resp.json().catch(() => ({}));
-        throw new Error(d.erro || "Falha ao negar.");
+        throw new Error(d.erro || "Falha ao negar senha.");
       }
+
       const numSenha = senhaAtual?.numero || senhaId;
       limparAtendimentoAtual();
       await _refreshPosAccao('negacao');

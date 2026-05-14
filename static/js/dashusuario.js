@@ -270,7 +270,14 @@
       if (tipo === 'senha_redirecionada') {
         const destino = ev?.dados?.servico_destino || 'outro serviço';
         const motivo  = ev?.dados?.motivo || 'Sem motivo';
-        mostrarMensagem(`↪ A sua senha foi redireccionada para <strong>${destino}</strong>.<br><em>${motivo}</em>`, 'ok');
+        mostrarMensagem(
+          `↪ Senha redireccionada para <strong>${destino}</strong>.` +
+          (motivo
+            ? `<br><small>Motivo: <em>${motivo}</em></small>`
+            : '') +
+          `<br><strong>Dirija-se à área de espera de ${destino}.</strong>`,
+          'ok'
+        );
         N && N.onRedirect(numero, destino);
       } else if (tipo === 'senha_negada') {
         const motivo = ev?.dados?.motivo || 'Sem motivo indicado';
@@ -497,16 +504,22 @@
         set('trackerPosicao', '↪');
         set('trackerTempo',   'Redireccionada');
         // ADD-06 — hora do redir
-        set('trackerEstado',  `→ ${destino} (${horaAgora()})`);
+        set(
+            'trackerEstado',
+            `🔄 A aguardar chamada em: <strong>${destino}</strong>`
+          );
         if (badgeEl) badgeEl.className = 'ticket-status-badge status-redirect';
         if (iconEl)  iconEl.textContent = '↪';
         if (statusEl) statusEl.textContent = 'Redireccionada';
 
         if (mudou || obsMudou) {
           mostrarMensagem(
-            `↪ Senha <strong>${numero}</strong> redireccionada para <strong>${destino}</strong>.` +
-            (motivo ? `<br><em>${motivo}</em>` : '') +
-            `<br><small>Aguarde ser chamado no novo serviço.</small>`,
+            `↪ Senha <strong>${numero}</strong> redireccionada.<br>` +
+            `🏢 Novo serviço: <strong>${destino}</strong>` +
+            (motivo
+              ? `<br><small>Motivo: <em>${motivo}</em></small>`
+              : '') +
+            `<br><strong>Dirija-se e aguarde ser chamado em ${destino}.</strong>`,
             'ok'
           );
           N && N.notify('redirect',

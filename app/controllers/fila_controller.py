@@ -318,6 +318,13 @@ def cancelar_senha(senha_id):
         senha = FilaService.cancelar_senha(senha_id)
         if not senha:
             return jsonify({'erro': 'Senha não encontrada'}), 404
+        
+        # UX-01: persistir motivo da negação
+        senha.observacoes = (
+            f"NEGADO: {motivo}"
+            if motivo
+            else "NEGADO: Sem motivo indicado"
+        )  
 
         _log_evento(
             'senha_negada',
