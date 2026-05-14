@@ -3,7 +3,7 @@ app/controllers/fila_controller.py — Sprint 4 FIXED
 ═══════════════════════════════════════════════════════════════
 CORRECÇÕES:
   ✅ FIX 400 em /concluir: idempotente — se já concluída devolve 200
-  ✅ FIX /concluir: aceita QUALQUER estado activo sem 400
+  ✅ FIX /concluir: aceita estados activos e bloqueia canceladas
   ✅ PUT /redirecionar/:id funcional com log
   ✅ Todos os endpoints anteriores mantidos
 ═══════════════════════════════════════════════════════════════
@@ -128,7 +128,7 @@ def concluir_atendimento(senha_id):
                 'senha':    senha_schema.dump(senha)
             }), 200
 
-        # Única rejeição: já cancelada
+        # Estado inválido para conclusão — só cancelada é proibida
         if senha.status == 'cancelada':
             return jsonify({
                 'erro': 'Senha cancelada não pode ser concluída'
@@ -310,21 +310,41 @@ def obter_painel_fila(servico_id):
 @fila_bp.route('/cancelar/<int:senha_id>', methods=['PUT'])
 @jwt_required()
 def cancelar_senha(senha_id):
+    """Cancela/nega uma senha activa."""
     try:
         atendente_id = int(get_jwt_identity())
         data = request.get_json(silent=True) or {}
         motivo = str(data.get('motivo', '') or '').strip()[:200]
 
-        senha = FilaService.cancelar_senha(senha_id)
+        # Buscar directamente no model (Sprint 4 pattern)
+        senha = Senha.query.get(senha_id)
+
         if not senha:
             return jsonify({'erro': 'Senha não encontrada'}), 404
-        
-        # UX-01: persistir motivo da negação
+
+        # Não permitir cancelar senha concluída
+        if senha.status == 'concluida':
+            return jsonify({
+                'erro': 'Senha já concluída não pode ser cancelada'
+            }), 400
+
+        # Idempotência: evitar erro em duplo clique/reenvio
+        if senha.status == 'cancelada':
+            return jsonify({
+                'mensagem': 'Senha já estava cancelada',
+                'senha': senha_schema.dump(senha)
+            }), 200
+
+        # Actualizar estado
+        senha.status = 'cancelada'
+        senha.atendente_id = atendente_id
+
+        # Persistir motivo da negação no histórico da senha
         senha.observacoes = (
             f"NEGADO: {motivo}"
             if motivo
             else "NEGADO: Sem motivo indicado"
-        )  
+        )
 
         _log_evento(
             'senha_negada',
@@ -337,8 +357,24 @@ def cancelar_senha(senha_id):
                 "timestamp": datetime.utcnow().isoformat()
             }
         )
+
         db.session.commit()
-        return jsonify({'mensagem': 'Senha cancelada', 'senha': senha_schema.dump(senha)}), 200
-    except Exception:
+
+        print(f"[OK] Senha {senha.numero} cancelada")
+
+        return jsonify({
+            'mensagem': 'Senha cancelada',
+            'senha': senha_schema.dump(senha)
+        }), 200
+
+    except Exception as e:
         db.session.rollback()
-        return jsonify({'erro': 'Erro ao cancelar senha'}), 500
+
+        print(f"[ERROR] cancelar_senha: {e}")
+
+        import traceback
+        traceback.print_exc()
+
+        return jsonify({
+            'erro': 'Erro ao cancelar senha'
+        }), 500
