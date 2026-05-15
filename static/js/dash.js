@@ -432,9 +432,13 @@ async function _refreshPosAccao(label) {
 
     if (!_lockAction('chamar')) return;
 
+    // UX-03: loading state
     const btn = document.querySelector(".btn-next");
-    if (btn) { btn.disabled = true; btn.textContent = "A chamar...";}
 
+    if (window.UX03) {
+      window.UX03.btnLoading(btn, true, 'A chamar…');
+    }
+    
     try {
       // FIX: usar BASE()
       const resp = await fetch(`${BASE()}/filas/chamar`, {
@@ -443,6 +447,10 @@ async function _refreshPosAccao(label) {
         body:    JSON.stringify({ servico_id: servicoId, numero_balcao: balcao })
       });
       const data = await resp.json().catch(() => ({}));
+
+      if (window.UX03) {
+        window.UX03.pollOk();
+      }
 
       if (resp.status === 404 || (resp.ok && !data.senha)) {
         N && N.notify('info', 'Não há senhas na fila de momento.', 3500);
@@ -466,11 +474,21 @@ async function _refreshPosAccao(label) {
       N && N.onCall(senhaAtual.numero, balcao);
 
     } catch (err) {
+
+      if (window.UX03) {
+        window.UX03.pollFail();
+      }
+
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
+
+      
       if (btn) { _unlockAction('chamar');
 
+                if (window.UX03) {
+                    window.UX03.btnLoading(btn, false);
+                  }
                 if (btn) {
                   btn.disabled = false;
                   btn.textContent = "Chamar";
