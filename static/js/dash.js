@@ -45,6 +45,38 @@
   let _refreshBusy = false;
   let _refreshQueued = false;
 
+  const actionLocks = {
+    chamar: false,
+    concluir: false,
+    negar: false,
+    redirecionar: false,
+    reconvocar: false
+  };
+
+  const processingTickets = Object.create(null);
+
+  function _lockAction(action, senhaId) {
+    if (actionLocks[action]) return false;
+    if (senhaId && processingTickets[senhaId]) return false;
+
+    actionLocks[action] = true;
+
+    if (senhaId) {
+      processingTickets[senhaId] = true;
+    }
+
+    return true;
+  }
+
+  function _unlockAction(action, senhaId) {
+    delete actionLocks[action];
+
+    if (senhaId) {
+      delete processingTickets[senhaId];
+    }
+  }
+
+
  // PR-7: chave de pausa por atendente
 function _pauseStorageKey() {
 
@@ -398,8 +430,10 @@ async function _refreshPosAccao(label) {
       return;
     }
 
+    if (!_lockAction('chamar')) return;
+
     const btn = document.querySelector(".btn-next");
-    if (btn) { btn.disabled = true; btn.textContent = "A chamar..."; }
+    if (btn) { btn.disabled = true; btn.textContent = "A chamar...";}
 
     try {
       // FIX: usar BASE()
@@ -435,14 +469,22 @@ async function _refreshPosAccao(label) {
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "Chamar"; }
-    }
-  };
+      if (btn) { _unlockAction('chamar');
+
+                if (btn) {
+                  btn.disabled = false;
+                  btn.textContent = "Chamar";
+                  btn.dataset.loading = "0";
+                } }
+                    }
+    };
 
   /* ── CONCLUIR ATENDIMENTO ────────────────────────────────── */
   window.concludeAttendance = async function () {
     const senhaId = document.getElementById("currentSenhaId")?.value;
     if (!senhaId) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
+
+    if (!_lockAction('concluir', senhaId)) return;
 
     const btn = document.getElementById("btnConcluir");
     if (btn) { btn.disabled = true; btn.textContent = "A concluir..."; }
@@ -466,12 +508,15 @@ async function _refreshPosAccao(label) {
     } catch (err) {
       N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
+      _unlockAction('concluir', senhaId);
       if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
     }
   };
 
   /* ── NEGAR ATENDIMENTO ───────────────────────────────────── */
   window.denyCurrentTicket = async function () {
+
+    if (!_lockAction('negar', senhaId)) return;
     const senhaId = document.getElementById("currentSenhaId")?.value;
     if (!senhaId || !senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
 
@@ -508,6 +553,7 @@ async function _refreshPosAccao(label) {
     } catch (err) {
       N && N.notify('error', err.message || "Erro ao negar senha.");
     } finally {
+      _unlockAction('negar', senhaId);
       if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Negar"; }
     }
   };
@@ -592,6 +638,8 @@ async function _refreshPosAccao(label) {
     const servicoDestino = _servicosCache.find(s => s.id === servicoId);
     const nomeDestino    = servicoDestino?.nome || `Serviço #${servicoId}`;
 
+    if (!_lockAction('redirecionar', senhaId)) return;
+
     const btnConfirmar = document.getElementById("btnConfirmarRedir");
     if (btnConfirmar) { btnConfirmar.disabled = true; btnConfirmar.textContent = "A redirecionar..."; }
     if (msgEl) msgEl.textContent = '';
@@ -622,6 +670,7 @@ async function _refreshPosAccao(label) {
       console.error("[redir] confirmar:", err);
       if (msgEl) { msgEl.textContent = 'Erro de ligação ao servidor.'; msgEl.style.color = '#dc2626'; }
     } finally {
+      _unlockAction('redirecionar', senhaId);
       if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.textContent = "Confirmar Redirecionamento"; }
     }
   };
