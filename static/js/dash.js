@@ -284,6 +284,13 @@ async function _refreshPosAccao(label) {
   async function atualizarFilaAoVivo() {
     const user = store.getUser();
     const list = document.getElementById("liveQueueList");
+
+    const resumoEl = document.getElementById("queueSummary");
+
+    if (window.UX03 && resumoEl) {
+      window.UX03.skeletonOff(resumoEl);
+    }
+
     if (!list) return;
     try {
       const serviceFilter = user?.servico_id ? `&servico_id=${user.servico_id}` : "";
@@ -292,13 +299,35 @@ async function _refreshPosAccao(label) {
         `${BASE()}/senhas?status=aguardando&hoje=1&page=1&per_page=20${serviceFilter}`,
         { headers: { Authorization: `Bearer ${store.getToken()}` } }
       );
-      if (!resp.ok) return;
+
+
+
+
       const data   = await resp.json();
       const senhas = Array.isArray(data) ? data : (data.senhas || []);
+
+      // UX-03.1 — remover skeleton
+      if (window.UX03) {
+        window.UX03.skeletonOff(list);
+      }
+
       if (!senhas.length) {
-        list.innerHTML = '<div class="live-queue-empty" style="color:var(--text-muted);font-size:.85rem;padding:.5rem 0;">✅ Sem senhas em fila</div>';
+        if (window.UX03) {
+          window.UX03.emptyState(
+            list,
+            'Nenhuma senha aguardando no momento',
+            'fila'
+          );
+        } else {
+          list.innerHTML = `
+            <div class="live-queue-empty">
+              Nenhuma senha aguardando
+            </div>
+          `;
+        }
         return;
       }
+
       list.innerHTML = senhas.slice(0, 8).map((s, idx) => {
         const isPriority = s.tipo === 'prioritaria';
         return `<div class="live-queue-item ${idx === 0 ? "next" : ""}">
@@ -310,6 +339,7 @@ async function _refreshPosAccao(label) {
           </div>`;
       }).join("");
     } catch (err) {
+
       console.error("[worker] fila ao vivo:", err);
     }
   }
@@ -438,7 +468,7 @@ async function _refreshPosAccao(label) {
     if (window.UX03) {
       window.UX03.btnLoading(btn, true, 'A chamar…');
     }
-    
+
     try {
       // FIX: usar BASE()
       const resp = await fetch(`${BASE()}/filas/chamar`, {
@@ -448,9 +478,7 @@ async function _refreshPosAccao(label) {
       });
       const data = await resp.json().catch(() => ({}));
 
-      if (window.UX03) {
-        window.UX03.pollOk();
-      }
+
 
       if (resp.status === 404 || (resp.ok && !data.senha)) {
         N && N.notify('info', 'Não há senhas na fila de momento.', 3500);
@@ -474,10 +502,6 @@ async function _refreshPosAccao(label) {
       N && N.onCall(senhaAtual.numero, balcao);
 
     } catch (err) {
-
-      if (window.UX03) {
-        window.UX03.pollFail();
-      }
 
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
@@ -932,6 +956,20 @@ async function _refreshPosAccao(label) {
 
   /* ── Init ────────────────────────────────────────────────── */
   document.addEventListener("DOMContentLoaded", async () => {
+    // UX-03.1 — skeletons iniciais
+    if (window.UX03) {
+      const filaEl = document.getElementById("liveQueueList");
+
+      if (filaEl) {
+        window.UX03.skeletonOn(filaEl, 4, "row");
+      }
+
+      const resumoEl = document.getElementById("queueSummary");
+      if (resumoEl) {
+        window.UX03.skeletonOn(resumoEl, 3, "kpi");
+      }
+    }
+
     if (!store?.isLoggedIn()) {
       window.location.href = "/login";
       return;
@@ -979,6 +1017,8 @@ async function _refreshPosAccao(label) {
     }
 
     setTimeout(() => N && N.play('info'), 800);
+
+    
   });
 
 })();
