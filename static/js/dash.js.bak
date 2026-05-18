@@ -516,160 +516,46 @@ async function _refreshPosAccao(label) {
   /* ── NEGAR ATENDIMENTO ───────────────────────────────────── */
   window.denyCurrentTicket = async function () {
 
-    // ─────────────────────────────────────────
-    // FIX UX-03
-    // senhaId deve existir antes do lock
-    // ─────────────────────────────────────────
-    const senhaId = document.getElementById("currentSenhaId")?.value;
-
-    if (!senhaId || !senhaAtual) {
-      N && N.notify('warn', 'Nenhuma senha em atendimento.');
-      return;
-    }
-
-    // ─────────────────────────────────────────
-    // Modal UX04
-    // ─────────────────────────────────────────
-    let motivo;
-
-    if (window.UX04) {
-
-      motivo = await UX04.prompt({
-        titulo: `Negar Senha ${senhaAtual.numero}`,
-        subtitulo: `Serviço: ${senhaAtual.servico?.nome || '—'}`,
-        emoji: '🚫',
-        perigo: true,
-
-        label: 'Motivo da negação *',
-        placeholder: 'Ex: Documentação incompleta...',
-
-        txtConfirmar: 'Negar Senha',
-        txtCancelar: 'Cancelar',
-
-        minLength: 3,
-        maxLength: 200,
-
-        errMsg: 'Indique um motivo válido.'
-      });
-
-    } else {
-
-      motivo = window.prompt(
-        `Motivo da negação da senha ${senhaAtual.numero}:`,
-        ""
-      );
-
-    }
-
-    // Cancelado
-    if (motivo === null) return;
-
-    if (!motivo.trim()) {
-      N && N.notify('warn', 'É necessário indicar o motivo.');
-      return;
-    }
-
-    // ─────────────────────────────────────────
-    // Action lock
-    // ─────────────────────────────────────────
     if (!_lockAction('negar', senhaId)) return;
+    const senhaId = document.getElementById("currentSenhaId")?.value;
+    if (!senhaId || !senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
+
+    const motivo = prompt(`Motivo da negação da senha ${senhaAtual.numero}:`, "");
+    if (motivo === null) return;
+    if (!motivo.trim()) { N && N.notify('warn', 'É necessário indicar o motivo.'); return; }
 
     const btn = document.getElementById("btnNegar");
-
-    if (window.UX03) {
-      window.UX03.btnLoading(btn, true, 'A negar...');
-    }
+    if (btn) { btn.disabled = true; btn.textContent = "A negar..."; }
 
     try {
-
+      // FIX: usar BASE()
+      // UX-01: usar endpoint correcto de cancelamento
       const resp = await fetch(`${BASE()}/filas/cancelar/${senhaId}`, {
         method: "PUT",
-
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${store.getToken()}`
         },
-
         body: JSON.stringify({ motivo })
       });
 
       if (!resp.ok) {
-
         const d = await resp.json().catch(() => ({}));
-
-        throw new Error(
-          d.erro || "Falha ao negar senha."
-        );
-      }
-
-      if (window.UX03) {
-        window.UX03.pollOk();
+        throw new Error(d.erro || "Falha ao negar senha.");
       }
 
       const numSenha = senhaAtual?.numero || senhaId;
-
       limparAtendimentoAtual();
-
       await _refreshPosAccao('negacao');
-
-      // Toast UX04
-      if (window.UX04) {
-
-        UX04.toast(
-          `Senha ${numSenha} negada.`,
-          'warn',
-          5000
-        );
-
-      } else {
-
-        N && N.notify(
-          'warn',
-          `Senha ${numSenha} negada.`
-        );
-
-      }
 
       N && N.onDeny(numSenha);
 
     } catch (err) {
-
-      console.error("[denyCurrentTicket]", err);
-
-      if (window.UX03) {
-        window.UX03.pollFail();
-      }
-
-      if (window.UX04) {
-
-        UX04.toast(
-          err.message || "Erro ao negar senha.",
-          'error'
-        );
-
-      } else {
-
-        N && N.notify(
-          'error',
-          err.message || "Erro ao negar senha."
-        );
-
-      }
-
+      N && N.notify('error', err.message || "Erro ao negar senha.");
     } finally {
-
       _unlockAction('negar', senhaId);
-
-      if (window.UX03) {
-        window.UX03.btnLoading(btn, false);
-      }
-
-      if (btn) {
-        btn.disabled = !senhaAtual;
-      }
-
+      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Negar"; }
     }
-
   };
 
   /* ── REDIRECIONAR — MODAL + API REAL ─────────────────────── */
@@ -748,17 +634,18 @@ async function _refreshPosAccao(label) {
       return;
     }
 
-    const motivo         = (motivoEl?.value || '').trim() || 'Sem motivo indicado';
+    const motivo = (motivoEl?.value || '').trim() || 'Sem motivo indicado';
     const servicoDestino = _servicosCache.find(s => s.id === servicoId);
     const nomeDestino    = servicoDestino?.nome || `Serviço #${servicoId}`;
 
     if (!_lockAction('redirecionar', senhaId)) return;
 
     const btnConfirmar = document.getElementById("btnConfirmarRedir");
-    if (window.UX03) window.UX03.btnLoading(btnConfirmar, true, 'A redirecionar…');
+    if (btnConfirmar) { btnConfirmar.disabled = true; btnConfirmar.textContent = "A redirecionar..."; }
     if (msgEl) msgEl.textContent = '';
 
     try {
+      // FIX: usar BASE()
       const resp = await fetch(`${BASE()}/filas/redirecionar/${senhaId}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.getToken()}` },
@@ -768,9 +655,7 @@ async function _refreshPosAccao(label) {
       const data = await resp.json().catch(() => ({}));
 
       if (!resp.ok) {
-        const errMsg = data.erro || 'Erro ao redirecionar.';
-        if (msgEl) { msgEl.textContent = errMsg; msgEl.style.color = '#dc2626'; }
-        if (window.UX04) UX04.toast(errMsg, 'error');
+        if (msgEl) { msgEl.textContent = data.erro || 'Erro ao redirecionar.'; msgEl.style.color = '#dc2626'; }
         return;
       }
 
@@ -779,33 +664,14 @@ async function _refreshPosAccao(label) {
       limparAtendimentoAtual();
       await _refreshPosAccao('redirecionamento');
 
-      // Toast profissional
-      if (window.UX04) {
-        UX04.toast(
-          `Senha ${numSenha} → ${nomeDestino}`,
-          'success',
-          5000
-        );
-      }
-
       N && N.onRedirect(numSenha, nomeDestino);
 
     } catch (err) {
       console.error("[redir] confirmar:", err);
-
-      if (window.UX04) {
-        UX04.toast('Erro de ligação ao servidor.', 'error');
-      } else if (msgEl) {
-        msgEl.textContent = 'Erro de ligação ao servidor.';
-        msgEl.style.color = '#dc2626';
-      }
-
+      if (msgEl) { msgEl.textContent = 'Erro de ligação ao servidor.'; msgEl.style.color = '#dc2626'; }
     } finally {
       _unlockAction('redirecionar', senhaId);
-
-      if (window.UX03) {
-        window.UX03.btnLoading(btnConfirmar, false);
-      }
+      if (btnConfirmar) { btnConfirmar.disabled = false; btnConfirmar.textContent = "Confirmar Redirecionamento"; }
     }
   };
 
@@ -930,18 +796,7 @@ async function _refreshPosAccao(label) {
   let _urlFicheiroAtual = null;
 
   window.abrirDocumentoAtendimento = function () {
-    if (!senhaAtual) {
-      N && N.notify('warn', 'Nenhuma senha em atendimento.');
-      return;
-    }
-
-    /* UX-07 Drawer */
-    if (window.UX07) {
-      UX07.abrir(senhaAtual);
-      return;
-    }
-
-    /* Fallback modal antigo */
+    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
     const modal    = document.getElementById("modalDocumentos");
     const titulo   = document.getElementById("modalSenhaTitulo");
     const dadosEl  = document.getElementById("modalDadosForm");
@@ -949,64 +804,33 @@ async function _refreshPosAccao(label) {
     const ficNome  = document.getElementById("modalFicheiroNome");
     const btnDl    = document.getElementById("modalBtnDownload");
     const semFich  = document.getElementById("modalSemFicheiro");
-
     if (!modal) return;
 
-    if (titulo) {
-      titulo.textContent =
-        `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
-    }
+    if (titulo) titulo.textContent = `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
 
-    const obs = senhaAtual.observacoes || "";
+    const obs        = senhaAtual.observacoes || "";
+    const partes     = obs.split(" | ").map(p => p.trim()).filter(Boolean);
+    const nomeFich   = partes.find(p => p.startsWith("FICHEIRO:"))?.replace("FICHEIRO:", "").trim() || null;
+    const linhasForm = partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
 
-    const partes = obs
-      .split(" | ")
-      .map(p => p.trim())
-      .filter(Boolean);
-
-    const nomeFich =
-      partes.find(p => p.startsWith("FICHEIRO:"))
-        ?.replace("FICHEIRO:", "")
-        .trim() || null;
-
-    const linhasForm =
-      partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
-
-    if (dadosEl) {
-      dadosEl.textContent =
-        linhasForm || "Sem dados de formulário.";
-    }
+    if (dadosEl) dadosEl.textContent = linhasForm || "Sem dados de formulário.";
 
     if (nomeFich && ficBloco && semFich) {
       ficBloco.style.display = "block";
       semFich.style.display  = "none";
-
-      if (ficNome) {
-        ficNome.textContent =
-          `📎 ${nomeFich.split("_").slice(2).join("_") || nomeFich}`;
-      }
-
-      if (btnDl) {
-        btnDl.href =
-          `${BASE()}/senhas/${senhaAtual.id}/ficheiro`;
-
-        /* FIX TESTE 3 */
-        btnDl.setAttribute('download', '');
-        btnDl.removeAttribute('target');
-      }
-
+      const nomeDisplay = nomeFich.split("_").slice(2).join("_") || nomeFich;
+      if (ficNome) ficNome.textContent = `📎 ${nomeDisplay}`;
+      // FIX: usar BASE() — mas a rota /api/senhas/:id/ficheiro precisa de /api/
+      _urlFicheiroAtual = `${BASE()}/senhas/${senhaAtual.id}/ficheiro`;
+      if (btnDl) btnDl.href = _urlFicheiroAtual;
     } else {
       if (ficBloco) ficBloco.style.display = "none";
       if (semFich)  semFich.style.display  = "block";
+      _urlFicheiroAtual = null;
     }
 
     modal.style.display = "flex";
-
-    modal.onclick = (e) => {
-      if (e.target === modal) {
-        window.fecharModalDocumentos();
-      }
-    };
+    modal.onclick = (e) => { if (e.target === modal) window.fecharModalDocumentos(); };
   };
 
   window.visualizarFicheiroModal = function () {
@@ -1066,29 +890,13 @@ async function _refreshPosAccao(label) {
   };
 
   /* ── SAIR ────────────────────────────────────────────────── */
-  window.sair = async function () {
-    let confirmado;
-
-    if (window.UX04) {
-      confirmado = await UX04.confirm({
-        titulo:      'Terminar sessão',
-        mensagem:    'Tem a certeza que deseja sair do sistema? A sessão actual será encerrada.',
-        txtConfirmar:'Sair',
-        txtCancelar: 'Continuar aqui',
-        aviso:       true,
-        emoji:       '🚪',
-      });
-    } else {
-      // Fallback seguro
-      confirmado = window.confirm("Deseja sair do sistema?");
+  window.sair = function () {
+    if (confirm("Deseja sair do sistema?")) {
+      pararPolling();
+      pararTimer();
+      store.logout();
+      window.location.href = "/login";
     }
-
-    if (!confirmado) return;
-
-    pararPolling();
-    pararTimer();
-    store.logout();
-    window.location.href = "/login";
   };
 
   /* ── Tabs ────────────────────────────────────────────────── */

@@ -1396,84 +1396,110 @@ function _renderModalDetalhesAdmin(s, numero, servico) {
   }
 }
 
-  window.abrirDocumentoAtendimento = function () {
-    if (!senhaAtual) {
-      N && N.notify('warn', 'Nenhuma senha em atendimento.');
-      return;
-    }
+  window.verDetalhesSenha = async function(id, numero, servico) {
 
-    /* UX-07 Drawer */
-    if (window.UX07) {
-      UX07.abrir(senhaAtual);
-      return;
-    }
-
-    /* Fallback modal antigo */
-    const modal    = document.getElementById("modalDocumentos");
-    const titulo   = document.getElementById("modalSenhaTitulo");
-    const dadosEl  = document.getElementById("modalDadosForm");
-    const ficBloco = document.getElementById("modalFicheiroBloco");
-    const ficNome  = document.getElementById("modalFicheiroNome");
-    const btnDl    = document.getElementById("modalBtnDownload");
-    const semFich  = document.getElementById("modalSemFicheiro");
+    const modal = document.getElementById('modalDetalhesAdmin');
 
     if (!modal) return;
 
-    if (titulo) {
-      titulo.textContent =
-        `Senha ${senhaAtual.numero} · ${senhaAtual.servico?.nome || "Serviço"}`;
+    // evita reopen redundante
+    if (
+      _modalLoading &&
+      _modalCurrentId === id
+    ) {
+      return;
     }
 
-    const obs = senhaAtual.observacoes || "";
+    _modalCurrentId = id;
 
-    const partes = obs
-      .split(" | ")
-      .map(p => p.trim())
-      .filter(Boolean);
+    const version = ++_modalRequestVersion;
 
-    const nomeFich =
-      partes.find(p => p.startsWith("FICHEIRO:"))
-        ?.replace("FICHEIRO:", "")
-        .trim() || null;
+    document.getElementById('mda-titulo').textContent =
+      `Senha ${numero} · ${servico}`;
 
-    const linhasForm =
-      partes.filter(p => !p.startsWith("FICHEIRO:")).join("\n");
+    document.getElementById('mda-form').textContent =
+      'A carregar detalhes…';
 
-    if (dadosEl) {
-      dadosEl.textContent =
-        linhasForm || "Sem dados de formulário.";
+    document.getElementById('mda-servico').textContent =
+      servico;
+
+    ['mda-atendente','mda-hora','mda-duracao']
+      .forEach(i => {
+
+        const el = document.getElementById(i);
+
+        if (el) {
+          el.textContent = '–';
+        }
+
+      });
+
+    modal.style.display = 'flex';
+
+    // PR-9: cache instantâneo
+    if (_modalDetalhesCache.has(id)) {
+
+      const cached =
+        _modalDetalhesCache.get(id);
+
+      _dadosModalAdmin = cached;
+
+      _renderModalDetalhesAdmin(
+        cached,
+        numero,
+        servico
+      );
+
+      return;
     }
 
-    if (nomeFich && ficBloco && semFich) {
-      ficBloco.style.display = "block";
-      semFich.style.display  = "none";
+    _modalLoading = true;
 
-      if (ficNome) {
-        ficNome.textContent =
-          `📎 ${nomeFich.split("_").slice(2).join("_") || nomeFich}`;
+    try {
+
+      const r = await api(`/senhas/${id}`);
+
+      // stale response
+      if (version !== _modalRequestVersion) {
+        return;
       }
 
-      if (btnDl) {
-        btnDl.href =
-          `${BASE()}/senhas/${senhaAtual.id}/ficheiro`;
+      if (!r.ok) {
 
-        /* FIX TESTE 3 */
-        btnDl.setAttribute('download', '');
-        btnDl.removeAttribute('target');
+        document.getElementById('mda-form').textContent =
+          'Erro ao carregar detalhes.';
+
+        return;
       }
 
-    } else {
-      if (ficBloco) ficBloco.style.display = "none";
-      if (semFich)  semFich.style.display  = "block";
+      const s = await r.json();
+
+      // stale response
+      if (version !== _modalRequestVersion) {
+        return;
+      }
+
+      _dadosModalAdmin = s;
+
+      // cache local
+      _modalDetalhesCache.set(id, s);
+
+      _renderModalDetalhesAdmin(
+        s,
+        numero,
+        servico
+      );
+
+    } catch (e) {
+
+      document.getElementById('mda-form').textContent =
+        'Erro de ligação.';
+
+    } finally {
+
+      _modalLoading = false;
+
     }
-
-    modal.style.display = "flex";
-
-    modal.onclick = (e) => {
-      if (e.target === modal) {
-        window.fecharModalDocumentos();
-      }
-    };
   };
 
   window.fecharModalAdmin = function() {
@@ -2037,56 +2063,14 @@ async function _refreshDashboardAdmin(trigger = 'manual') {
   }
 
   /* Funções globais */
-  window.removerTrabalhador = async function (id, nome) {
-    let confirmado;
-
-    if (window.UX04) {
-      confirmado = await UX04.confirm({
-        titulo:      `Desactivar "${nome}"?`,
-        mensagem:    'O membro não será apagado — a conta ficará inactiva. Pode ser reactivada pelo administrador.',
-        perigo:      true,
-        txtConfirmar:'Desactivar',
-        txtCancelar: 'Cancelar',
-        emoji:       '⚠️',
-      });
-    } else {
-      confirmado = window.confirm(`Desactivar "${nome}"?`);
-    }
-
-    if (!confirmado) return;
-
+  window.removerTrabalhador = async function(id, nome) {
+    if (!confirm(`Desactivar "${nome}"?`)) return;
     try {
-      const r = await api(`/atendentes/${id}`, { method: 'DELETE' });
-      const d = await r.json().catch(() => ({}));
-
-      if (r.ok) {
-        if (window.UX04) {
-          UX04.toast(`"${nome}" desactivado com sucesso.`, 'success');
-        } else {
-          showToast(`"${nome}" desactivado.`, 'success');
-        }
-
-        await carregarTrabalhadores();
-
-      } else {
-        const msg = d.erro || 'Não foi possível desactivar.';
-
-        if (window.UX04) {
-          UX04.toast(msg, 'error');
-        } else {
-          window.alert(`Erro: ${msg}`);
-        }
-      }
-
-    } catch (e) {
-
-      if (window.UX04) {
-        UX04.toast('Erro de ligação ao servidor.', 'error');
-      } else {
-        window.alert('Erro de ligação.');
-      }
-
-    }
+      const r = await api(`/atendentes/${id}`, { method:'DELETE' });
+      const d = await r.json().catch(()=>({}));
+      if (r.ok) { showToast(`"${nome}" desactivado.`,'success'); await carregarTrabalhadores(); }
+      else alert(`Erro: ${d.erro||'Não foi possível desactivar.'}`);
+    } catch(e) { alert('Erro de ligação.'); }
   };
 
   window.sair = function() {
