@@ -371,6 +371,7 @@ async function _refreshPosAccao(label) {
       const senhaId = senha.id;
       // FIX: usar BASE() para URL do ficheiro
       const fileUrl = `${BASE()}/senhas/${senhaId}/ficheiro`.replace('/api/api/', '/api/');
+      const filePreviewUrl = `${BASE()}/senhas/${senhaId}/ficheiro/preview`.replace('/api/api/', '/api/');
       html += `
         <div style="margin-top:.75rem;padding:.75rem;background:#eff6ff;border:1px solid #bfdbfe;
              border-radius:10px;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
@@ -380,7 +381,7 @@ async function _refreshPosAccao(label) {
           <a href="${fileUrl}" target="_blank" download
              style="background:#2563eb;color:white;padding:.35rem .9rem;border-radius:8px;
                     font-size:.78rem;font-weight:700;text-decoration:none;">⬇ Download</a>
-          <a href="${fileUrl}" target="_blank"
+          <a href="${filePreviewUrl}" target="_blank"
              style="background:#e0f2fe;color:#0369a1;padding:.35rem .9rem;border-radius:8px;
                     font-size:.78rem;font-weight:700;text-decoration:none;">👁 Visualizar</a>
         </div>`;
@@ -794,6 +795,7 @@ async function _refreshPosAccao(label) {
 
   /* ── Modal Documentos do Atendimento ────────────────────── */
   let _urlFicheiroAtual = null;
+  let _urlFicheiroPreviewAtual = null;
 
   window.abrirDocumentoAtendimento = function () {
     if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
@@ -821,12 +823,14 @@ async function _refreshPosAccao(label) {
       const nomeDisplay = nomeFich.split("_").slice(2).join("_") || nomeFich;
       if (ficNome) ficNome.textContent = `📎 ${nomeDisplay}`;
       // FIX: usar BASE() — mas a rota /api/senhas/:id/ficheiro precisa de /api/
-      _urlFicheiroAtual = `${BASE()}/senhas/${senhaAtual.id}/ficheiro`;
+      _urlFicheiroAtual = `${BASE()}/senhas/${senhaAtual.id}/ficheiro`.replace('/api/api/', '/api/');
+      _urlFicheiroPreviewAtual = `${BASE()}/senhas/${senhaAtual.id}/ficheiro/preview`.replace('/api/api/', '/api/');
       if (btnDl) btnDl.href = _urlFicheiroAtual;
     } else {
       if (ficBloco) ficBloco.style.display = "none";
       if (semFich)  semFich.style.display  = "block";
       _urlFicheiroAtual = null;
+      _urlFicheiroPreviewAtual = null;
     }
 
     modal.style.display = "flex";
@@ -834,8 +838,8 @@ async function _refreshPosAccao(label) {
   };
 
   window.visualizarFicheiroModal = function () {
-    if (!_urlFicheiroAtual) { N && N.notify('warn', 'Sem documento neste pedido.'); return; }
-    window.open(_urlFicheiroAtual, "_blank", "noopener,noreferrer");
+    if (!_urlFicheiroPreviewAtual) { N && N.notify('warn', 'Sem documento neste pedido.'); return; }
+    window.open(_urlFicheiroPreviewAtual, "_blank", "noopener,noreferrer");
   };
 
   window.fecharModalDocumentos = function () {
@@ -854,7 +858,7 @@ async function _refreshPosAccao(label) {
 
     const ficheiroHtml = nomeFich
       ? `<div class="row"><span class="label">Documento</span>
-           <span class="value"><a href="${BASE()}/senhas/${senhaAtual.id}/ficheiro" target="_blank">
+           <span class="value"><a href="${BASE()}/senhas/${senhaAtual.id}/ficheiro/preview" target="_blank">
            ${nomeFich.split("_").slice(2).join("_") || nomeFich}</a></span></div>`
       : "";
 

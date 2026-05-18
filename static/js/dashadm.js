@@ -1378,7 +1378,7 @@ function _renderModalDetalhesAdmin(s, numero, servico) {
     document.getElementById('mda-btn-dl').href = url;
 
     document.getElementById('mda-btn-vis').onclick = () =>
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(`${url}/preview`, '_blank', 'noopener,noreferrer');
 
     document.getElementById('mda-fich-bloco').style.display =
       'block';
@@ -1525,7 +1525,7 @@ function _renderModalDetalhesAdmin(s, numero, servico) {
       : '–';
     const ficheiroHtml = nomeFich
       ? `<div class="row full"><div class="lbl">Documento</div>
-         <div class="val"><a href="/api/senhas/${s.id}/ficheiro" target="_blank">
+         <div class="val"><a href="/api/senhas/${s.id}/ficheiro/preview" target="_blank">
          ${nomeFich.split('_').slice(2).join('_')||nomeFich}</a></div></div>` : '';
     const notaHtml = s.avaliacao_nota
       ? `<div class="row"><div class="lbl">Avaliação</div>
