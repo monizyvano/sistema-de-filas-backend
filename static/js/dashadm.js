@@ -1378,7 +1378,7 @@ function _renderModalDetalhesAdmin(s, numero, servico) {
     document.getElementById('mda-btn-dl').href = url;
 
     document.getElementById('mda-btn-vis').onclick = () =>
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(`${url}/preview`, '_blank', 'noopener,noreferrer');
 
     document.getElementById('mda-fich-bloco').style.display =
       'block';

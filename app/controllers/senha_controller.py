@@ -373,3 +373,34 @@ def descarregar_ficheiro(senha_id):
     except Exception as e:
         print(f"[ERROR] Download ficheiro: {e}")
         return jsonify({"erro": "Erro ao descarregar ficheiro"}), 500
+
+
+@senha_bp.route('/<int:senha_id>/ficheiro/preview', methods=['GET'])
+def visualizar_ficheiro(senha_id):
+    """
+    GET /api/senhas/:id/ficheiro/preview
+    Devolve o ficheiro para visualização inline quando suportado pelo browser.
+    """
+    try:
+        senha = Senha.query.get(senha_id)
+        if not senha or not senha.observacoes:
+            return jsonify({"erro": "Sem ficheiro associado"}), 404
+
+        nome = None
+        for parte in senha.observacoes.split(' | '):
+            if parte.startswith('FICHEIRO:'):
+                nome = parte.replace('FICHEIRO:', '').strip()
+                break
+
+        if not nome:
+            return jsonify({"erro": "Sem ficheiro associado"}), 404
+
+        pasta = os.path.abspath(current_app.config.get('UPLOAD_FOLDER', 'app/static/uploads'))
+        if not os.path.exists(os.path.join(pasta, nome)):
+            return jsonify({"erro": "Ficheiro não encontrado no servidor"}), 404
+
+        return send_from_directory(pasta, nome, as_attachment=False)
+
+    except Exception as e:
+        print(f"[ERROR] Preview ficheiro: {e}")
+        return jsonify({"erro": "Erro ao visualizar ficheiro"}), 500
