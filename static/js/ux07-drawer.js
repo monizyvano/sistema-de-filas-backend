@@ -532,13 +532,14 @@
 
     /* ── Ficheiro ───────────────────────────────────────── */
     const fichUrl     = senhaId ? `/api/senhas/${senhaId}/ficheiro` : null;
+    const fichPreviewUrl = senhaId ? `/api/senhas/${senhaId}/ficheiro/preview` : null;
     const ficheiroHTML = ficheiro && fichUrl
       ? `<div class="ux07-attach">
            <div class="ux07-attach-name">📎 ${_fichNomeDisplay(ficheiro)}</div>
            <div class="ux07-attach-btns">
              <a href="${fichUrl}" download class="ux07-abtn ux07-abtn-dl">⬇ Download</a>
              <button class="ux07-abtn ux07-abtn-view"
-               onclick="window.open('${fichUrl}','_blank','noopener,noreferrer')">
+               onclick="window.open('${fichPreviewUrl}','_blank','noopener,noreferrer')">
                👁 Visualizar
              </button>
            </div>
