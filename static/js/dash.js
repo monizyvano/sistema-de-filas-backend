@@ -240,12 +240,31 @@ async function _refreshPosAccao(label) {
         headers: { Authorization: `Bearer ${store.getToken()}` }
       });
       if (resp.status === 401) { store.logout(); return; }
-      if (!resp.ok) return;
+      if (!resp.ok) {
+
+        ['waitingCount', 'servedToday', 'avgTime'].forEach(id => {
+          const el = document.getElementById(id);
+
+          if (el) {
+            el.title = 'Dados podem estar desatualizados';
+          }
+        });
+        return;
+      }
       const stats = await resp.json();
       const g = id => document.getElementById(id);
       if (g("waitingCount")) g("waitingCount").textContent = stats.aguardando || 0;
       if (g("servedToday"))  g("servedToday").textContent  = stats.atendidos_hoje || 0;
       if (g("avgTime"))      g("avgTime").textContent      = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
+
+      ['waitingCount', 'servedToday', 'avgTime'].forEach(id => {
+          const el = document.getElementById(id);
+
+          if (el) {
+            el.removeAttribute('title');
+          }
+        });
+
     } catch (err) {
       console.error("[worker] estatísticas:", err);
     }
@@ -326,6 +345,16 @@ async function _refreshPosAccao(label) {
   function atualizarDisplayAtual(senha) {
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     set("currentPassword", senha.numero || "---");
+    const numEl = document.getElementById("currentPassword");
+
+    if (numEl) {
+      numEl.classList.remove('senha-nova');
+
+      // força reflow
+      void numEl.offsetWidth;
+
+      numEl.classList.add('senha-nova');
+    }
     set("passwordType",    senha.tipo === "prioritaria" ? "★ Atendimento Prioritário" : "Atendimento Normal");
     set("serviceValue",    senha.servico?.nome || "Serviço");
     set("waitTime",        `${Math.round(senha.tempo_espera_minutos || 0)} min`);
@@ -442,7 +471,9 @@ async function _refreshPosAccao(label) {
     if (!_lockAction('chamar')) return;
 
     const btn = document.querySelector(".btn-next");
-    if (btn) { btn.disabled = true; btn.textContent = "A chamar...";}
+    if (btn) { btn.disabled = true;
+              btn.textContent = "A chamar";
+              btn.classList.add('btn-next-loading');}
 
     try {
       // FIX: usar BASE()
@@ -517,7 +548,10 @@ async function _refreshPosAccao(label) {
       N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
       _unlockAction('concluir', senhaId);
-      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
+      if (btn) {
+        btn.disabled = !senhaAtual;
+        btn.textContent = "✓ Concluir";
+      }
     }
   };
 
@@ -580,7 +614,10 @@ async function _refreshPosAccao(label) {
     // ─────────────────────────────────────────
     // Action lock
     // ─────────────────────────────────────────
-    if (!_lockAction('negar', senhaId)) return;
+    if (!_lockAction('negar', senhaId)) {
+      N && N.notify('warn', 'Aguarde a operação actual terminar.', 2000);
+      return;
+    }
 
     const btn = document.getElementById("btnNegar");
 
@@ -813,6 +850,10 @@ async function _refreshPosAccao(label) {
 
       if (window.UX03) {
         window.UX03.btnLoading(btnConfirmar, false);
+      }
+      else if (btnConfirmar) {
+        btnConfirmar.disabled = false;
+        btnConfirmar.textContent = "↪ Confirmar Redirecionamento";
       }
     }
   };
