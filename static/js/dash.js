@@ -326,6 +326,16 @@ async function _refreshPosAccao(label) {
   function atualizarDisplayAtual(senha) {
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     set("currentPassword", senha.numero || "---");
+    const numEl = document.getElementById("currentPassword");
+
+    if (numEl) {
+      numEl.classList.remove('senha-nova');
+
+      // força reflow
+      void numEl.offsetWidth;
+
+      numEl.classList.add('senha-nova');
+    }
     set("passwordType",    senha.tipo === "prioritaria" ? "★ Atendimento Prioritário" : "Atendimento Normal");
     set("serviceValue",    senha.servico?.nome || "Serviço");
     set("waitTime",        `${Math.round(senha.tempo_espera_minutos || 0)} min`);
