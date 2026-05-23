@@ -41,6 +41,8 @@
   let statusAnterior        = null;
   let obsAnterior           = null;
   let _ultimaChamadaNum     = null;
+  // Cache da última chamada válida
+  let _ultimaChamadaCache   = null;
   let _iconTimer            = null;
 
   // FIX-05 — flag para evitar chamadas de polling sobrepostas
@@ -251,6 +253,7 @@
     if (horaEl)    horaEl.textContent    = '';
     if (iconEl)    { iconEl.classList.remove('ringing'); iconEl.classList.add('idle'); }
     _ultimaChamadaNum = null;
+    _ultimaChamadaCache = null;
   }
 
   function _tratarEventosSemanticos(events = []) {
@@ -325,23 +328,35 @@
         _tratarEventosSemanticos(snap?.events || []);
         const lc   = snap.lastCalled;
         // FIX-09 — só aceitar se o timestamp for de hoje
-        if (lc?.code && _eDHoje(lc.at)) {
+        if (lc?.code && (lc.at == null || _eDHoje(lc.at))) {
           numero  = lc.code;
           balcao  = lc.counterName || 'Balcão';
           servico = lc.service || '—';
-          hora    = formatHora(lc.at);
+          hora = lc.at ? formatHora(lc.at) : '';
         }
       }
     } catch (e) { if (e.name === 'AbortError') return; }
 
     // FIX-09 — se nenhuma fonte devolveu dados válidos de hoje, limpar painel
     if (!numero) {
-      _limparUltimaChamada();
+
+      // preservar último estado válido
+      if (!_ultimaChamadaCache) {
+        _limparUltimaChamada();
+      }
+
       return;
     }
 
     const mudou = numero !== _ultimaChamadaNum;
     _ultimaChamadaNum = numero;
+
+    _ultimaChamadaCache = {
+      numero,
+      balcao,
+      servico,
+      hora
+    };
 
     if (numEl) {
       numEl.textContent = numero;

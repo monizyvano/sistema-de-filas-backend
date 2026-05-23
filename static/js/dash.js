@@ -432,10 +432,15 @@ async function _refreshPosAccao(label) {
     const btnConcluir = document.getElementById("btnConcluir");
     const btnNegar    = document.getElementById("btnNegar");
     const btnRedir    = document.getElementById("btnRedirecionar");
+    const btnChamar = document.getElementById("btnChamar");
     const temSenha    = !!senhaAtual;
     if (btnConcluir) btnConcluir.disabled = !temSenha;
     if (btnNegar)    btnNegar.disabled    = !temSenha;
     if (btnRedir)    btnRedir.disabled    = !temSenha;
+    // Bloquear chamada enquanto existe atendimento activo
+    if (btnChamar) {
+      btnChamar.disabled = temSenha;
+    }
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -445,6 +450,17 @@ async function _refreshPosAccao(label) {
   /* ── CHAMAR PRÓXIMA ──────────────────────────────────────── */
   window.callNextCustomer = async function () {
     const user = store.getUser();
+    // Defesa dupla: impedir nova chamada durante atendimento
+    if (senhaAtual) {
+
+      N && N.notify(
+        'warn',
+        `Senha ${senhaAtual.numero} ainda em atendimento. Conclua, negue ou redireccione primeiro.`,
+        4000
+      );
+
+      return;
+    }
 
 // PR-7: impedir chamadas durante pausa
     if (localStorage.getItem(_pauseStorageKey()) === '1') {
