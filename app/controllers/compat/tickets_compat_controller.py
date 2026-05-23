@@ -7,7 +7,7 @@ from app.extensions import db
 from app.models.log_actividade import LogActividade
 from app.models.senha import Senha
 from app.models.servico import Servico
-from app.services.fila_service import FilaService
+from app.services.fila_service import FilaService, AtendimentoAtivoError
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,8 @@ def chamar_proximo(dados):
         ))
         db.session.commit()
         return {"ok": True, "ticket": _ticket(senha, senha.servico.nome if senha.servico else "")}, 200
+    except AtendimentoAtivoError as exc:
+        return {"ok": False, "message": str(exc)}, 409
     except Exception as exc:
         db.session.rollback()
         logger.error("Erro chamar: %s", exc)

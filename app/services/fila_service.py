@@ -18,6 +18,10 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, case, or_
 
 
+class AtendimentoAtivoError(Exception):
+    """Erro de domínio: atendente já possui senha activa."""
+
+
 class FilaService:
     """Serviço para gerenciamento de filas."""
 
@@ -108,39 +112,16 @@ class FilaService:
         Returns:
             Senha | None
         """
-        # ── 1. Finalizar senha anterior do atendente ──────────────
-        # Procura senhas em 'atendendo' OU 'chamando' deste atendente
+        # ── 1. Guard clause: atendente não pode chamar com atendimento activo ──
         senha_anterior = Senha.query.filter(
             Senha.atendente_id == atendente_id,
             Senha.status.in_(['atendendo', 'chamando'])
         ).first()
 
         if senha_anterior:
-            try:
-                # Se estiver em 'chamando', promover para 'atendendo' primeiro
-                if senha_anterior.status == 'chamando':
-                    senha_anterior.status = 'atendendo'
-                    senha_anterior.atendimento_iniciado_em = datetime.utcnow()
-
-                # Finalizar (marca como 'concluida')
-                senha_anterior.status = 'concluida'
-                senha_anterior.atendimento_concluido_em = datetime.utcnow()
-
-                # Calcular tempo de atendimento
-                if senha_anterior.atendimento_iniciado_em:
-                    delta = (senha_anterior.atendimento_concluido_em
-                             - senha_anterior.atendimento_iniciado_em)
-                    senha_anterior.tempo_atendimento_minutos = max(
-                        1, int(delta.total_seconds() / 60)
-                    )
-
-                print(f"[FilaService] Senha {senha_anterior.numero} "
-                      f"→ concluida (auto-finalizada)")
-
-            except Exception as e:
-                # Não deixar erro no anterior impedir chamar próxima
-                print(f"[FilaService] Aviso ao finalizar anterior: {e}")
-                db.session.rollback()
+            raise AtendimentoAtivoError(
+                f"Atendente já possui senha activa ({senha_anterior.numero})"
+            )
 
         # ── 2. Buscar próxima senha ───────────────────────────────
         proxima = FilaService._buscar_proxima_senha(servico_id=servico_id)

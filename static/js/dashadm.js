@@ -1636,8 +1636,8 @@ function _iniciarListenerAccoes() {
     console.log('[PR-8][storage_sync]', e.newValue);
 
     // evita overlap
-    if (_isRefreshBusy) {
-      _isRefreshQueued = true;
+    if (_refreshAdminBusy || _isRefreshBusy) {
+      _refreshAdminQueued = true;
       return;
     }
     // PR-9: força histórico realtime

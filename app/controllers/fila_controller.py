@@ -11,7 +11,7 @@ CORRECÇÕES:
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.services.fila_service import FilaService
+from app.services.fila_service import FilaService, AtendimentoAtivoError
 from app.schemas.senha_schema import SenhaSchema
 from app.models.senha import Senha
 from app.extensions import db
@@ -93,6 +93,11 @@ def chamar_proxima():
             'senha':    senha_schema.dump(senha)
         }), 200
 
+    except AtendimentoAtivoError as e:
+        return jsonify({
+            'erro': 'Atendimento activo em curso',
+            'mensagem': str(e)
+        }), 409
     except Exception as e:
         print(f"[ERROR] chamar_proxima: {e}")
         import traceback; traceback.print_exc()
