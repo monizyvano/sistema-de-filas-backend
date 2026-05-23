@@ -240,12 +240,31 @@ async function _refreshPosAccao(label) {
         headers: { Authorization: `Bearer ${store.getToken()}` }
       });
       if (resp.status === 401) { store.logout(); return; }
-      if (!resp.ok) return;
+      if (!resp.ok) {
+
+        ['waitingCount', 'servedToday', 'avgTime'].forEach(id => {
+          const el = document.getElementById(id);
+
+          if (el) {
+            el.title = 'Dados podem estar desatualizados';
+          }
+        });
+        return;
+      }
       const stats = await resp.json();
       const g = id => document.getElementById(id);
       if (g("waitingCount")) g("waitingCount").textContent = stats.aguardando || 0;
       if (g("servedToday"))  g("servedToday").textContent  = stats.atendidos_hoje || 0;
       if (g("avgTime"))      g("avgTime").textContent      = `${Math.round(stats.tempo_medio_atendimento || 0)}m`;
+
+      ['waitingCount', 'servedToday', 'avgTime'].forEach(id => {
+          const el = document.getElementById(id);
+
+          if (el) {
+            el.removeAttribute('title');
+          }
+        });
+        
     } catch (err) {
       console.error("[worker] estatísticas:", err);
     }
