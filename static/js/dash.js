@@ -481,7 +481,7 @@ async function _refreshPosAccao(label) {
       _unlockAction('chamar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "Chamar";
+        btn.textContent = "▶ Chamar Próxima Senha";
         btn.dataset.loading = "0";
       }
     }
@@ -517,7 +517,10 @@ async function _refreshPosAccao(label) {
       N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
       _unlockAction('concluir', senhaId);
-      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
+      if (btn) {
+        btn.disabled = !senhaAtual;
+        btn.textContent = "✓ Concluir";
+      }
     }
   };
 
@@ -813,6 +816,10 @@ async function _refreshPosAccao(label) {
 
       if (window.UX03) {
         window.UX03.btnLoading(btnConfirmar, false);
+      }
+      else if (btnConfirmar) {
+        btnConfirmar.disabled = false;
+        btnConfirmar.textContent = "↪ Confirmar Redirecionamento";
       }
     }
   };
