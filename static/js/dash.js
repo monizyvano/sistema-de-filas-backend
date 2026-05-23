@@ -525,13 +525,10 @@ async function _refreshPosAccao(label) {
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
-      if (btn) {
-          btn.classList.remove('btn-next-loading');
-        }
       _unlockAction('chamar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = "▶ Chamar Próxima Senha";
+        btn.textContent = "Chamar";
         btn.dataset.loading = "0";
       }
     }
