@@ -264,7 +264,7 @@ async function _refreshPosAccao(label) {
             el.removeAttribute('title');
           }
         });
-        
+
     } catch (err) {
       console.error("[worker] estatísticas:", err);
     }
@@ -471,7 +471,9 @@ async function _refreshPosAccao(label) {
     if (!_lockAction('chamar')) return;
 
     const btn = document.querySelector(".btn-next");
-    if (btn) { btn.disabled = true; btn.textContent = "A chamar...";}
+    if (btn) { btn.disabled = true;
+              btn.textContent = "A chamar";
+              btn.classList.add('btn-next-loading');}
 
     try {
       // FIX: usar BASE()
@@ -507,6 +509,9 @@ async function _refreshPosAccao(label) {
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
+      if (btn) {
+          btn.classList.remove('btn-next-loading');
+        }
       _unlockAction('chamar');
       if (btn) {
         btn.disabled = false;
