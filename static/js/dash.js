@@ -583,7 +583,10 @@ async function _refreshPosAccao(label) {
     // ─────────────────────────────────────────
     // Action lock
     // ─────────────────────────────────────────
-    if (!_lockAction('negar', senhaId)) return;
+    if (!_lockAction('negar', senhaId)) {
+      N && N.notify('warn', 'Aguarde a operação actual terminar.', 2000);
+      return;
+    }
 
     const btn = document.getElementById("btnNegar");
 
