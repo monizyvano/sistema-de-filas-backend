@@ -1748,215 +1748,106 @@ async function _refreshDashboardAdmin(trigger = 'manual') {
     }
   }
 }
-// PR-11: intervalo calculado por contexto
-  function _getAdaptivePollingInterval() {
-    // PR-11: scheduler adaptativo
-    function _agendarProximoPolling() {
-      // PR-11: executor único protegido
-      async function _executarPollingSeguro(trigger) {
-        // PR-11: listeners resilientes
-        function _iniciarListenersResiliencia() {
+// PR-11: listeners resilientes (inicialização única)
+let _resilienceListenersReady = false;
+function _iniciarListenersResiliencia() {
+  if (_resilienceListenersReady) return;
+  _resilienceListenersReady = true;
 
-          // visibility API
-          document.addEventListener(
-            'visibilitychange',
-            () => {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
 
-              // tab oculta
-              if (document.hidden) {
-                return;
-              }
-
-              // tab voltou
-              if (
-                Date.now() - _lastSuccessfulPoll > 15000
-              ) {
-
-                // PR-HOTFIX: fallback visibility
-                if (typeof _executarPollingSeguro === 'function') {
-                  _executarPollingSeguro('visibility_resume').catch(() => {});
-                } else {
-                  _refreshDashboardAdmin('visibility_resume').catch(() => {});
-                }
-
-              } else {
-
-                _agendarProximoPolling();
-
-              }
-            }
-          );
-
-          // offline
-          window.addEventListener('offline', () => {
-
-            console.warn(
-              '[PR-11] offline — polling adaptado'
-            );
-
-            _adaptivePollingMode = 'offline';
-          });
-
-          // online
-          window.addEventListener('online', () => {
-
-            console.info(
-              '[PR-11] online — recovery imediato'
-            );
-
-            _adaptivePollingMode = 'recovery';
-
-            _executarPollingSeguro(
-              'network_reconnect'
-            ).catch(() => {});
-
-          });
-
-          // cleanup
-          window.addEventListener(
-            'beforeunload',
-            () => {
-
-              if (_pollingTickHandle) {
-                clearTimeout(_pollingTickHandle);
-              }
-
-            }
-          );
-        }
-
-        // evita overlap
-        if (_refreshAdminBusy) { 
-          return;
-        }
-        // PR-11: anti-storm multi-tab
-        if (
-          Date.now() - _lastPollRequestTs < 2500
-        ) {
-          return;
-        }
-
-        // pausa explícita
-        if (_pollingPaused) {
-          return;
-        }
-
-        // offline
-        if (!navigator.onLine) {
-
-          _adaptivePollingMode = 'offline';
-
-          _agendarProximoPolling();
-
-          return;
-        }
-
-        // anti-spam
-        if (
-          Date.now() - _lastPollRequestTs < 5000
-        ) {
-
-          _agendarProximoPolling();
-
-          return;
-        }
-
-        _lastPollRequestTs = Date.now();
-
-        _refreshAdminBusy = true;
-
-        try {
-
-          await _refreshAdminPosAccao();
-
-          _pollingFailures     = 0;
-          _pollingBackoffMs    = 10000;
-          _adaptivePollingMode = 'normal';
-
-          _lastSuccessfulPoll  = Date.now();
-
-        } catch (err) {
-
-          _pollingFailures++;
-
-          _pollingBackoffMs =
-            Math.min(
-              _pollingBackoffMs * 2,
-              120000
-            );
-
-          _adaptivePollingMode = 'recovery';
-
-          console.error(
-            '[PR-11][' + trigger + '] falhou:',
-            err
-          );
-
-        } finally {
-
-          setTimeout(() => {
-
-            _refreshAdminBusy = false;
-
-            // refresh perdido
-            if (_refreshAdminQueued) {
-
-              _refreshAdminQueued = false;
-
-              _executarPollingSeguro(
-                'queued'
-              ).catch(() => {});
-
-            }
-
-          }, 300);
-
-          _agendarProximoPolling();
-        }
-      }
-
-      // limpa timeout antigo
-      if (_pollingTickHandle) {
-        clearTimeout(_pollingTickHandle);
-      }
-
-      // polling pausado
-      if (_pollingPaused) {
-        return;
-      }
-
-      _pollingTickHandle = setTimeout(() => {
-
-        _executarPollingSeguro(
-          'adaptive_polling'
-        ).catch(() => {});
-
-      }, _getAdaptivePollingInterval());
+    if (Date.now() - _lastSuccessfulPoll > 15000) {
+      _executarPollingSeguro('visibility_resume').catch(() => {});
+    } else {
+      _agendarProximoPolling();
     }
+  });
 
-    // tab oculta
-    if (document.hidden) {
-      return 60000;
-    }
+  window.addEventListener('offline', () => {
+    console.warn('[PR-11] offline — polling adaptado');
+    _adaptivePollingMode = 'offline';
+  });
 
-    // offline
-    if (!navigator.onLine) {
-      return 45000;
-    }
+  window.addEventListener('online', () => {
+    console.info('[PR-11] online — recovery imediato');
+    _adaptivePollingMode = 'recovery';
+    _executarPollingSeguro('network_reconnect').catch(() => {});
+  });
 
-    // recovery
-    if (_adaptivePollingMode === 'recovery') {
-      return 15000;
-    }
+  window.addEventListener('beforeunload', () => {
+    if (_pollingTickHandle) clearTimeout(_pollingTickHandle);
+  });
+}
 
-    // backoff após falhas
-    if (_pollingFailures >= 3) {
-      return Math.min(_pollingBackoffMs, 120000);
-    }
+// PR-11: executor único protegido
+async function _executarPollingSeguro(trigger) {
+  if (_refreshAdminBusy) return;
+  if (_pollingPaused) return;
 
-    // normal
-    return 10000;
+  // anti-storm multi-tab
+  if (Date.now() - _lastPollRequestTs < 2500) return;
+
+  // offline
+  if (!navigator.onLine) {
+    _adaptivePollingMode = 'offline';
+    _agendarProximoPolling();
+    return;
   }
+
+  // anti-spam
+  if (Date.now() - _lastPollRequestTs < 5000) {
+    _agendarProximoPolling();
+    return;
+  }
+
+  _lastPollRequestTs = Date.now();
+  _refreshAdminBusy = true;
+
+  try {
+    await _refreshAdminPosAccao();
+
+    _pollingFailures = 0;
+    _pollingBackoffMs = 10000;
+    _adaptivePollingMode = 'normal';
+    _lastSuccessfulPoll = Date.now();
+  } catch (err) {
+    _pollingFailures++;
+    _pollingBackoffMs = Math.min(_pollingBackoffMs * 2, 120000);
+    _adaptivePollingMode = 'recovery';
+
+    console.error('[PR-11][' + trigger + '] falhou:', err);
+  } finally {
+    setTimeout(() => {
+      _refreshAdminBusy = false;
+      if (_refreshAdminQueued) {
+        _refreshAdminQueued = false;
+        _executarPollingSeguro('queued').catch(() => {});
+      }
+    }, 300);
+
+    _agendarProximoPolling();
+  }
+}
+
+// PR-11: intervalo calculado por contexto
+function _getAdaptivePollingInterval() {
+  if (document.hidden) return 60000;
+  if (!navigator.onLine) return 45000;
+  if (_adaptivePollingMode === 'recovery') return 15000;
+  if (_pollingFailures >= 3) return Math.min(_pollingBackoffMs, 120000);
+  return 10000;
+}
+
+// PR-11: scheduler adaptativo
+function _agendarProximoPolling() {
+  if (_pollingTickHandle) clearTimeout(_pollingTickHandle);
+  if (_pollingPaused) return;
+
+  _pollingTickHandle = setTimeout(() => {
+    _executarPollingSeguro('adaptive_polling').catch(() => {});
+  }, _getAdaptivePollingInterval());
+}
 
   // PR-11: adaptive polling
   function iniciarPolling() {
