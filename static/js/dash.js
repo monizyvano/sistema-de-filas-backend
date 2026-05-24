@@ -440,10 +440,7 @@ async function _refreshPosAccao(label) {
     if (btnConcluir) btnConcluir.disabled = !temSenha;
     if (btnNegar)    btnNegar.disabled    = !temSenha;
     if (btnRedir)    btnRedir.disabled    = !temSenha;
-    // Bloquear chamada enquanto existe atendimento activo
-    if (btnChamar) {
-      btnChamar.disabled = temSenha;
-    }
+    
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -530,9 +527,16 @@ async function _refreshPosAccao(label) {
     } finally {
       _unlockAction('chamar');
       if (btn) {
-        btn.disabled = false;
         btn.textContent = "Chamar";
+
+        // limpar estado visual loading
+        btn.classList.remove('btn-next-loading');
+
+        // limpar flags antigas
         btn.dataset.loading = "0";
+
+        // NÃO controlar disabled aqui
+        // deixar actualizarBotoes() decidir
       }
       actualizarBotoes();
     }
