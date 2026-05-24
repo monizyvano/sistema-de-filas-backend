@@ -429,11 +429,15 @@ async function _refreshPosAccao(label) {
   }
 
   function actualizarBotoes() {
+    const btnChamar   = document.querySelector(".btn-next");
     const btnConcluir = document.getElementById("btnConcluir");
     const btnNegar    = document.getElementById("btnNegar");
     const btnRedir    = document.getElementById("btnRedirecionar");
     const btnChamar = document.getElementById("btnChamar");
     const temSenha    = !!senhaAtual;
+    const emPausa     = localStorage.getItem(_pauseStorageKey()) === '1';
+
+    if (btnChamar)   btnChamar.disabled   = temSenha || emPausa || !!actionLocks.chamar;
     if (btnConcluir) btnConcluir.disabled = !temSenha;
     if (btnNegar)    btnNegar.disabled    = !temSenha;
     if (btnRedir)    btnRedir.disabled    = !temSenha;
@@ -531,6 +535,7 @@ async function _refreshPosAccao(label) {
         btn.textContent = "Chamar";
         btn.dataset.loading = "0";
       }
+      actualizarBotoes();
     }
   };
 
@@ -564,10 +569,8 @@ async function _refreshPosAccao(label) {
       N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
       _unlockAction('concluir', senhaId);
-      if (btn) {
-        btn.disabled = !senhaAtual;
-        btn.textContent = "✓ Concluir";
-      }
+      if (btn) btn.textContent = "Concluir";
+      actualizarBotoes();
     }
   };
 
