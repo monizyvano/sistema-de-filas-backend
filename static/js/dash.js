@@ -433,7 +433,6 @@ async function _refreshPosAccao(label) {
     const btnConcluir = document.getElementById("btnConcluir");
     const btnNegar    = document.getElementById("btnNegar");
     const btnRedir    = document.getElementById("btnRedirecionar");
-    const btnChamar = document.getElementById("btnChamar");
     const temSenha    = !!senhaAtual;
     const emPausa     = localStorage.getItem(_pauseStorageKey()) === '1';
 
