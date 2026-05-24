@@ -44,6 +44,7 @@
   let _servicosCache   = [];
   let _refreshBusy = false;
   let _refreshQueued = false;
+  let _pollingTickBusy = false;
 
   const actionLocks = {
     chamar: false,
@@ -150,14 +151,21 @@ function _pauseStorageKey() {
     if (pollingInterval) return;
 
     pollingInterval = setInterval(async () => {
-      await atualizarEstatisticas();
-      await atualizarHistorico();
-      await atualizarFilaAoVivo();
+      if (_pollingTickBusy) return;
+      _pollingTickBusy = true;
+      try {
+        await atualizarEstatisticas();
+        await atualizarHistorico();
+        await atualizarFilaAoVivo();
+      } finally {
+        _pollingTickBusy = false;
+      }
     }, 7000);
   }
 
   function pararPolling() {
     if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    _pollingTickBusy = false;
   }
 // PR-6: refresh imediato pós-acção crítica
 async function _refreshPosAccao(label) {
@@ -392,10 +400,14 @@ async function _refreshPosAccao(label) {
   }
 
   function actualizarBotoes() {
+    const btnChamar   = document.querySelector(".btn-next");
     const btnConcluir = document.getElementById("btnConcluir");
     const btnNegar    = document.getElementById("btnNegar");
     const btnRedir    = document.getElementById("btnRedirecionar");
     const temSenha    = !!senhaAtual;
+    const emPausa     = localStorage.getItem(_pauseStorageKey()) === '1';
+
+    if (btnChamar)   btnChamar.disabled   = temSenha || emPausa || !!actionLocks.chamar;
     if (btnConcluir) btnConcluir.disabled = !temSenha;
     if (btnNegar)    btnNegar.disabled    = !temSenha;
     if (btnRedir)    btnRedir.disabled    = !temSenha;
@@ -470,15 +482,14 @@ async function _refreshPosAccao(label) {
       console.error("[chamar]", err);
       N && N.notify('error', 'Erro de ligação ao servidor. Verifique se o backend está activo.');
     } finally {
-      if (btn) { _unlockAction('chamar');
-
-                if (btn) {
-                  btn.disabled = false;
-                  btn.textContent = "Chamar";
-                  btn.dataset.loading = "0";
-                } }
-                    }
-    };
+      _unlockAction('chamar');
+      if (btn) {
+        btn.textContent = "Chamar";
+        btn.dataset.loading = "0";
+      }
+      actualizarBotoes();
+    }
+  };
 
   /* ── CONCLUIR ATENDIMENTO ────────────────────────────────── */
   window.concludeAttendance = async function () {
@@ -510,7 +521,8 @@ async function _refreshPosAccao(label) {
       N && N.notify('error', err.message || "Erro ao concluir atendimento.");
     } finally {
       _unlockAction('concluir', senhaId);
-      if (btn) { btn.disabled = !senhaAtual; btn.textContent = "Concluir"; }
+      if (btn) btn.textContent = "Concluir";
+      actualizarBotoes();
     }
   };
 
