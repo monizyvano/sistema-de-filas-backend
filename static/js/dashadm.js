@@ -1954,9 +1954,7 @@ function _agendarProximoPolling() {
     const btnAdd  = document.getElementById('btnAddWorker');
     if (btnAdd) btnAdd.addEventListener('click', adicionarTrabalhador);
     const btnSair = document.getElementById('btnSairAdmin');
-    if (btnSair) btnSair.addEventListener('click', () => {
-      if (confirm('Sair?')) { pararPolling(); store.logout(); window.location.href = '/login'; }
-    });
+    if (btnSair) btnSair.addEventListener('click', window.sair);
   }
 
   function atualizarHeader() {
@@ -2034,7 +2032,33 @@ function _agendarProximoPolling() {
     }
   };
 
-  window.sair = function() {
-    if (confirm('Sair?')) { pararPolling(); store.logout(); window.location.href='/login'; }
+  window.sair = async function () {
+
+      let confirmado;
+
+      if (window.UX04) {
+
+          confirmado = await UX04.confirm({
+              titulo: 'Terminar sessão',
+              mensagem: 'Tem a certeza que deseja sair? A sessão actual será encerrada.',
+              txtConfirmar: 'Sair',
+              txtCancelar: 'Cancelar',
+              aviso: true,
+              emoji: '🚪',
+          });
+
+      } else {
+
+          confirmado = window.confirm('Deseja sair do sistema?');
+
+      }
+
+      if (!confirmado) return;
+
+      pararPolling();
+
+      store.logout();
+
+      window.location.href = '/login';
   };
 })();
