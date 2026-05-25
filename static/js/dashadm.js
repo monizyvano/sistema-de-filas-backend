@@ -398,8 +398,10 @@ async function criarGraficos() {
       // FIX-D1: usar score do backend directamente — null é válido
       score: (t.score !== undefined && t.score !== null) ? t.score : null,
       // FIX-D5: preservar flag de dados insuficientes do backend
-      dados_insuficientes: t.dados_insuficientes
-        ?? (t.score == null || t.total_atendimentos === 0 || t.total_atendimentos == null),
+
+      // Confiar no backend; só marcar insuficiente se score for explicitamente null
+      dados_insuficientes: t.dados_insuficientes ?? (t.score == null),
+
       departamento: t.departamento || t.servico?.nome || 'Geral',
     }));
 
@@ -456,10 +458,13 @@ async function criarGraficos() {
       // FIX-D3: score vem do backend — pode ser null
       const sc     = (t.dados_insuficientes || t.score === null) ? null : t.score;
       const badge  = scoreBadge(sc);
-      const nota   = t.avaliacao_media > 0
-        ? '★'.repeat(Math.round(t.avaliacao_media)) +
-          `<small style="font-size:.7rem;"> (${(+t.avaliacao_media).toFixed(1)})</small>`
-        : '<span style="color:#d1d5db;">Sem avaliações</span>';
+      const avalMedia = +(t.avaliacao_media) || 0;
+      const totalAval = +(t.avaliacoes_total) || 0;
+
+      const nota = totalAval > 0
+          ? '★'.repeat(Math.max(1, Math.round(avalMedia))) +
+            `<small style="font-size:.7rem;"> (${avalMedia.toFixed(1)})</small>`
+          : '<span style="color:#d1d5db;">Sem avaliações</span>';
       const tipoLabel  = t.tipo === 'admin' ? '👑 Admin' : '👤 Atendente';
       const statusDot  = t.ativo
         ? '<span style="color:#22c55e;margin-right:4px;">●</span>'
