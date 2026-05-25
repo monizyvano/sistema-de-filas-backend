@@ -764,6 +764,9 @@ window.refreshMetricas = async function () {
   };
 function _gerarLinhaHistoricoHTML(s, isNovo = false) {
 
+  // Guardar no cache para o modal de detalhes
+  _modalDetalhesCache.set(s.id, s);
+
   const servico =
     s.servico?.nome || 'Serviço';
 
@@ -1479,6 +1482,40 @@ function _renderModalDetalhesAdmin(s, numero, servico) {
   window.fecharModalAdmin = function() {
     document.getElementById('modalDetalhesAdmin').style.display = 'none';
     _dadosModalAdmin = null;
+  };
+
+  // Abre o modal de detalhes de uma senha do histórico
+  window.verDetalhesSenha = function (id, numero, servico) {
+      const modal = document.getElementById('modalDetalhesAdmin');
+      if (!modal) return;
+
+      // Cabeçalho
+      const tituloEl = document.getElementById('mda-titulo');
+      if (tituloEl) {
+          tituloEl.textContent = `Senha ${numero} · ${servico}`;
+      }
+
+      // Campo serviço
+      const servicoEl = document.getElementById('mda-servico');
+      if (servicoEl) {
+          servicoEl.textContent = servico || '–';
+      }
+
+      const s = _modalDetalhesCache.get(id);
+
+      if (s) {
+          _dadosModalAdmin = s;
+          _renderModalDetalhesAdmin(s, numero, servico);
+      } else {
+          const formEl = document.getElementById('mda-form');
+
+          if (formEl) {
+              formEl.textContent =
+                  'Dados não disponíveis. Recarregue o histórico.';
+          }
+      }
+
+      modal.style.display = 'flex';
   };
 
   document.addEventListener('click', e => {
