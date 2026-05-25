@@ -946,20 +946,78 @@ async function _refreshPosAccao(label) {
 
   /* ── ADICIONAR OBSERVAÇÃO ───────────────────────────────── */
   window.addObservation = function () {
-    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
-    const obs = prompt("Adicionar observação:", senhaAtual.observacoes?.replace(/FICHEIRO:[^|]+\|?/g, "").trim() || "");
-    if (obs === null) return;
-    senhaAtual.observacoes = obs;
-    const obsEl = document.getElementById("obsValue");
-    if (obsEl) obsEl.textContent = obs || "Sem observações";
-    preencherPreviewDocumentos(senhaAtual);
-    N && N.notify('info', 'Observação adicionada.', 2500);
+
+      if (!senhaAtual) {
+          N && N.notify('warn', 'Nenhuma senha em atendimento.');
+          return;
+      }
+
+      const modal = document.getElementById('modalObservacao');
+      const ta = document.getElementById('obsTextarea');
+
+      if (!modal || !ta) return;
+
+      ta.value = (senhaAtual.observacoes || '')
+          .replace(/FICHEIRO:[^|]+\|?/g, '')
+          .trim();
+
+      modal.style.display = 'flex';
+
+      setTimeout(() => ta.focus(), 60);
+  };
+
+  window._fecharModalObs = function () {
+
+      const m = document.getElementById('modalObservacao');
+
+      if (m) m.style.display = 'none';
+  };
+
+  window._confirmarObs = function () {
+
+      const ta = document.getElementById('obsTextarea');
+
+      const obs = (ta?.value || '').trim();
+
+      if (senhaAtual) {
+
+          senhaAtual.observacoes = obs;
+
+          const obsEl = document.getElementById('obsValue');
+
+          if (obsEl) {
+              obsEl.textContent = obs || 'Sem observações';
+          }
+
+          preencherPreviewDocumentos(senhaAtual);
+      }
+
+      window._fecharModalObs();
+
+      N && N.notify('info', 'Observação guardada.', 2500);
   };
 
   /* ── VER DOCUMENTOS ─────────────────────────────────────── */
   window.requestDocuments = function () {
-    if (!senhaAtual) { N && N.notify('warn', 'Nenhuma senha em atendimento.'); return; }
-    window.abrirDocumentoAtendimento();
+
+      if (!senhaAtual) {
+
+          N && N.notify('warn', 'Nenhuma senha em atendimento.');
+
+          return;
+      }
+
+      document.querySelector('[data-tab="controlo"]')?.click();
+
+      const pre = document.getElementById('docsPreviewContent');
+
+      if (pre) {
+
+          pre.closest('.card')?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest'
+          });
+      }
   };
 
   /* ── IMPRIMIR RECIBO ─────────────────────────────────────── */

@@ -285,7 +285,7 @@
                 <div class="tab-panel" id="tab-documentos">
                     <div style="display:flex;flex-direction:column;gap:.6rem;">
                         <button class="btn-action btn-docs" onclick="requestDocuments()" style="justify-content:flex-start;padding:.85rem 1rem;">
-                            📋 Ver Dados do Pedido
+                            🔍 Ver Dados 
                         </button>
                         <button class="btn-action btn-redirect" onclick="sendReceipt()" style="justify-content:flex-start;padding:.85rem 1rem;">
                             🖨 Imprimir Recibo
@@ -478,5 +478,42 @@
 <script src="/static/js/notifications.js"></script>
 <script src="/static/js/ux07-drawer.js?v=s6"></script>
 <script src="/static/js/dash.js?v=s6"></script>
+
+<!-- Mini-modal Observação -->
+<div id="modalObservacao"
+     style="display:none;position:fixed;inset:0;z-index:10000;
+     background:rgba(0,0,0,.5);backdrop-filter:blur(4px);
+     align-items:center;justify-content:center;padding:1rem;">
+
+  <div style="background:white;border-radius:18px;
+      max-width:400px;width:100%;
+      padding:1.75rem;
+      box-shadow:0 24px 64px rgba(0,0,0,.3);">
+
+    <h3 style="margin-bottom:1rem;">
+      ✏ Observação
+    </h3>
+
+    <textarea
+      id="obsTextarea"
+      rows="3"
+      style="width:100%;padding:.85rem;
+      border-radius:10px;border:1px solid #ddd;"
+      placeholder="Observação sobre este atendimento..."></textarea>
+
+    <div style="display:flex;gap:.6rem;
+        margin-top:1rem;justify-content:flex-end;">
+
+      <button onclick="_fecharModalObs()">
+        Cancelar
+      </button>
+
+      <button onclick="_confirmarObs()">
+        Guardar
+      </button>
+
+    </div>
+  </div>
+</div>
 </body>
 </html>
