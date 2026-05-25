@@ -145,10 +145,22 @@
       set('kpiAttend', s.concluidas || 0);
       set('kpiWait',   `${s.tempo_medio_espera || 0}min`);
 
-      const total = (s.aguardando||0) + (s.atendendo||0);
-      const taxa  = total > 0 ? Math.round((s.atendendo / total)*100) : 0;
-      set('kpiOcc',      `${taxa}%`);
-      set('kpiOccTrend', `${taxa}%`);
+      const ocupados =
+          (s.chamando || 0) +
+          (s.atendendo || 0);
+
+      const totalSistema =
+          (s.aguardando || 0) +
+          (s.chamando || 0) +
+          (s.atendendo || 0);
+
+      const taxa =
+          totalSistema > 0
+              ? Math.round((ocupados / totalSistema) * 100)
+              : 0;
+
+      set('kpiOcc', totalSistema > 0 ? `${taxa}%` : '–');
+      set('kpiOccTrend', totalSistema > 0 ? `${taxa}%` : '–');
 
       const t = s.total_emitidas||0, c = s.concluidas||0;
       set('kpiSat', t > 0 ? `${Math.round((c/t)*100)}%` : '0%');
