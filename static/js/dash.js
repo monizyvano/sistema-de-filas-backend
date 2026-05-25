@@ -437,9 +437,9 @@ async function _refreshPosAccao(label) {
     const emPausa     = localStorage.getItem(_pauseStorageKey()) === '1';
 
     if (btnChamar)   btnChamar.disabled   = temSenha || emPausa || !!actionLocks.chamar;
-    if (btnConcluir) btnConcluir.disabled = !temSenha;
-    if (btnNegar)    btnNegar.disabled    = !temSenha;
-    if (btnRedir)    btnRedir.disabled    = !temSenha;
+    if (btnConcluir) btnConcluir.disabled = !temSenha || emPausa;
+    if (btnNegar) btnNegar.disabled = !temSenha || emPausa;
+    if (btnRedir) btnRedir.disabled = !temSenha || emPausa;
     
   }
 
@@ -913,6 +913,7 @@ async function _refreshPosAccao(label) {
       setStatus("Pausado", "#d97706");
 
       N && N.notify('pause', 'Atendimento pausado. Clique em "Retomar" para continuar.', 4000);
+      actualizarBotoes();
       await _refreshPosAccao('pausa');
     } else {
       btn.dataset.pausado = "";
@@ -936,6 +937,8 @@ async function _refreshPosAccao(label) {
       setStatus(senhaAtual ? "Em Atendimento" : "Disponível", senhaAtual ? "#d97706" : "#10b981");
 
       N && N.notify('resume', 'Atendimento retomado.', 2500);
+
+      actualizarBotoes();
 
       await _refreshPosAccao('retoma');
     }
