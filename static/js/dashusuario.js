@@ -326,13 +326,48 @@
       if (r.ok) {
         const snap = await r.json();
         _tratarEventosSemanticos(snap?.events || []);
-        const lc   = snap.lastCalled;
-        // FIX-09 — só aceitar se o timestamp for de hoje
-        if (lc?.code && (lc.at == null || _eDHoje(lc.at))) {
-          numero  = lc.code;
-          balcao  = lc.counterName || 'Balcão';
-          servico = lc.service || '—';
-          hora = lc.at ? formatHora(lc.at) : '';
+        const lc = snap.lastCalled;
+
+        if (lc) {
+
+          // Defensivo: suporta múltiplas convenções de nomes
+          // vindas do backend/snapshots
+
+          const lcCode =
+              lc.code ||
+              lc.numero ||
+              lc.ticket_code ||
+              lc.senha_numero;
+
+          const lcAt =
+              lc.at ||
+              lc.timestamp ||
+              lc.called_at ||
+              lc.chamada_em;
+
+          const lcCounter =
+              lc.counterName ||
+              lc.counter_name ||
+              (lc.numero_balcao ? `Balcão ${lc.numero_balcao}` : null) ||
+              lc.balcao ||
+              'Balcão';
+
+          const lcService =
+              lc.service ||
+              lc.servico ||
+              lc.service_name ||
+              lc.servico_nome ||
+              '—';
+
+          // Só aceitar chamadas de hoje
+          if (lcCode && (lcAt == null || _eDHoje(lcAt))) {
+
+              numero  = lcCode;
+              balcao  = String(lcCounter);
+              servico = lcService;
+              hora    = lcAt ? formatHora(lcAt) : '';
+
+          }
         }
       }
     } catch (e) { if (e.name === 'AbortError') return; }
