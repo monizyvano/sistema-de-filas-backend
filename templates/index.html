@@ -129,8 +129,31 @@
             border-radius:10px; font-size:.875rem; font-weight:600; min-height:1.2rem;
             transition:all .3s; line-height:1.4;
         }
-        .ticket-message.ok  {background:rgba(5,150,105,.1); color:#047857;}
-        .ticket-message.warn{background:rgba(220,38,38,.08);color:#b91c1c;}
+        .ticket-message.ok {
+            background: linear-gradient(135deg,rgba(5,150,105,.12),rgba(5,150,105,.06));
+            color: #047857;
+            border: 1px solid rgba(5,150,105,.25);
+            border-left: 3px solid #059669;
+            animation: msgIn .3s ease-out;
+        }
+
+        .ticket-message.warn {
+            background: linear-gradient(135deg,rgba(220,38,38,.1),rgba(220,38,38,.05));
+            color: #b91c1c;
+            border: 1px solid rgba(220,38,38,.2);
+            border-left: 3px solid #dc2626;
+        }
+
+        @keyframes msgIn {
+            from {
+                opacity:0;
+                transform:translateY(-4px);
+            }
+            to {
+                opacity:1;
+                transform:translateY(0);
+            }
+        }
 
         /* Painel Meus Dados */
         .dados-panel{
@@ -223,6 +246,74 @@
             display:block; margin:.75rem auto 0; background:none; border:none;
             font-size:.82rem; color:#8c6746; cursor:pointer; text-decoration:underline;
         }
+        /* ── Stepper ───────────────── */
+
+        .flow-steps{
+            display:flex;
+            align-items:center;
+            gap:.5rem;
+            margin:.5rem 0 var(--space-lg);
+            flex-wrap:wrap;
+        }
+
+        .fstep{
+            display:flex;
+            align-items:center;
+            gap:.4rem;
+            opacity:.35;
+            transition:opacity .35s;
+        }
+
+        .fstep.active{
+            opacity:1;
+        }
+
+        .fstep.done{
+            opacity:.65;
+        }
+
+        .fstep-n{
+            width:24px;
+            height:24px;
+            border-radius:50%;
+            background:var(--accent-beige);
+            color:white;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:.72rem;
+            font-weight:800;
+            flex-shrink:0;
+        }
+
+        .fstep.active .fstep-n{
+            background:var(--primary-brown-dark);
+        }
+
+        .fstep.done .fstep-n{
+            background:#059669;
+        }
+
+        .fstep span{
+            font-size:.78rem;
+            font-weight:600;
+            color:var(--text-dark);
+            white-space:nowrap;
+        }
+
+        .fstep-line{
+            flex:1;
+            min-width:18px;
+            height:1px;
+            background:var(--neutral-gray);
+            opacity:.5;
+        }
+
+        @media (max-width:400px){
+            .fstep span{
+                display:none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -273,19 +364,19 @@
 
             <div class="stats-grid">
                 <article class="stat-card">
-                    <div class="stat-label">Na Fila</div>
+                    <div class="stat-label">A Aguardar</div>
                     <div class="stat-value" id="statFila">0</div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-label">Tempo Médio</div>
+                    <div class="stat-label">Espera Est.</div>
                     <div class="stat-value" id="statTempo">~0min</div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-label">Concluídos</div>
+                    <div class="stat-label">Atendidos Hoje</div>
                     <div class="stat-value" id="statDone">0</div>
                 </article>
                 <article class="stat-card">
-                    <div class="stat-label">Taxa</div>
+                    <div class="stat-label">Taxa Conclusão</div>
                     <div class="stat-value" id="statSat">—</div>
                 </article>
             </div>
@@ -295,6 +386,29 @@
                 <div id="ticketMessage" class="ticket-message"></div>
             </div>
         </section>
+
+        <div class="flow-steps">
+
+            <div class="fstep active" id="fstep1">
+                <div class="fstep-n">1</div>
+                <span>Escolha o serviço</span>
+            </div>
+
+            <div class="fstep-line"></div>
+
+            <div class="fstep" id="fstep2">
+                <div class="fstep-n">2</div>
+                <span>Emita a senha</span>
+            </div>
+
+            <div class="fstep-line"></div>
+
+            <div class="fstep" id="fstep3">
+                <div class="fstep-n">3</div>
+                <span>Acompanhe em directo</span>
+            </div>
+
+        </div>
 
         <!-- SERVIÇOS -->
         <section class="services-section">
@@ -310,7 +424,22 @@
         <section class="live-display">
             <div class="live-header">
                 <h3 class="section-title" style="margin:0;">Acompanhamento em Tempo Real</h3>
-                <div class="live-badge"><span class="live-dot"></span>AO VIVO</div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.2rem;">
+
+                    <div class="live-badge">
+                        <span class="live-dot"></span>
+                        AO VIVO
+                    </div>
+
+                    <span style="
+                        font-size:.65rem;
+                        color:var(--text-muted);
+                        letter-spacing:.02em;
+                    ">
+                        ↻ actualiza cada 3s
+                    </span>
+
+                </div>
             </div>
 
             <div class="live-grid">
@@ -493,6 +622,65 @@
     const modal = document.getElementById('modalAvaliacao');
     if (modal && e.target === modal) window._fecharAvaliacao();
   });
+
+})();
+</script>
+<script>
+(function () {
+
+    function setStep(n) {
+
+        [1,2,3].forEach(function(i){
+
+            var el = document.getElementById('fstep' + i);
+
+            if(!el) return;
+
+            el.classList.toggle('active', i === n);
+            el.classList.toggle('done', i < n);
+
+        });
+
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+
+        var list = document.getElementById('servicesList');
+
+        if(list){
+
+            new MutationObserver(function(){
+
+                if(document.querySelector('.service-card.ativo')){
+                    setStep(2);
+                }
+
+            }).observe(list,{
+                attributes:true,
+                subtree:true,
+                attributeFilter:['class']
+            });
+
+        }
+
+        var msg = document.getElementById('ticketMessage');
+
+        if(msg){
+
+            new MutationObserver(function(){
+
+                if(msg.innerHTML.indexOf('Senha emitida') !== -1){
+                    setStep(3);
+                }
+
+            }).observe(msg,{
+                childList:true,
+                subtree:true
+            });
+
+        }
+
+    });
 
 })();
 </script>
