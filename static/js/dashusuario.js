@@ -326,7 +326,12 @@
       if (r.ok) {
         const snap = await r.json();
         _tratarEventosSemanticos(snap?.events || []);
-        const lc = snap.lastCalled;
+        const lc =
+            snap.lastCalled ||
+            snap.last_call ||
+            snap.last_called ||
+            snap.ultima_chamada ||
+            null;
 
         if (lc) {
 
