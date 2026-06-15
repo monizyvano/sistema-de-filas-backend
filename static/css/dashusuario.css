@@ -77,18 +77,34 @@ h1, h2, h3, h4, h5, h6 {
             gap: 8px;
         }
       
+        /* Logo da escola no topo do dashboard do usuario. */
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+      
         .logo {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
-            border-radius: 10px;
+            width: 58px;
+            height: 58px;
+            background: #fff;
+            border: 2px solid rgba(140, 103, 70, 0.28);
+            border-radius: 50%;
+            overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: var(--font-heading);
-            font-weight: 700;
-            color: white;
-            font-size: var(--text-lg);
+            flex: 0 0 58px;
+            box-shadow: 0 4px 12px rgba(64, 25, 3, 0.16);
+        }
+
+        /* Imagem dentro da moldura circular do logo. */
+        .logo img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
         }
 
         .site-title{

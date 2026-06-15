@@ -111,9 +111,11 @@
         gap: var(--space-md);
     }
     
+    /* Aumenta o logo do dashboard do usuario em ecras desktop. */
     .logo {
-        width: 50px;
-        height: 50px;
+        width: 72px;
+        height: 72px;
+        flex-basis: 72px;
     }
     
     .site-title {
@@ -285,6 +287,7 @@
         text-align: right;
     }
 }
+
 
 
 
