@@ -49,16 +49,27 @@
         }
 
         .logo-admin {
-            width: 48px;
-            height: 48px;
-            background: linear-gradient(135deg, var(--primary-brown), var(--accent-beige));
-            border-radius: 12px;
+            width: 58px;
+            height: 58px;
+            background: #fff;
+            border: 2px solid rgba(140, 103, 70, 0.28);
+            border-radius: 50%;
+            overflow: hidden;
+
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-weight: 700;
-            font-size: 1.3rem;
+
+            flex-shrink: 0;
+
+            box-shadow: 0 4px 12px rgba(64, 25, 3, 0.16);
+        }
+
+        .logo-admin img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
 
         .header-title h1 {

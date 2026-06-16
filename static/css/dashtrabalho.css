@@ -3,18 +3,6 @@
  * ═══════════════════════════════════════════════════════════════
  * CSS do Dashboard do Trabalhador — extraído de dashtrabalho.html
  *
- * Sprint 3:
- *   ✅ CSS movido do <style> inline para ficheiro externo.
- *   ✅ Mantém todos os estilos sem alteração.
- *   ✅ Melhor manutenibilidade e cacheamento pelo browser.
- *
- * Como usar em dashtrabalho.html:
- *   Substituir o bloco <style>...</style> por:
- *   <link rel="stylesheet" href="/static/css/dashtrabalho.css">
- *
- *   (Colocar a seguir ao link do dash.css já existente:)
- *   <link rel="stylesheet" href="/static/css/dash.css">
- *   <link rel="stylesheet" href="/static/css/dashtrabalho.css">
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -86,6 +74,29 @@ html, body { height: 100%; overflow: hidden; }
     font-size: .9rem;
     letter-spacing: .02em;
 }
+.logo-trab {
+            width: 58px;
+            height: 58px;
+            background: #fff;
+            border: 2px solid rgba(140, 103, 70, 0.28);
+            border-radius: 50%;
+            overflow: hidden;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            flex-shrink: 0;
+
+            box-shadow: 0 4px 12px rgba(64, 25, 3, 0.16);
+        }
+
+        .logo-trab img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
 
 /* ── Cards ───────────────────────────────────────── */
 .card {
