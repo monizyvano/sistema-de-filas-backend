@@ -51,10 +51,24 @@
 
         .logo-area{display:flex;align-items:center;gap:1.1rem;}
         .logo-badge{
-            width:52px;height:52px;background:rgba(255,255,255,.12);
-            border:1px solid rgba(255,255,255,.2);border-radius:14px;
-            display:flex;align-items:center;justify-content:center;
-            font-family:'Poppins',sans-serif;font-size:1.3rem;font-weight:900;color:#fff;
+            width:52px;
+            height:52px;
+            background:#fff;
+            border:2px solid rgba(255,255,255,.25);
+            border-radius:50%;
+            overflow:hidden;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            flex:0 0 52px;
+            box-shadow:0 4px 12px rgba(0,0,0,.18);
+        }
+
+        .logo-badge img{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            display:block;
         }
         .logo-text h1{font-family:'Poppins',sans-serif;font-size:1.3rem;font-weight:800;color:#fff;line-height:1.1;}
         .logo-text p{font-size:.75rem;color:rgba(255,255,255,.65);margin-top:.1rem;}
@@ -274,7 +288,11 @@
 <!-- HEADER -->
 <header>
     <div class="logo-area">
-        <div class="logo-badge">SB</div>
+        <div class="logo-badge">
+            <img
+                src="/static/image/imageee.sb.jpeg"
+                alt="Logo do Instituto Médio Técnico São Benedito">
+        </div>
         <div class="logo-text">
             <h1>IMTSB</h1>
             <p>Instituto Médio Técnico São Benedito · Luanda</p>
