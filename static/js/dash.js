@@ -125,15 +125,34 @@ function _pauseStorageKey() {
   }
 
   /* ── Timer ───────────────────────────────────────────────── */
-  function iniciarTimer() {
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    timerSegundos = 0;
+  function iniciarTimer(segundosIniciais = 0) {
+
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    timerSegundos = Math.max(
+      0,
+      Number(segundosIniciais) || 0
+    );
+
     const el = document.getElementById("timer");
-    if (el) el.textContent = "00:00";
+
+    if (el) {
+      el.textContent = formatDuracao(timerSegundos);
+    }
+
     timerInterval = setInterval(() => {
+
       timerSegundos += 1;
+
       const el = document.getElementById("timer");
-      if (el) el.textContent = formatDuracao(timerSegundos);
+
+      if (el) {
+        el.textContent = formatDuracao(timerSegundos);
+      }
+
     }, 1000);
   }
 
@@ -362,6 +381,88 @@ async function _refreshPosAccao(label) {
     set("obsValue",        senha.observacoes || "Sem observações");
     preencherPreviewDocumentos(senha);
     setStatus("Em Atendimento", "#d97706");
+  }
+  /* ── Recuperar atendimento ativo após recarregar página ─── */
+  async function recuperarAtendimentoAtivo() {
+
+    const user = store.getUser();
+
+    if (!user?.id) return false;
+
+    try {
+
+      const resp = await fetch(
+        `${BASE()}/senhas?atendente_id=${user.id}&status=atendendo&hoje=1&page=1&per_page=5`,
+        {
+          headers: {
+            Authorization: `Bearer ${store.getToken()}`
+          }
+        }
+      );
+
+      if (!resp.ok) {
+        console.warn("[RECUPERAR] resposta não OK:", resp.status);
+        return false;
+      }
+
+      const data = await resp.json();
+
+      console.log("[RECUPERAR DATA]", data);
+
+      const lista = data?.senhas || [];
+
+      if (!lista.length) return false;
+
+      const senha = lista[0];
+
+      if (senha.status !== "atendendo") {
+        return false;
+      }
+
+      senhaAtual = senha;
+
+      const hiddenEl = document.getElementById("currentSenhaId");
+
+      if (hiddenEl) {
+        hiddenEl.value = senha.id || "";
+      }
+
+      atualizarDisplayAtual(senha);
+
+      actualizarBotoes();
+
+      let segundosDecorridos = 0;
+
+      if (senha.atendimento_iniciado_em) {
+
+        const inicio = new Date(
+          senha.atendimento_iniciado_em.endsWith("Z")
+            ? senha.atendimento_iniciado_em
+            : senha.atendimento_iniciado_em + "Z"
+        );
+
+        segundosDecorridos =
+          Math.floor((Date.now() - inicio.getTime()) / 1000);
+      }
+
+      iniciarTimer(segundosDecorridos);
+
+      console.log(
+        "[RECUPERAR SENHA]",
+        JSON.stringify(senha, null, 2)
+      );
+
+      return true;
+
+    } catch (erro) {
+
+      console.warn(
+        "[Recuperação Atendimento]",
+        erro
+      );
+
+      return false;
+    }
   }
 
   function limparDisplayAtual() {
@@ -1270,7 +1371,10 @@ async function _refreshPosAccao(label) {
       setStatus("Disponível", "#10b981");
     }
 
-    await _carregarServicosNoModal().catch(() => {});
+   await _carregarServicosNoModal().catch(() => {});
+
+    await recuperarAtendimentoAtivo();
+
     await atualizarTudo();
 
     // PR-7: não iniciar polling se pausado
