@@ -17,7 +17,34 @@ class NotificacaoService:
         Implementação de SMS será feita posteriormente
         usando API de SMS (exemplo: Twilio, Africa's Talking)
     """
-    
+    @staticmethod
+    def notificar_senha_emitida(senha):
+        """
+        Simulação de SMS para emissão de senha.
+
+        Futuramente poderá usar Twilio, Africa's Talking,
+        Infobip ou outro provider sem alterar o frontend.
+        """
+
+        mensagem = (
+            f"📱 SMS enviado para {senha.usuario_contato or 'Utente'}\n\n"
+            f"Senha: {senha.numero}\n"
+            f"Serviço: {senha.servico.nome if senha.servico else 'Atendimento'}\n"
+            f"Estado: Emitida com sucesso\n\n"
+            f"Acompanhe a sua posição no painel IMTSB."
+        )
+
+        print("\n" + "=" * 60)
+        print("[SMS SIMULADO - SENHA EMITIDA]")
+        print(mensagem)
+        print("=" * 60 + "\n")
+
+        return {
+            "enviado": True,
+            "provider": "simulated",
+            "tipo": "senha_emitida",
+            "mensagem": mensagem
+        }
     @staticmethod
     def notificar_senha_chamada(senha_id):
         """

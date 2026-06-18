@@ -932,39 +932,53 @@
    * @param {string}  [opts.txtFechar]
    * @returns {Promise<void>}
    */
-  function alert(opts) {
-    if (typeof opts === 'string') opts = { titulo: opts };
+  /* ════════════════════════════════════════════════════════════
+   UX04.smsPreview()
+   Modal estilo smartphone para SMS simulado
+════════════════════════════════════════════════════════════ */
 
-    return new Promise(resolve => {
-      const tipo      = opts.tipo     || 'info';
-      const txtFechar = opts.txtFechar || 'Fechar';
+    function smsPreview(opts = {}) {
 
-      const corpo = opts.mensagem
-        ? `<p class="ux04-msg">${opts.mensagem}</p>`
-        : '';
+      const telefone = opts.telefone || "+244 XXX XXX XXX";
+      const mensagem = opts.mensagem || "";
 
-      const accoesHTML = `
-        <button class="ux04-btn ux04-btn-confirm" data-ux04-ok>${txtFechar}</button>
-      `;
+      return alert({
+        titulo: "📱 SMS Enviado",
+        tipo: "success",
+        mensagem: `
+          <div style="
+            background:#f8fafc;
+            border:1px solid #e2e8f0;
+            border-radius:18px;
+            padding:16px;
+            margin-top:8px;
+            text-align:left;
+            font-family:system-ui;
+          ">
+            <div style="
+              font-size:.85rem;
+              color:#64748b;
+              margin-bottom:8px;
+            ">
+              Para: ${telefone}
+            </div>
 
-      const { overlay, fechar, _onKey } = _buildModal({
-        titulo:    opts.titulo,
-        subtitulo: opts.subtitulo,
-        tipo,
-        emoji:     opts.emoji,
-        corpo,
-        accoesHTML
+            <div style="
+              background:white;
+              border-radius:14px;
+              padding:12px;
+              border:1px solid #e5e7eb;
+              line-height:1.5;
+              white-space:pre-line;
+            ">
+    ${mensagem}
+            </div>
+          </div>
+        `,
+        txtFechar: "Fechar"
       });
 
-      overlay.querySelector('[data-ux04-ok]')?.addEventListener('click', () => {
-        document.removeEventListener('keydown', _onKey);
-        fechar();
-        resolve();
-      });
-
-      setTimeout(() => overlay.querySelector('[data-ux04-ok]')?.focus(), 80);
-    });
-  }
+    }
 
   /* ════════════════════════════════════════════════════════════
      UX04.toast()
@@ -1111,7 +1125,8 @@
     prompt,
     alert,
     toast,
-    refresh: _applyPressFeedback, // Reaplica micro-feedback (para botões dinâmicos)
+    smsPreview,
+    refresh: _applyPressFeedback,
   };
 
   console.log('✅ UX04 — Modais + Toasts Profissionais carregado');

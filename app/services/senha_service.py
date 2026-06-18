@@ -63,6 +63,12 @@ class SenhaService:
         db.session.commit()
         db.session.refresh(senha)
 
+        from app.services.notificacao_service import NotificacaoService
+
+        sms_resultado = NotificacaoService.notificar_senha_emitida(senha)
+
+        senha.sms_resultado = sms_resultado
+
         print(f"\n[SenhaService] Emitida: {senha.numero} | "
               f"Serviço: {servico_id} | Tipo: {tipo} | "
               f"Obs: {'✅' if observacoes else '—'}")

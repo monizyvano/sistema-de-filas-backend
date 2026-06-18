@@ -58,7 +58,8 @@ def emitir_senha():
         )
         return jsonify({
             'mensagem': 'Senha emitida com sucesso',
-            'senha': senha.to_dict()
+            'senha': senha.to_dict(),
+            'sms': getattr(senha, 'sms_resultado', None)
         }), 201
     except ValueError as e:
         return jsonify({'erro': str(e)}), 400

@@ -789,6 +789,9 @@
         3
       );
       const dados = await r.json().catch(() => ({}));
+
+      console.log("[SMS DASH]", dados.sms);
+
       if (!r.ok) {
         mostrarMensagem(`❌ ${dados.erro || 'Erro ao emitir'}`, 'warn');
         return;
@@ -813,6 +816,14 @@
       await atualizarEstatisticas();
       N && N.notify('success',
         `Senha <strong>${minhaSenha.numero}</strong> emitida. Aguarde ser chamado(a).`, 6000);
+      if (dados.sms?.preview && window.UX04?.smsPreview) {
+
+        await UX04.smsPreview({
+          telefone: dados.sms.destinatario,
+          mensagem: dados.sms.preview
+        });
+
+      }
 
     } catch (_) {
       mostrarMensagem('❌ Erro de ligação ao servidor', 'warn');

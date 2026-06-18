@@ -280,6 +280,8 @@
       /* ══ Passo 1: Emitir senha (JSON) ══════════════════════ */
       let senhaId = null, numeroSenha = "???";
 
+      let respostaBackend = {};
+      
       try {
         const resp = await fetch("/api/senhas/emitir", {
           method:  "POST",
@@ -293,15 +295,19 @@
           })
         });
 
-        const data = await resp.json().catch(() => ({}));
+        respostaBackend = await resp.json().catch(() => ({}));
+
+        console.log("[SMS DEBUG DATA]", respostaBackend);
+        console.log("[SMS DEBUG SMS]", respostaBackend.sms);
+        alert(JSON.stringify(respostaBackend.sms, null, 2));
 
         if (!resp.ok) {
-          showMsg(data.erro || "Erro ao emitir senha. Tente novamente.", "warn");
+          showMsg(respostaBackend.erro || "Erro ao emitir senha. Tente novamente.", "warn");
           setBtn(false, "Enviar Formulário e Emitir Senha");
           return;
         }
 
-        const senha = data.senha || {};
+        const senha = respostaBackend.senha || {};
         senhaId     = senha.id;
         numeroSenha = senha.numero || "???";
 
@@ -327,6 +333,16 @@
         "imtsb_flash",
         `✅ Senha emitida: ${numeroSenha} — ${service}. Aguarde ser chamado(a).`
       );
+
+      if (respostaBackend.sms?.mensagem && window.UX04?.smsPreview) {
+
+          await UX04.smsPreview({
+              telefone: contacto,
+              mensagem: respostaBackend.sms.mensagem
+          });
+
+      }
+
       window.location.href = "/index.html";
     });
   }
