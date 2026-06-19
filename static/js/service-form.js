@@ -299,7 +299,6 @@
 
         console.log("[SMS DEBUG DATA]", respostaBackend);
         console.log("[SMS DEBUG SMS]", respostaBackend.sms);
-        alert(JSON.stringify(respostaBackend.sms, null, 2));
 
         if (!resp.ok) {
           showMsg(respostaBackend.erro || "Erro ao emitir senha. Tente novamente.", "warn");
@@ -334,25 +333,11 @@
         `✅ Senha emitida: ${numeroSenha} — ${service}. Aguarde ser chamado(a).`
       );
 
-      console.log(
-        "[SMS MODAL CHECK]",
-        respostaBackend.sms,
-        window.UX04,
-        window.UX04?.smsPreview
-      );
-
-      if (
-        respostaBackend.sms?.mensagem &&
-        window.UX04?.smsPreview
-      ) {
+      if (respostaBackend.sms?.mensagem && window.UX04?.smsPreview) {
 
         await UX04.smsPreview({
-          telefone:
-            respostaBackend.sms.destinatario ||
-            "Contacto registado",
-
-          mensagem:
-            respostaBackend.sms.mensagem
+          telefone: contacto,
+          mensagem: respostaBackend.sms.mensagem
         });
 
       }

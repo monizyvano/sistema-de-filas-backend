@@ -993,17 +993,41 @@
 
   function smsPreview(opts = {}) {
 
-    const telefone = opts.telefone || "";
+    const telefone = opts.telefone || "+244 XXX XXX XXX";
     const mensagem = opts.mensagem || "";
 
     return alert({
       titulo: "📱 SMS Enviado",
       tipo: "success",
       mensagem: `
-        <div>
-          <strong>Para:</strong> ${telefone}
-          <br><br>
-          ${mensagem}
+        <div style="
+          background:#f8fafc;
+          border:1px solid #e2e8f0;
+          border-radius:18px;
+          padding:16px;
+          margin-top:8px;
+          text-align:left;
+        ">
+
+          <div style="
+            font-size:.85rem;
+            color:#64748b;
+            margin-bottom:8px;
+          ">
+            Para: ${telefone}
+          </div>
+
+          <div style="
+            background:white;
+            border-radius:14px;
+            padding:12px;
+            border:1px solid #e5e7eb;
+            white-space:pre-line;
+            line-height:1.5;
+          ">
+  ${mensagem}
+          </div>
+
         </div>
       `,
       txtFechar: "Fechar"
