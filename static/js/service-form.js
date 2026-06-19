@@ -334,12 +334,26 @@
         `✅ Senha emitida: ${numeroSenha} — ${service}. Aguarde ser chamado(a).`
       );
 
-      if (respostaBackend.sms?.mensagem && window.UX04?.smsPreview) {
+      console.log(
+        "[SMS MODAL CHECK]",
+        respostaBackend.sms,
+        window.UX04,
+        window.UX04?.smsPreview
+      );
 
-          await UX04.smsPreview({
-              telefone: contacto,
-              mensagem: respostaBackend.sms.mensagem
-          });
+      if (
+        respostaBackend.sms?.mensagem &&
+        window.UX04?.smsPreview
+      ) {
+
+        await UX04.smsPreview({
+          telefone:
+            respostaBackend.sms.destinatario ||
+            "Contacto registado",
+
+          mensagem:
+            respostaBackend.sms.mensagem
+        });
 
       }
 

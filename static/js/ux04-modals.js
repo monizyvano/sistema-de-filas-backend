@@ -709,7 +709,7 @@
       const btnClass      = opts.perigo ? 'ux04-btn-danger' : opts.aviso ? 'ux04-btn-warning' : 'ux04-btn-confirm';
 
       const corpo = opts.mensagem
-        ? `<p class="ux04-msg">${opts.mensagem}</p>`
+        ? `<div class="ux04-msg">${opts.mensagem}</div>`
         : '';
 
       const accoesHTML = `
@@ -921,6 +921,63 @@
      UX04.alert()
      Substitui alert() nativo.
   ════════════════════════════════════════════════════════════ */
+  function alert(opts) {
+
+    if (typeof opts === "string") {
+      opts = { titulo: opts };
+    }
+
+    return new Promise(resolve => {
+
+      const tipo = opts.tipo || "info";
+
+      const corpo = opts.mensagem
+        ? `<div class="ux04-msg">${opts.mensagem}</div>`
+        : "";
+
+      const accoesHTML = `
+        <button
+          class="ux04-btn ux04-btn-confirm"
+          data-ux04-ok>
+          ${opts.txtFechar || "Fechar"}
+        </button>
+      `;
+
+      const {
+        overlay,
+        fechar,
+        _onKey
+      } = _buildModal({
+        titulo: opts.titulo,
+        subtitulo: opts.subtitulo,
+        tipo,
+        emoji: opts.emoji,
+        corpo,
+        accoesHTML
+      });
+
+      overlay
+        .querySelector("[data-ux04-ok]")
+        ?.addEventListener("click", () => {
+
+          document.removeEventListener(
+            "keydown",
+            _onKey
+          );
+
+          fechar();
+
+          resolve();
+        });
+
+      setTimeout(() => {
+        overlay
+          .querySelector("[data-ux04-ok]")
+          ?.focus();
+      }, 80);
+
+    });
+  }
 
   /**
    * Modal de alerta simples.
@@ -932,53 +989,27 @@
    * @param {string}  [opts.txtFechar]
    * @returns {Promise<void>}
    */
-  /* ════════════════════════════════════════════════════════════
-   UX04.smsPreview()
-   Modal estilo smartphone para SMS simulado
-════════════════════════════════════════════════════════════ */
+  
 
-    function smsPreview(opts = {}) {
+  function smsPreview(opts = {}) {
 
-      const telefone = opts.telefone || "+244 XXX XXX XXX";
-      const mensagem = opts.mensagem || "";
+    const telefone = opts.telefone || "";
+    const mensagem = opts.mensagem || "";
 
-      return alert({
-        titulo: "📱 SMS Enviado",
-        tipo: "success",
-        mensagem: `
-          <div style="
-            background:#f8fafc;
-            border:1px solid #e2e8f0;
-            border-radius:18px;
-            padding:16px;
-            margin-top:8px;
-            text-align:left;
-            font-family:system-ui;
-          ">
-            <div style="
-              font-size:.85rem;
-              color:#64748b;
-              margin-bottom:8px;
-            ">
-              Para: ${telefone}
-            </div>
+    return alert({
+      titulo: "📱 SMS Enviado",
+      tipo: "success",
+      mensagem: `
+        <div>
+          <strong>Para:</strong> ${telefone}
+          <br><br>
+          ${mensagem}
+        </div>
+      `,
+      txtFechar: "Fechar"
+    });
 
-            <div style="
-              background:white;
-              border-radius:14px;
-              padding:12px;
-              border:1px solid #e5e7eb;
-              line-height:1.5;
-              white-space:pre-line;
-            ">
-    ${mensagem}
-            </div>
-          </div>
-        `,
-        txtFechar: "Fechar"
-      });
-
-    }
+  }
 
   /* ════════════════════════════════════════════════════════════
      UX04.toast()
@@ -1118,7 +1149,7 @@
   } else {
     setTimeout(_applyPressFeedback, 100);
   }
-
+  
   /* ── Expor API pública ──────────────────────────────────── */
   window.UX04 = {
     confirm,
