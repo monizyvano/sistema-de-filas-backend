@@ -310,8 +310,16 @@
         senhaId     = senha.id;
         numeroSenha = senha.numero || "???";
 
-        if (senhaId) {
-          localStorage.setItem("imtsb_minha_senha", JSON.stringify(senha));
+       if (senhaId) {
+          localStorage.setItem(
+            "imtsb_minha_senha",
+            JSON.stringify(senha)
+          );
+
+          window.NH?.push(
+            "senha_emitida",
+            `Senha ${numeroSenha} emitida — ${service}`
+          );
         }
 
       } catch (err) {
