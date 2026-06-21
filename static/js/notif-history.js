@@ -2,22 +2,71 @@
 
     const KEY = "imtsb_notifications";
 
+    const MAX_ITEMS = 50;
+
     function getAll() {
-        return JSON.parse(
-            localStorage.getItem(KEY) || "[]"
-        );
+
+        try {
+
+            const lista =
+                JSON.parse(
+                    localStorage.getItem(KEY) || "[]"
+                );
+
+            return Array.isArray(lista)
+                ? lista
+                : [];
+
+        } catch (_) {
+
+            return [];
+
+        }
+
     }
 
     function save(lista) {
-        localStorage.setItem(
-            KEY,
-            JSON.stringify(lista)
-        );
+
+        try {
+
+            localStorage.setItem(
+                KEY,
+                JSON.stringify(
+                    lista.slice(0, MAX_ITEMS)
+                )
+            );
+
+        } catch (_) {
+
+        }
+
     }
 
     function push(tipo, mensagem) {
 
         const lista = getAll();
+
+        const ultima = lista[0];
+
+        if (
+            ultima &&
+            ultima.tipo === tipo &&
+            ultima.mensagem === mensagem
+        ) {
+
+            const ts =
+                Date.parse(
+                    ultima.timestamp || ""
+                );
+
+            if (
+                !isNaN(ts) &&
+                (Date.now() - ts) < 3000
+            ) {
+                return;
+            }
+
+        }
 
         lista.unshift({
             tipo,
@@ -74,5 +123,17 @@
         "DOMContentLoaded",
         render
     );
+
+    document.addEventListener("DOMContentLoaded", () => {
+
+        render();
+
+        const btn = document.getElementById("nhClearBtn");
+
+        if (btn) {
+            btn.addEventListener("click", clear);
+        }
+
+    });
 
 })();

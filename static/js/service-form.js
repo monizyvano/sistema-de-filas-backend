@@ -315,11 +315,16 @@
             "imtsb_minha_senha",
             JSON.stringify(senha)
           );
+          console.log("[PATCH3] emissão");
 
-          window.NH?.push(
-            "senha_emitida",
-            `Senha ${numeroSenha} emitida — ${service}`
-          );
+         if (window.NH && typeof NH.push === "function") {
+
+            NH.push(
+              "senha_emitida",
+              `Senha ${numeroSenha} emitida`
+            );
+
+          }
         }
 
       } catch (err) {
@@ -341,15 +346,21 @@
         `✅ Senha emitida: ${numeroSenha} — ${service}. Aguarde ser chamado(a).`
       );
 
-      if (respostaBackend.sms?.mensagem && window.UX04?.smsPreview) {
+      const smsTexto =
+          respostaBackend.sms?.mensagem ||
+          respostaBackend.sms?.preview;
+
+      if (smsTexto && window.UX04?.smsPreview) {
 
         await UX04.smsPreview({
-          telefone: contacto,
-          mensagem: respostaBackend.sms.mensagem
+          telefone:
+            respostaBackend.sms?.destinatario ||
+            contacto,
+
+          mensagem: smsTexto
         });
 
       }
-
       window.location.href = "/index.html";
     });
   }

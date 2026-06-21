@@ -488,13 +488,25 @@
       if (numEl) numEl.classList.add('pulse-green');
 
       if (mudou) {
+        console.log("[PATCH4] chamada");
+
+        NH.push(
+          "senha_chamada",
+          `Senha ${numero} chamada para o balcão ${balcao}`
+        );
+
         N && N.clientCalled(numero, balcao, atendente);
+
+
         mostrarMensagem(
           `🔔 Senha <strong>${numero}</strong>: Balcão <strong>${balcao}</strong> · ${atendente}`,
           'ok'
         );
-        N && N.nativeNotify('IMTSB — A sua vez!',
-          `Senha ${numero} — Balcão ${balcao}. Dirija-se ao atendente.`);
+
+        N && N.nativeNotify(
+          'IMTSB — A sua vez!',
+          `Senha ${numero} — Balcão ${balcao}. Dirija-se ao atendente.`
+        );
       }
 
     /* ── CONCLUÍDA ─────────────────────────────────────────── */
@@ -510,11 +522,37 @@
       if (numEl) numEl.classList.add('pulse-green');
 
       if (mudou) {
-        mostrarMensagem('✅ Atendimento concluído! Obrigado pela visita ao IMTSB.', 'ok');
-        N && N.notify('conclude', 'Atendimento concluído! Obrigado pela sua visita.', 7000);
-        N && N.nativeNotify('IMTSB — Concluído!', `Senha ${numero} atendida com sucesso.`);
-        // FIX-01 — passar dados completos ao modal (com .id numérico)
-        setTimeout(() => window.abrirModalAvaliacao && window.abrirModalAvaliacao(dados), 2000);
+
+        mostrarMensagem(
+          '✅ Atendimento concluído! Obrigado pela visita ao IMTSB.',
+          'ok'
+        );
+
+        N && N.notify(
+          'conclude',
+          'Atendimento concluído! Obrigado pela sua visita.',
+          7000
+        );
+
+        N && N.nativeNotify(
+          'IMTSB — Concluído!',
+          `Senha ${numero} atendida com sucesso.`
+        );
+
+        window.NH && window.NH.push(
+          'senha_concluida',
+          `Senha ${numero} concluída com sucesso`
+        );
+
+        // limpar histórico após conclusão
+        setTimeout(() => {
+          window.NH && window.NH.clear();
+        }, 1000);
+
+        setTimeout(
+          () => window.abrirModalAvaliacao && window.abrirModalAvaliacao(dados),
+          2000
+        );
       }
 
       pararAcompanhamento();
@@ -625,6 +663,7 @@
      FIX-08 — não chama tracker se minhaSenha for null
   ════════════════════════════════════════════════════════════ */
   function iniciarAcompanhamento(num) {
+    console.log("[ACOMPANHAR]", num);
     pararAcompanhamento();
     actualizarPosicao(num);
     pollingAcompanhamento = setInterval(() => {
@@ -816,11 +855,15 @@
       await atualizarEstatisticas();
       N && N.notify('success',
         `Senha <strong>${minhaSenha.numero}</strong> emitida. Aguarde ser chamado(a).`, 6000);
-      if (dados.sms?.preview && window.UX04?.smsPreview) {
+      const smsTexto =
+          dados.sms?.preview ||
+          dados.sms?.mensagem;
+
+      if (smsTexto && window.UX04?.smsPreview) {
 
         await UX04.smsPreview({
-          telefone: dados.sms.destinatario,
-          mensagem: dados.sms.preview
+          telefone: dados.sms?.destinatario || '',
+          mensagem: smsTexto
         });
 
       }
@@ -856,10 +899,15 @@
       if (dataEmissao !== hoje) { limparSenhaLocal(); return; }
 
       minhaSenha     = s;
+      console.log("[RESTORE]", s.numero, s.status);
       statusAnterior = s.status;
       obsAnterior    = s.observacoes || null;
       atualizarDisplaySenha();
-      if (!['concluida','cancelada'].includes(s.status)) iniciarAcompanhamento(s.numero);
+      if (!['concluida','cancelada'].includes(s.status)) {
+          console.log("[TRACKER START]", s.numero);
+          iniciarAcompanhamento(s.numero);
+      }
+
     } catch (_) { limparSenhaLocal(); }
   }
 
