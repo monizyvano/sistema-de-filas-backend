@@ -818,15 +818,28 @@
     mostrarMensagem('⏳ A emitir senha…', '');
 
     try {
-      const r = await fetchComRetry(
-        `${BASE()}/senhas/emitir`,
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ servico_id: servicoSelecionado.id, tipo: 'normal' }),
-        },
-        3
-      );
+
+          const chkPrioridade =
+              document.getElementById('prioridadeCheckbox');
+
+          const tipoSenha =
+              (chkPrioridade && chkPrioridade.checked)
+                ? 'prioritaria'
+                : 'normal';
+
+          const r = await fetchComRetry(
+            `${BASE()}/senhas/emitir`,
+            {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+
+              body: JSON.stringify({
+                servico_id: servicoSelecionado.id,
+                tipo: tipoSenha
+              }),
+            },
+            3
+          );
       const dados = await r.json().catch(() => ({}));
 
       console.log("[SMS DASH]", dados.sms);

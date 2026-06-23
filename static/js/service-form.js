@@ -90,6 +90,7 @@
   const docsList        = document.getElementById("requiredDocs");
   const dynamicFields   = document.getElementById("dynamicFields");
   const attachmentsDiv  = document.getElementById("attachmentsFields");
+  const priorityDiv     = document.getElementById("priorityFields");
   const inputEmail      = document.getElementById("notificationEmail");
   const msg             = document.getElementById("formMsg");
   const form            = document.getElementById("serviceForm");
@@ -209,6 +210,61 @@
       wrap.appendChild(preview);
       attachmentsDiv.appendChild(wrap);
     }
+    {
+  const wrap = document.createElement("div");
+
+    wrap.style.cssText =
+      "margin-top:10px;display:flex;align-items:center;gap:8px;" +
+      "background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px;";
+
+    const input = document.createElement("input");
+
+    input.type = "checkbox";
+    input.id = "prioridadeCheckbox";
+
+    input.style.cssText =
+      "width:18px;height:18px;cursor:pointer;accent-color:#ea580c;";
+
+    const label = document.createElement("label");
+
+    label.htmlFor = "prioridadeCheckbox";
+
+    label.style.cssText =
+      "font-size:.88rem;color:#7c2d12;cursor:pointer;";
+
+    label.innerHTML =
+      "<strong>Atendimento prioritário</strong><br>" +
+      "<span style='font-weight:400;'>Idosos, grávidas, pessoas com deficiência ou outros casos previstos por lei.</span>";
+
+    wrap.appendChild(input);
+    wrap.appendChild(label);
+
+    const host = priorityDiv;
+
+    if (host) {
+
+        host.innerHTML = "";
+        host.appendChild(wrap);
+
+    } else if (form) {
+
+        const submitBtn =
+            form.querySelector("button[type='submit']");
+
+        if (submitBtn && submitBtn.parentNode) {
+
+            submitBtn.parentNode.insertBefore(
+                wrap,
+                submitBtn
+            );
+
+        } else {
+
+            form.appendChild(wrap);
+
+        }
+    }
+  }
 
     /* Pré-preencher email (utilizador autenticado) */
     if (inputEmail) {
@@ -277,6 +333,14 @@
       if (contacto) linhas.push(`Contacto: ${contacto}`);
       const observacoes = linhas.join(" | ");
 
+      const chkPrioridade =
+          document.getElementById("prioridadeCheckbox");
+
+      const tipoSenha =
+          (chkPrioridade && chkPrioridade.checked)
+              ? "prioritaria"
+              : (def.tipo || "normal");
+
       /* ══ Passo 1: Emitir senha (JSON) ══════════════════════ */
       let senhaId = null, numeroSenha = "???";
 
@@ -288,7 +352,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             servico_id:      def.servicoId,
-            tipo:            def.tipo || "normal",
+            tipo: tipoSenha,
             usuario_contato: contacto || null,
             utente_id:       utenteId,
             observacoes:     observacoes       // ✅ chega ao trabalhador
@@ -310,6 +374,9 @@
         senhaId     = senha.id;
         numeroSenha = senha.numero || "???";
 
+        console.log("[DEBUG SENHA]", senha);
+        console.log("[DEBUG SENHA ID]", senhaId);
+
        if (senhaId) {
           localStorage.setItem(
             "imtsb_minha_senha",
@@ -317,14 +384,16 @@
           );
           console.log("[PATCH3] emissão");
 
-         if (window.NH && typeof NH.push === "function") {
+        if (window.NH && typeof NH.push === "function") {
+
+            console.log("[NH TEST]", numeroSenha);
 
             NH.push(
               "senha_emitida",
               `Senha ${numeroSenha} emitida`
             );
 
-          }
+        }
         }
 
       } catch (err) {
