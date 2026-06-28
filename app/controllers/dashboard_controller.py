@@ -506,6 +506,7 @@ def acompanhar_senha(numero):
             "numero":               senha.numero,
             "status":               senha.status,
             "tipo":                 senha.tipo,
+            "id":                   senha.id,
             "posicao":              posicao,
             "tempo_espera_estimado": tempo_estimado,
             "balcao":               senha.numero_balcao,
